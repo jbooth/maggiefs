@@ -1,0 +1,32 @@
+0.1 --
+
+write-once operation
+
+inodeservice using mongo, add mongo to config
+
+dataservice with super simple implementation
+
+fuse integration
+
+
+
+0.2 --
+
+append
+
+create sync service using doozer, add to config
+
+0.3 --
+read/write implementationdd
+
+
+
+1.0
+dataservice optimization
+
+each connection holds open reader and 
+
+
+2.0 
+
+permissions, add some permission broker to config
