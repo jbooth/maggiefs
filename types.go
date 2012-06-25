@@ -25,8 +25,13 @@ type Inode struct {
   Nlink uint32 // number of paths linked to this inode
   Uid uint32
   Gid uint32
-  BlockLocations []BlockLocation
+  Blocks []Block
+  Refcount uint32
 }
 
-type BlockLocation struct {
+type Block struct {
+  Inodeid uint64
+  FirstPage uint64
+  LastPage uint64
+  Locations []string
 }
