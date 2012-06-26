@@ -31,6 +31,7 @@ type Inode struct {
 
 type Block struct {
   Inodeid uint64
+  NumInFile uint64
   FirstPage uint64
   LastPage uint64
   Locations []string

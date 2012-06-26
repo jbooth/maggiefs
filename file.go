@@ -5,11 +5,11 @@ import (
 )
 
 
-func NewReader(inode Inode, datas *DataService) (r Reader, err error) {
+func NewReader(inode Inode, datas *DataService) (r *Reader, err error) {
   return nil,nil
 }
 
-func NewWriter(inode Inode, datas *DataService) (w Writer, err error) {
+func NewWriter(inode Inode, datas *DataService) (w *Writer, err error) {
   return nil,nil
 }
 // represents an open file
@@ -20,8 +20,8 @@ type Reader struct {
   inode Inode
   buffer []byte 
   globalPos uint64 // pos in file
-  blockPos int // pos within block
-  bufferPos int // pos within buffer
+  blockPos uint32 // pos within block
+  bufferPos uint32 // pos within buffer
   currBlock Block
   currSession BlockSession
   datas *DataService
@@ -41,36 +41,36 @@ func (f *Reader) Seek(offset int64, whence int) (ret int64, err error) {
 // TODO switch this to only read one page worth
 // io.Reader
 func (f *Reader) Read(p []byte) (n int, err error) {
-  nRead := 0
-  numToRead := len(p)
+  nRead := uint32(0)
+  numToRead := uint32(len(p))
   numLeftInFile := f.inode.Length - f.globalPos
   if (numLeftInFile == 0) { return 0,io.EOF }
   // shorten read to "rest of file" if necessary
   if (numLeftInFile < uint64(numToRead)) {
-    numToRead = int(numLeftInFile)
+    numToRead = uint32(numLeftInFile)
   }
-  var innerN int
+  var innerN uint32
 
   for ; (nRead < numToRead) ;{
     // make sure buffer has bytes, read more if we need to
-    if (f.bufferPos == len(f.readBuffer)) {
+    if (f.bufferPos == uint32(len(f.buffer))) {
       err = f.refillReadBuffer()
-      if (err != nil) { return nRead,err }
+      if (err != nil) { return int(nRead),err }
     }
 
     // copy from buffer to dest, up to PAGESIZE bytes
-    innerN = (numToRead - numRead)
+    innerN = uint32(numToRead - nRead)
     if (innerN > PAGESIZE) { innerN = PAGESIZE }
-    for i := 0 ; i < innerN ; i++ {
-      p[i] = f.readBuffer[i]
+    for i := uint32(0) ; i < innerN ; i++ {
+      p[i] = f.buffer[i]
     }
     // end loop and repeat until done
     nRead += innerN
-    f.globalPos += innerN
-    f.blockPos += innerN
+    f.globalPos += uint64(innerN)
+    f.blockPos += uint32(innerN)
     f.bufferPos += innerN
   }
-  return nRead,nil
+  return int(nRead),nil
 }
 
 func (f *Reader) refillReadBuffer() (err error) {
@@ -78,7 +78,7 @@ func (f *Reader) refillReadBuffer() (err error) {
   if (f.globalPos == f.inode.Length) { return io.ErrUnexpectedEOF }
   // check if we need to move to the next block
   if (f.blockPos == BLOCKSIZE) {
-   err := switchBlock(currBlock.NumInFile + 1)
+   err := f.switchBlock(f.currBlock.NumInFile + 1)
    if (err != nil) { return err }
   }
 
@@ -86,7 +86,7 @@ func (f *Reader) refillReadBuffer() (err error) {
   return f.currSession.read(readBuffer)
 }
 
-func (f *Reader) switchBlock(blockNum uint32) error {
+func (f *Reader) switchBlock(blockNum uint64) error {
   err := f.currSession.Close()
   if (err != nil) { return err }
   f.currSession,err = datas.OpenBlock(inode.Blocks[blockNum])

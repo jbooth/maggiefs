@@ -2,7 +2,7 @@ package maggiefs
 
 import (
   "syscall"
-  "atomic"
+  "sync/atomic"
   "github.com/hanwen/go-fuse/raw"
   "github.com/hanwen/go-fuse/fuse"
 )
@@ -16,7 +16,7 @@ type mfile struct {
   appnd bool // whether we're in append mode
 }
 
-func (m *mfile) Close() err error {
+func (m *mfile) Close() (err error) {
   var ret error = nil
   err := r.Close()
   if (err != nil) { ret = err }
