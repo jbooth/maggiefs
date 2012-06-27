@@ -16,11 +16,11 @@ type mfile struct {
   appnd bool // whether we're in append mode
 }
 
-func (m *mfile) Close() (err error) {
+func (m mfile) Close() (err error) {
   var ret error = nil
-  err := r.Close()
+  err = m.r.Close()
   if (err != nil) { ret = err }
-  err = w.Close()
+  err = m.w.Close()
   if (err != nil) { ret = err }
   return ret
 }
@@ -40,7 +40,7 @@ func (m *MaggieFuse) String() string {
 }
 
 func (m *MaggieFuse) StatFs(out *fuse.StatfsOut, h *raw.InHeader) fuse.Status {
-  stat,err := fs.names.StatFs()
+  stat,err := m.fs.names.StatFs()
   if (err != nil) {
     return fuse.EROFS
   }
@@ -85,7 +85,7 @@ func numBlocks(size uint64, blksize uint32) uint64 {
 
 func (m *MaggieFuse) Lookup(out *raw.EntryOut, h *raw.InHeader, name string) (code fuse.Status) {
   // Lookup PathEntry by name
-  p,i,err := fs.names.GetPathInode(name)
+  p,i,err := m.fs.names.GetPathInode(name)
   if err != nil {
     return fuse.EROFS
   }
@@ -122,7 +122,7 @@ func (m *MaggieFuse) Forget(nodeID, nlookup uint64) {
 }
 
 func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.GetAttrIn) (code fuse.Status) {
-  i,err := fs.names.GetInode(header.NodeId)
+  i,err := m.fs.names.GetInode(header.NodeId)
   if err != nil {
     return fuse.EROFS
   }

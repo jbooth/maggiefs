@@ -24,7 +24,7 @@ type Reader struct {
   bufferPos uint32 // pos within buffer
   currBlock Block
   currSession BlockSession
-  datas *DataService
+  datas DataService
 }
 
 // io.Seeker
@@ -83,13 +83,13 @@ func (f *Reader) refillReadBuffer() (err error) {
   }
 
   // read the buffer
-  return f.currSession.read(readBuffer)
+  return f.currSession.Read(f.buffer)
 }
 
 func (f *Reader) switchBlock(blockNum uint64) error {
   err := f.currSession.Close()
   if (err != nil) { return err }
-  f.currSession,err = datas.OpenBlock(inode.Blocks[blockNum])
+  f.currSession,err = f.datas.OpenBlock(f.inode.Blocks[blockNum])
   return err // hopefully nil
 }
 
@@ -116,4 +116,6 @@ func (f *Writer) Write(p []byte) (n int, err error) {
   return int(0),nil
 }
 
+func (f *Writer) Close() (err error) {
+}
 
