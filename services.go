@@ -5,15 +5,17 @@ import (
 )
 type NameService interface {
   
+  Format() (err error)
   GetPathInode(path string) (p PathEntry, i Inode, err error)
+  GetPathEntry(path string) (p PathEntry, err error)
   GetInode(nodeid uint64) (i Inode, err error)
   StatFs() (statfs syscall.Statfs_t, err error)
   // persists an inode to backing store
-  AddInode(node Inode) (err error)
+  AddInode(node Inode) (id uint64, err error)
   // persists a PathEntry
   AddPathEntry(pe PathEntry) (err error)
-  RenamePathEntry(oldPath string, newPath string)
-  LinkPathEntry(path string, nodeid uint64)
+  RenamePathEntry(oldPath string, newPath string) (err error)
+  LinkPathEntry(path string, nodeid uint64) (err error)
   // todo attrs
 }
 

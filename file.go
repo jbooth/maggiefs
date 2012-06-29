@@ -5,11 +5,11 @@ import (
 )
 
 
-func NewReader(inode Inode, datas *DataService) (r *Reader, err error) {
+func NewReader(inode Inode, datas DataService) (r *Reader, err error) {
   return nil,nil
 }
 
-func NewWriter(inode Inode, datas *DataService) (w *Writer, err error) {
+func NewWriter(inode Inode, datas DataService) (w *Writer, err error) {
   return nil,nil
 }
 // represents an open file
@@ -117,5 +117,6 @@ func (f *Writer) Write(p []byte) (n int, err error) {
 }
 
 func (f *Writer) Close() (err error) {
+  return nil
 }
 

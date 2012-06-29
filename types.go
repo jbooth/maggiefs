@@ -26,7 +26,6 @@ type Inode struct {
   Uid uint32
   Gid uint32
   Blocks []Block
-  Refcount uint32
 }
 
 type Block struct {

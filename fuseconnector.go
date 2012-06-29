@@ -1,6 +1,7 @@
 package maggiefs
 
 import (
+  "time"
   "syscall"
   "sync/atomic"
   "github.com/hanwen/go-fuse/raw"
@@ -8,8 +9,8 @@ import (
 )
 
 type mfile struct {
-  r Reader
-  w Writer
+  r *Reader
+  w *Writer
   writeable bool
   readable bool
   fh uint64
@@ -26,7 +27,8 @@ func (m mfile) Close() (err error) {
 }
 
 type MaggieFuse struct {
-  fs *MaggieFs
+  names NameService
+  datas DataService
   openFiles map[uint64] *mfile
   fhCounter uint64
 }
@@ -40,7 +42,7 @@ func (m *MaggieFuse) String() string {
 }
 
 func (m *MaggieFuse) StatFs(out *fuse.StatfsOut, h *raw.InHeader) fuse.Status {
-  stat,err := m.fs.names.StatFs()
+  stat,err := m.names.StatFs()
   if (err != nil) {
     return fuse.EROFS
   }
@@ -85,7 +87,7 @@ func numBlocks(size uint64, blksize uint32) uint64 {
 
 func (m *MaggieFuse) Lookup(out *raw.EntryOut, h *raw.InHeader, name string) (code fuse.Status) {
   // Lookup PathEntry by name
-  p,i,err := m.fs.names.GetPathInode(name)
+  p,i,err := m.names.GetPathInode(name)
   if err != nil {
     return fuse.EROFS
   }
@@ -122,7 +124,7 @@ func (m *MaggieFuse) Forget(nodeID, nlookup uint64) {
 }
 
 func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.GetAttrIn) (code fuse.Status) {
-  i,err := m.fs.names.GetInode(header.NodeId)
+  i,err := m.names.GetInode(header.NodeId)
   if err != nil {
     return fuse.EROFS
   }
@@ -159,8 +161,8 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 
   // allocate new filehandle
   fh := atomic.AddUint64(&m.fhCounter,uint64(1))
-  r := Reader{}
-  w := Writer{}
+  r := &Reader{}
+  w := &Writer{}
   if (readable) {
     r,err = NewReader(inode,m.datas)
     if (err != nil) { return fuse.EROFS }
@@ -174,12 +176,13 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
     r,
     w,
     writable,
+    readable,
     fh,
     appnd} //append mode
   m.openFiles[fh] = &file
   // output
-  out.fh = fh
-  out.OpenFlags = fuse.FOPEN_KEEP_CACHE
+  out.Fh = fh
+  out.OpenFlags = raw.FOPEN_KEEP_CACHE
   // return int val
 	return fuse.OK
 }
@@ -196,6 +199,8 @@ func parseWRFlags(flags uint32) (bool, bool) {
         return false,true
 
   }
+  // shouldn't happen
+  return false,false
 }
 
 func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.SetAttrIn) (code fuse.Status) {
@@ -209,15 +214,26 @@ func (m *MaggieFuse) Readlink(header *raw.InHeader) (out []byte, code fuse.Statu
 
 func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.MknodIn, name string) (code fuse.Status) {
   // set up inode
-  parent,err := m.names.GetInode(header.NodeId)
-  if err != nil {
-    return fuse.EROFS
-  }
+  //parent,err := m.names.GetInode(header.NodeId)
+  //if err != nil {
+    //return fuse.EROFS
+  //}
+  currTime := uint64(time.Now().Unix())
   newNode := Inode{
-
-  }
+    0, // id 0 to start
+    0,
+    FTYPE_REG,
+    0,
+    currTime,
+    currTime,
+    0,
+    header.Uid,
+    header.Gid,
+    make([]Block,0,100) }
 
   // save
+  m.names.AddInode(newNode)
+
 	return fuse.ENOSYS
 
 }

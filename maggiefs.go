@@ -31,6 +31,7 @@ func (fs *MaggieFs) OpenW(path string) (w io.WriteSeeker, err error) {
 }
 
 func (fs *MaggieFs) OpenWR(path string) (rw io.ReadWriteSeeker, err error) {
+  return nil,nil
 }
 
 func (fs *MaggieFs) Close() error {
