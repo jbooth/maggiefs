@@ -22,23 +22,23 @@ type Reader struct {
   globalPos uint64 // pos in file
   blockPos uint32 // pos within block
   bufferPos uint32 // pos within buffer
-  currBlock Block
-  currSession BlockSession
+  pageNum uint64  // current page we're reading
   datas DataService
+  currBlock Block
+  currConn DNConn
 }
 
-// io.Seeker
-func (f *Reader) Seek(offset int64, whence int) (ret int64, err error) {
-  // figure which block
-  //   if currblock is good, else refresh it
-  // figure page num
-  //   if curr offset is good, else refresh it
-  // advance in page if necessary
+func (f *Reader) ReadAt(p []byte, offset uint64, size uint32) (n int, err error) {
+  nRead := uint32(0)
+  for ; nRead < off ; {
+    // make sure we're at right block
 
-  return int64(0),nil
+    // figure out page to read and read it
+
+    // copy to dest and update
+
+  }
 }
-
-// TODO switch this to only read one page worth
 // io.Reader
 func (f *Reader) Read(p []byte) (n int, err error) {
   nRead := uint32(0)
@@ -83,6 +83,8 @@ func (f *Reader) refillReadBuffer() (err error) {
   }
 
   // read the buffer
+  err = currConn.Read(currBlock.Inodeid, 
+  if (err != nil) { return err }
   return f.currSession.Read(f.buffer)
 }
 
@@ -107,7 +109,6 @@ type Writer struct {
   blockPos int // pos within block
   bufferPos int // pos within buffer
   currBlock Block
-  currSession BlockSession
   datas DataService
 }
 

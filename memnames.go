@@ -38,7 +38,6 @@ func (n MemNames) GetInode(nodeid uint64) (i Inode, err error) {
   n.s.Lock()
   defer n.s.Unlock()
   return n.nodes[nodeid],nil
-
 }
 
 func (n MemNames) AddInode(node Inode) (id uint64, err error) {
@@ -60,7 +59,10 @@ func (n MemNames) AddPathEntry(pe PathEntry) (err error) {
 func (n MemNames) RenamePathEntry(oldPath string, newPath string) (err error) {
   n.s.Lock()
   defer n.s.Unlock()
-  //pe :=m
+  pe := n.paths[oldPath]
+  delete(n.paths,oldPath)
+  pe.Path = newPath
+  n.paths[newPath] = pe
   return nil
 
 }

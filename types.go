@@ -20,12 +20,14 @@ type Inode struct {
   Generation uint64
   Ftype int
   Length uint64
+  Mode uint32
   Mtime uint64 // changed on data - can be changed by user with touch
   Ctime uint64 // changed on file attr change or date -- owned by kernel
   Nlink uint32 // number of paths linked to this inode
   Uid uint32
   Gid uint32
-  Blocks []Block
+  Blocks []Block // can be 0 blocks in case of directory or empty file
+  Children map[string] uint64 // empty unless we are a dir, maps name to inode id 
 }
 
 type Block struct {
@@ -35,3 +37,5 @@ type Block struct {
   LastPage uint64
   Locations []string
 }
+
+
