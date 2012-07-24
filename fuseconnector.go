@@ -29,7 +29,8 @@ func (m mfile) Close() (err error) {
 type MaggieFuse struct {
   names NameService
   datas DataService
-  openFiles map[uint64] *mfile
+  openRFiles map[uint64] *Reader
+  openWFiles map[uint64] *Writer
   fhCounter uint64
 }
 
@@ -90,7 +91,7 @@ func (m *MaggieFuse) Lookup(out *raw.EntryOut, h *raw.InHeader, name string) (co
   parent,err := m.names.GetInode(h.NodeId)
   childId := parent.Children[name]
   // Lookup PathEntry by name
-  child := m.names.GetInode(childId)
+  child,err := m.names.GetInode(childId)
   if err != nil {
     return fuse.EROFS
   }
@@ -111,8 +112,8 @@ func fillEntryOut(out *raw.EntryOut, i *Inode) {
   out.Size = i.Length
   out.Blocks = numBlocks(i.Length, PAGESIZE)
   out.Atime = uint64(0) // always 0 for atime
-  out.Mtime = i.Mtime // Mtime is user modifiable and is the last time data changed
-  out.Ctime = i.Ctime // Ctime is tracked by the FS and changes when attrs or data change
+  out.Mtime = uint64(i.Mtime) // Mtime is user modifiable and is the last time data changed
+  out.Ctime = uint64(i.Ctime) // Ctime is tracked by the FS and changes when attrs or data change
   out.Atimensec = uint32(0)
   out.Mtimensec = uint32(0)
   out.Ctimensec = uint32(0)
@@ -138,8 +139,8 @@ func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
   out.Size = i.Length
   out.Blocks = numBlocks(i.Length, PAGESIZE)
   out.Atime = uint64(0) // always 0 for atime
-  out.Mtime = i.Mtime // Mtime is user modifiable and is the last time data changed
-  out.Ctime = i.Ctime // Ctime is tracked by the FS and changes when attrs or data change
+  out.Mtime = uint64(i.Mtime) // Mtime is user modifiable and is the last time data changed
+  out.Ctime = uint64(i.Ctime) // Ctime is tracked by the FS and changes when attrs or data change
   out.Atimensec = uint32(0)
   out.Mtimensec = uint32(0)
   out.Ctimensec = uint32(0)
@@ -156,9 +157,15 @@ func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
 }
 
 func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.OpenIn) (status fuse.Status) {
+  // TODO handle open flags
+
+  // if read, readable = true
+
+  // if write, then
+    // if file length = 0, open fine
+    // if file length > 0, we must be either TRUNC or APPEND
   // open flags
   readable,writable := parseWRFlags(input.Flags)
-  // TODO handle other open flags here
   appnd := (input.Flags & syscall.O_APPEND != 0)
 
   // get inode
@@ -170,25 +177,19 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 
   // allocate new filehandle
   fh := atomic.AddUint64(&m.fhCounter,uint64(1))
-  r := &Reader{}
-  w := &Writer{}
+  var r *Reader
+  var w *Writer
   if (readable) {
     r,err = NewReader(inode,m.datas)
     if (err != nil) { return fuse.EROFS }
+    m.openRFiles[fh] = r
   }
   if (writable) {
     w,err = NewWriter(inode,m.datas)
     if (err != nil) { return fuse.EROFS }
+    m.openWFiles[fh]
   }
 
-  file := mfile {
-    r,
-    w,
-    writable,
-    readable,
-    fh,
-    appnd} //append mode
-  m.openFiles[fh] = &file
   // output
   out.Fh = fh
   out.OpenFlags = raw.FOPEN_KEEP_CACHE
@@ -213,7 +214,7 @@ func parseWRFlags(flags uint32) (bool, bool) {
 }
 
 func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.SetAttrIn) (code fuse.Status) {
-  if (input.Valid & (FATTR_MODE | FATTR_UID | FATTR_GID | FATTR_MTIME | FATTR_MTIME_NOW) == 0) {
+  if (input.Valid & (raw.FATTR_MODE | raw.FATTR_UID | raw.FATTR_GID | raw.FATTR_MTIME | raw.FATTR_MTIME_NOW) == 0) {
     // if none of the items we care about were modified, skip it
     return fuse.OK
   }
@@ -237,9 +238,8 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
   err = m.names.SaveInode(inode)
   if (err != nil) {
     return fuse.EROFS
-  } else {
-    return fuse.OK
-  }
+  } 
+  return fuse.OK
 }
 
 func (m *MaggieFuse) Readlink(header *raw.InHeader) (out []byte, code fuse.Status) {
@@ -253,18 +253,21 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
   //if err != nil {
     //return fuse.EROFS
   //}
-  currTime := uint64(time.Now().Unix())
+  currTime := time.Now().Unix()
   i := Inode{
     0, // id 0 to start
-    0,
+    0, // gen 0
     FTYPE_REG,
     0,
+    0x777,
     currTime,
     currTime,
     0,
     header.Uid,
     header.Gid,
-    make([]Block,0,100) }
+    make([]Block,0,100),
+    map[string] uint64 {},
+    }
 
   // save
   id,err := m.names.AddInode(i)
@@ -279,21 +282,27 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 
 func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.MkdirIn, name string) (code fuse.Status) {
   // lookup parent
-  parent := m.names.GetInode(header.NodeId)
+  parent,err := m.names.GetInode(header.NodeId)
+  if (err != nil) {
+    return fuse.EROFS
+  }
 
   // make new child
-  currTime := uint64(time.Now().Unix())
+  currTime := time.Now().Unix()
   i := Inode{
     0, // id 0 to start, we get id when inserting
     0,
     FTYPE_DIR,
     0,
+    0x777,
     currTime,
     currTime,
     0,
     header.Uid,
     header.Gid,
-    make([]Block,0,100) }
+    make([]Block,0,100),
+    map[string] uint64{},
+    }
 
   // save
   id,err := m.names.AddInode(i)
@@ -318,7 +327,8 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status) {
   // receive parent inode id and name
   // pull parent
-  parent := m.names.GetInode(header.NodeId)
+  parent,err := m.names.GetInode(header.NodeId)
+  if (err != nil) { return fuse.EROFS }
   // look up node for name
 
   // resolve full path

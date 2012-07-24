@@ -1,7 +1,8 @@
 package maggiefs
 
 import (
-  "io"
+  "fmt"
+  "errors"
 )
 
 
@@ -16,85 +17,47 @@ func NewWriter(inode Inode, datas DataService) (w *Writer, err error) {
 // maintains a one page buffer for reading
 // for writable or RW files, see OpenWriteFile
 type Reader struct {
-  path PathEntry
   inode Inode
-  buffer []byte 
-  globalPos uint64 // pos in file
-  blockPos uint32 // pos within block
-  bufferPos uint32 // pos within buffer
-  pageNum uint64  // current page we're reading
   datas DataService
-  currBlock Block
-  currConn DNConn
 }
 
-func (f *Reader) ReadAt(p []byte, offset uint64, size uint32) (n int, err error) {
+func (f *Reader) ReadAt(p []byte, offset uint64, length uint32) (n uint32, err error) {
   nRead := uint32(0)
-  for ; nRead < off ; {
-    // make sure we're at right block
+  // loop until done
+  for ; nRead < length ; {
+    // get conn to block
+    block,err := blockForPos(offset + uint64(nRead), f.inode)
 
-    // figure out page to read and read it
-
-    // copy to dest and update
-
-  }
-}
-// io.Reader
-func (f *Reader) Read(p []byte) (n int, err error) {
-  nRead := uint32(0)
-  numToRead := uint32(len(p))
-  numLeftInFile := f.inode.Length - f.globalPos
-  if (numLeftInFile == 0) { return 0,io.EOF }
-  // shorten read to "rest of file" if necessary
-  if (numLeftInFile < uint64(numToRead)) {
-    numToRead = uint32(numLeftInFile)
-  }
-  var innerN uint32
-
-  for ; (nRead < numToRead) ;{
-    // make sure buffer has bytes, read more if we need to
-    if (f.bufferPos == uint32(len(f.buffer))) {
-      err = f.refillReadBuffer()
-      if (err != nil) { return int(nRead),err }
+    if (err != nil) { 
+      return nRead,err 
     }
+    // read
+    blockPos := offset - block.StartPos
+    numToReadFromBlock := uint32(block.EndPos - blockPos)
+    if (numToReadFromBlock > length) { numToReadFromBlock = length }
+    conn,err := f.datas.Read(block)
+    if (err != nil) { return nRead,err }
+    defer conn.Close()
+    err = conn.Read(uint32(blockPos),numToReadFromBlock,p)
+    if (err != nil) { return nRead,err }
+    nRead += numToReadFromBlock
+  }
+  return nRead,nil
+}
 
-    // copy from buffer to dest, up to PAGESIZE bytes
-    innerN = uint32(numToRead - nRead)
-    if (innerN > PAGESIZE) { innerN = PAGESIZE }
-    for i := uint32(0) ; i < innerN ; i++ {
-      p[i] = f.buffer[i]
+func blockForPos(offset uint64, inode Inode) (blk Block, err error) {
+  if (offset >= inode.Length) { 
+    return Block{}, errors.New(fmt.Sprintf("offset %d greater than block length %d", offset, inode.Length))
+  }
+  for i := 0 ; i < len(inode.Blocks) ; i++ {
+    blk := inode.Blocks[i]
+    if (offset > blk.StartPos && offset < blk.EndPos) {
+      return blk,nil
     }
-    // end loop and repeat until done
-    nRead += innerN
-    f.globalPos += uint64(innerN)
-    f.blockPos += uint32(innerN)
-    f.bufferPos += innerN
   }
-  return int(nRead),nil
+  return Block{},errors.New(fmt.Sprintf("offset %d not found in any blocks for inode %d, bad file?", offset, inode.Inodeid))
+
 }
-
-func (f *Reader) refillReadBuffer() (err error) {
-  // if we're at the end of the file, error
-  if (f.globalPos == f.inode.Length) { return io.ErrUnexpectedEOF }
-  // check if we need to move to the next block
-  if (f.blockPos == BLOCKSIZE) {
-   err := f.switchBlock(f.currBlock.NumInFile + 1)
-   if (err != nil) { return err }
-  }
-
-  // read the buffer
-  err = currConn.Read(currBlock.Inodeid, 
-  if (err != nil) { return err }
-  return f.currSession.Read(f.buffer)
-}
-
-func (f *Reader) switchBlock(blockNum uint64) error {
-  err := f.currSession.Close()
-  if (err != nil) { return err }
-  f.currSession,err = f.datas.OpenBlock(f.inode.Blocks[blockNum])
-  return err // hopefully nil
-}
-
 
 //io.Closer
 func (f *Reader) Close() error {
@@ -102,9 +65,7 @@ func (f *Reader) Close() error {
 }
 
 type Writer struct {
-  path PathEntry
   inode Inode
-  buffer []byte 
   globalPos uint64 // pos in file
   blockPos int // pos within block
   bufferPos int // pos within buffer
