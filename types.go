@@ -21,6 +21,10 @@ type Inode struct {
   Children map[string] uint64 // empty unless we are a dir, maps name to inode id 
 }
 
+func (i Inode) IsDir() bool {
+  return i.Ftype == FTYPE_DIR
+}
+
 type Block struct {
   StartPos uint64
   EndPos uint64

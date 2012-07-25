@@ -8,6 +8,9 @@ import (
   "github.com/hanwen/go-fuse/fuse"
 )
 
+const (
+  PAGESIZE = uint32(4096)
+)
 type mfile struct {
   r *Reader
   w *Writer
@@ -92,14 +95,13 @@ func (m *MaggieFuse) Lookup(out *raw.EntryOut, h *raw.InHeader, name string) (co
   childId := parent.Children[name]
   // Lookup PathEntry by name
   child,err := m.names.GetInode(childId)
-  if err != nil {
-    return fuse.EROFS
-  }
-  fillEntryOut(out,&child)
+  if err != nil { return fuse.EIO }
+  //if (child == nil) { return fuse.ENOENT }
+  fillEntryOut(out,child)
 	return fuse.OK
 }
 
-func fillEntryOut(out *raw.EntryOut, i *Inode) {
+func fillEntryOut(out *raw.EntryOut, i Inode) {
     // fill out
   out.NodeId = i.Inodeid
   out.Generation = i.Generation
@@ -166,7 +168,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
     // if file length > 0, we must be either TRUNC or APPEND
   // open flags
   readable,writable := parseWRFlags(input.Flags)
-  appnd := (input.Flags & syscall.O_APPEND != 0)
+  //appnd := (input.Flags & syscall.O_APPEND != 0)
 
   // get inode
   inode,err := m.names.GetInode(header.NodeId)
@@ -177,17 +179,15 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 
   // allocate new filehandle
   fh := atomic.AddUint64(&m.fhCounter,uint64(1))
-  var r *Reader
-  var w *Writer
   if (readable) {
-    r,err = NewReader(inode,m.datas)
+    r,err := NewReader(inode,m.datas)
     if (err != nil) { return fuse.EROFS }
     m.openRFiles[fh] = r
   }
   if (writable) {
-    w,err = NewWriter(inode,m.datas)
+    w,err := NewWriter(inode,m.datas)
     if (err != nil) { return fuse.EROFS }
-    m.openWFiles[fh]
+    m.openWFiles[fh] = w
   }
 
   // output
@@ -214,6 +214,12 @@ func parseWRFlags(flags uint32) (bool, bool) {
 }
 
 func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.SetAttrIn) (code fuse.Status) {
+  wlock,err := m.names.WriteLock(header.NodeId)
+  defer wlock.Unlock()
+
+  if (err != nil) {
+    return fuse.EROFS
+  }
   if (input.Valid & (raw.FATTR_MODE | raw.FATTR_UID | raw.FATTR_GID | raw.FATTR_MTIME | raw.FATTR_MTIME_NOW) == 0) {
     // if none of the items we care about were modified, skip it
     return fuse.OK
@@ -248,18 +254,25 @@ func (m *MaggieFuse) Readlink(header *raw.InHeader) (out []byte, code fuse.Statu
 }
 
 func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.MknodIn, name string) (code fuse.Status) {
-  //set up inode
+  // write lock on parent
+  wlock,err := m.names.WriteLock(header.NodeId)
+  defer wlock.Unlock()
+  if err != nil {
+    return fuse.EROFS
+  }
+  //get parent
   parent,err := m.names.GetInode(header.NodeId)
-  //if err != nil {
-    //return fuse.EROFS
-  //}
+  _,alreadyHasChild := parent.Children[name]
+  if (alreadyHasChild) {
+    return fuse.EINVAL
+  }
   currTime := time.Now().Unix()
   i := Inode{
     0, // id 0 to start
     0, // gen 0
     FTYPE_REG,
     0,
-    0x777,
+    0x775,
     currTime,
     currTime,
     0,
@@ -269,22 +282,39 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     map[string] uint64 {},
     }
 
-  // save
+  // save new node
   id,err := m.names.AddInode(i)
   if err != nil {
     return fuse.EROFS
   }
   i.Inodeid = id
-  fillEntryOut(out,&i)
+
+  // link parent
+  parent.Children[name] = i.Inodeid
+  m.names.SaveInode(parent)
+
+  // output
+  fillEntryOut(out,i)
 	return fuse.OK
 
 }
 
 func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.MkdirIn, name string) (code fuse.Status) {
+  wlock, err := m.names.WriteLock(header.NodeId)
+  defer wlock.Unlock()
+  if (err != nil) {
+    return fuse.EROFS
+  }
   // lookup parent
   parent,err := m.names.GetInode(header.NodeId)
   if (err != nil) {
     return fuse.EROFS
+  }
+  if (! parent.IsDir()) { return fuse.Status(syscall.ENOTDIR) }
+  // check if we already have dir of this name
+  _,alreadyHasChild := parent.Children[name]
+  if (alreadyHasChild) {
+    return fuse.Status(syscall.EEXIST)
   }
 
   // make new child
@@ -310,29 +340,49 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     return fuse.EROFS
   }
   i.Inodeid = id
-  // save parent's link
+  // link parent
+  parent.Children[name] = i.Inodeid
+  m.names.SaveInode(parent)
+
 
   // send entry back to child
-  fillEntryOut(out,&i)
+  fillEntryOut(out,i)
   return fuse.OK
 
-  // set up inode
-
-  // save
-  // set up PathEntry type DIR pointing to inode
-  // save
 	return fuse.ENOSYS
 }
 
 func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status) {
-  // receive parent inode id and name
+  // writelock for parent
+  pwlock, err := m.names.WriteLock(header.NodeId)
+  defer pwlock.Unlock()
+  if (err != nil) {
+    return fuse.EROFS
+  }
   // pull parent
   parent,err := m.names.GetInode(header.NodeId)
   if (err != nil) { return fuse.EROFS }
+  // check if name doesn't exist
+  _,hasChild := parent.Children[name]
+  if (!hasChild) {
+    return fuse.EINVAL
+  }
+  // writelock for child
+  cwlock, err := m.names.WriteLock(parent.Children[name])
+  defer cwlock.Unlock()
+  if (err != nil) {
+    return fuse.EROFS
+  }
   // look up node for name
+  child,err := m.names.GetInode(parent.Children[name])
+  if (err != nil) { return fuse.EROFS }
 
-  // resolve full path
+  // if child has children, err
+  //if (child.
+  if (len(child.Children) > 0) { return fuse.Status(syscall.EISDIR) }
+
   // remove from children list
+
   // remove from PathEntry
   // decrement refcount
   // if = 0 mark 'D'
