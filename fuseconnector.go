@@ -377,13 +377,18 @@ func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status
   child,err := m.names.GetInode(parent.Children[name])
   if (err != nil) { return fuse.EROFS }
 
-  // if child has children, err
+  // if child is dir, err
   //if (child.
-  if (len(child.Children) > 0) { return fuse.Status(syscall.EISDIR) }
+  if (child.IsDir()) { return fuse.Status(syscall.EISDIR) }
 
   // remove from children list
+  delete(parent.Children[child.InodeId])
+  // decrement refcount
+  child.Nlink = child.Nlink - 1
 
-  // remove from PathEntry
+  if (child.Nlink == uint32(0)) {
+  }
+
   // decrement refcount
   // if = 0 mark 'D'
   // remove node
