@@ -235,7 +235,7 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
 
 func (m *MaggieFuse) Readlink(header *raw.InHeader) (out []byte, code fuse.Status) {
   // read string destination path for a symlink
-	return nil, fuse.ENOSYS
+	return nil, fuse.EROFS
 }
 
 func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.MknodIn, name string) (code fuse.Status) {
@@ -367,12 +367,13 @@ func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status
   if (child.IsDir()) { return fuse.Status(syscall.EISDIR) }
 
   // remove from children list
-  delete(parent.Children[child.InodeId])
+  delete(parent.Children,name)
   // decrement refcount
   child.Nlink = child.Nlink - 1
 
   if (child.Nlink == uint32(0)) {
     // garbage collect
+    m.names.MarkGC(child)
   }
 
   // save node without link 
