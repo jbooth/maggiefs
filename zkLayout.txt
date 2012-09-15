@@ -1,0 +1,51 @@
+
+
+/datanodes
+  /hostsOnline
+    /hostname
+  /hostname/data
+    /list of blockid:inode id pairs
+
+/inodes
+  /x1024
+    /inodeid
+      /writelock
+      /data -- inode stat, children (map[string] inodeid), parents (list inodeid), list of blocks
+      /x1024
+        /blockId -- blockLocations
+
+/leader
+  /election
+  /inodeCounter
+  /gc
+    /incrementalQueue
+      /inodeid
+       
+    /state
+      /nextRegionToScan
+      /
+
+
+
+
+from read perspective:
+  look up inode, get data, scan blocks
+
+from write perspective: 
+  look up inode, acquire writelock, modify data or blocks
+
+from link/mkdir perspective:
+  lock parent, child, add link child entry on parent, linkedBy entry on child
+
+from unlink perspective:
+  lock parent, child, remove link from parent, child, if no parents, feed to incremental gc
+
+
+from incremental gc perspective:
+  pull from incremental queue, dealloc blocks
+  
+
+from full gc perspective:
+  scan all inodes, delete if unreachable from root, check all blocks for proper replication/rebalancing
+  
+

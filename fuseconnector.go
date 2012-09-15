@@ -11,23 +11,6 @@ import (
 const (
   PAGESIZE = uint32(4096)
 )
-type mfile struct {
-  r *Reader
-  w *Writer
-  writeable bool
-  readable bool
-  fh uint64
-  appnd bool // whether we're in append mode
-}
-
-func (m mfile) Close() (err error) {
-  var ret error = nil
-  err = m.r.Close()
-  if (err != nil) { ret = err }
-  err = m.w.Close()
-  if (err != nil) { ret = err }
-  return ret
-}
 
 type MaggieFuse struct {
   names NameService
@@ -36,6 +19,8 @@ type MaggieFuse struct {
   openWFiles map[uint64] *Writer
   fhCounter uint64
 }
+
+// hint to namenode for incremental GC
 
 // FUSE implementation
 func (m *MaggieFuse) Init(init *fuse.RawFsInit) {
@@ -387,11 +372,11 @@ func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status
   child.Nlink = child.Nlink - 1
 
   if (child.Nlink == uint32(0)) {
+    // garbage collect
   }
 
-  // decrement refcount
-  // if = 0 mark 'D'
-  // remove node
+  // save node without link 
+  
 	return fuse.ENOSYS
 }
 

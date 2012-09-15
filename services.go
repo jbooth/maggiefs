@@ -15,10 +15,8 @@ type NameService interface {
   SaveInode(node Inode) (err error)
   // acquires write lock
   WriteLock(nodeid uint64) (lock WriteLock, err error)
-  // links an entry
-  Link(parent uint64, child uint64, name string)
-  // unlinks an entry
-  Unlink(parent uint64, name string)
+  // queues deletion for an entry
+  QueueDelete(node Inode) (err error)
 }
 
 type WriteLock interface {
@@ -29,6 +27,8 @@ type DataService interface {
   Read(blk Block) (conn BlockReader, err error)
 
   Write(blk Block) (conn BlockWriter, err error)
+
+  Delete(blk Block) (err error)
 }
 
 // represents a session of interacting with a block of a file
