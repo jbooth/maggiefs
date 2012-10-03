@@ -11,14 +11,12 @@ type NameService interface {
   StatFs() (statfs syscall.Statfs_t, err error)
   // persists a new inode to backing store
   AddInode(node Inode) (id uint64, err error)
-  // updates existing inode
-  SaveInode(node Inode) (err error)
   // acquires write lock
   WriteLock(nodeid uint64) (lock WriteLock, err error)
   // queues deletion for an entry, optimization instead of waiting for GC
-  MarkGC(node Inode) (err error)
+  MarkGC(nodeid uint64) (err error)
   // atomically mutates an inode, optimization over WriteLock for small operations
-  Mutate(nodeid uint64, mutator func(prev Inode) (post Inode)) (err error)
+  Mutate(nodeid uint64, mutator func(inode *Inode) ()) (err error)
 }
 
 type WriteLock interface {

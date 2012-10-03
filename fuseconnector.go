@@ -195,37 +195,25 @@ func parseWRFlags(flags uint32) (bool, bool) {
 }
 
 func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.SetAttrIn) (code fuse.Status) {
-  wlock,err := m.names.WriteLock(header.NodeId)
-  defer wlock.Unlock()
-
-  if (err != nil) {
-    return fuse.EROFS
-  }
   if (input.Valid & (raw.FATTR_MODE | raw.FATTR_UID | raw.FATTR_GID | raw.FATTR_MTIME | raw.FATTR_MTIME_NOW) == 0) {
     // if none of the items we care about were modified, skip it
     return fuse.OK
   }
-  inode,err := m.names.GetInode(header.NodeId)
-  if err != nil {
-    return fuse.EROFS
-  }
-  // input.Valid is a bitmask for which fields are modified, so we check for each
-  if (input.Valid & raw.FATTR_MODE != 0) {
-    inode.Mode = input.Mode
-  }
-  if (input.Valid & raw.FATTR_UID != 0) {
-    inode.Uid = input.Uid
-  }
-  if (input.Valid & raw.FATTR_GID != 0) {
-    inode.Gid = input.Gid
-  }
-  // mark mtime updated
-  inode.Mtime = time.Now().Unix()
-  inode.Ctime = inode.Mtime
-  err = m.names.SaveInode(inode)
-  if (err != nil) {
-    return fuse.EROFS
-  } 
+  m.names.Mutate(header.NodeId, func (inode *Inode) {
+    // input.Valid is a bitmask for which fields are modified, so we check for each
+    if (input.Valid & raw.FATTR_MODE != 0) {
+      inode.Mode = input.Mode
+    }
+    if (input.Valid & raw.FATTR_UID != 0) {
+      inode.Uid = input.Uid
+    }
+    if (input.Valid & raw.FATTR_GID != 0) {
+      inode.Gid = input.Gid
+    }
+    // mark mtime updated
+    inode.Mtime = time.Now().Unix()
+    inode.Ctime = inode.Mtime
+  })
   return fuse.OK
 }
 
@@ -235,7 +223,7 @@ func (m *MaggieFuse) Readlink(header *raw.InHeader) (out []byte, code fuse.Statu
 }
 
 func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.MknodIn, name string) (code fuse.Status) {
-  // write lock on parent
+  // write lock on parent so 2 processes can't add the same child simultaneously
   wlock,err := m.names.WriteLock(header.NodeId)
   defer wlock.Unlock()
   if err != nil {
@@ -271,11 +259,11 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
   i.Inodeid = id
 
   // link parent
-  parent.Children[name] = i.Inodeid
-  m.names.SaveInode(parent)
-
+  m.names.Mutate(parent.Inodeid, func (inode *Inode) {
+    inode.Children[name] = i.Inodeid
+  })
   // output
-  fillEntryOut(out,i)
+  fillEntryOut(out,&i)
 	return fuse.OK
 
 }
@@ -322,12 +310,11 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
   }
   i.Inodeid = id
   // link parent
-  parent.Children[name] = i.Inodeid
-  m.names.SaveInode(parent)
-
-
+  m.names.Mutate(parent.Inodeid, func (inode *Inode) {
+    inode.Children[name] = i.Inodeid
+  })
   // send entry back to child
-  fillEntryOut(out,i)
+  fillEntryOut(out,&i)
   return fuse.OK
 
 	return fuse.ENOSYS
@@ -369,7 +356,7 @@ func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status
 
   if (child.Nlink == uint32(0)) {
     // garbage collect
-    m.names.MarkGC(child)
+    m.names.MarkGC(child.Inodeid)
   }
 
   // save node without link 
