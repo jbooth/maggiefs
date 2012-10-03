@@ -8,10 +8,6 @@ import (
   "github.com/hanwen/go-fuse/fuse"
 )
 
-const (
-  PAGESIZE = uint32(4096)
-)
-
 type MaggieFuse struct {
   names NameService
   datas DataService
@@ -86,7 +82,7 @@ func (m *MaggieFuse) Lookup(out *raw.EntryOut, h *raw.InHeader, name string) (co
 	return fuse.OK
 }
 
-func fillEntryOut(out *raw.EntryOut, i Inode) {
+func fillEntryOut(out *raw.EntryOut, i *Inode) {
     // fill out
   out.NodeId = i.Inodeid
   out.Generation = i.Generation
@@ -165,12 +161,12 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
   // allocate new filehandle
   fh := atomic.AddUint64(&m.fhCounter,uint64(1))
   if (readable) {
-    r,err := NewReader(inode,m.datas)
+    r,err := NewReader(inode.Inodeid,m.names,m.datas)
     if (err != nil) { return fuse.EROFS }
     m.openRFiles[fh] = r
   }
   if (writable) {
-    w,err := NewWriter(inode,m.datas)
+    w,err := NewWriter(inode.Inodeid,m.names,m.datas)
     if (err != nil) { return fuse.EROFS }
     m.openWFiles[fh] = w
   }

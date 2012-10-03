@@ -6,8 +6,8 @@ import (
 
 type NameService interface {
   Format() (err error)
-  GetChild(parentid uint64, name string) (i Inode, err error)
-  GetInode(nodeid uint64) (i Inode, err error)
+  GetChild(parentid uint64, name string) (i *Inode, err error)
+  GetInode(nodeid uint64) (i *Inode, err error)
   StatFs() (statfs syscall.Statfs_t, err error)
   // persists a new inode to backing store
   AddInode(node Inode) (id uint64, err error)
@@ -34,20 +34,31 @@ type DataService interface {
 }
 
 // represents a session of interacting with a block of a file
-// each 16MB block consists of 4096 pages of 4096 bytes apiece
 // sessions are navigated by seeking to a page number and then 
 // reading or writing full pages of 4096 bytes
 type BlockReader interface {
 
-  // reads  some bytes
-  Read(start uint32, length uint32, p []byte) (err error)
+  // reads a page
+  ReadPage(p []byte) (err error)
 
+  // seeks to a page
+  SeekPage(pageNum int)
+
+  // lists the current page number (page num * 4096 is position within block)
+  CurrPageNum() int
 
   // closes or returns to pool
   Close() (err error)
 }
 
 type BlockWriter interface {
-  Append(p []byte) (err error)
+  // writes a whole page
+  // can expand block by one page or overwrite existing page
+  WritePage(p []byte, pageNum int)
+  // writes a subpage
+  Write(p []byte, pageNum int, off int, len int)
+  // flushes changes to system
+  Sync() (err error)
+  // flushes and closes this writer
   Close() (err error)
 }

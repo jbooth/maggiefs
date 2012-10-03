@@ -4,6 +4,7 @@ const (
   FTYPE_DIR = int(0)
   FTYPE_REG = int(1)
   FTYPE_LNK = int(2)
+  PAGESIZE = uint32(4096)
 )
 
 type Inode struct {
@@ -26,6 +27,9 @@ func (i Inode) IsDir() bool {
 }
 
 type Block struct {
+  Id uint64 // globally unique block id
+  Mtime uint64 // last modified
+  Inodeid uint64
   StartPos uint64
   EndPos uint64
   Locations []string

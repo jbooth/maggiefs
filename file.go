@@ -5,49 +5,83 @@ import (
   "errors"
 )
 
-
-func NewReader(inode Inode, datas DataService) (r *Reader, err error) {
+func NewReader(inodeid uint64, names NameService, datas DataService) (r *Reader, err error) {
   return nil,nil
 }
 
-func NewWriter(inode Inode, datas DataService) (w *Writer, err error) {
+func NewWriter(inodeid uint64, names NameService, datas DataService) (w *Writer, err error) {
   return nil,nil
 }
 // represents an open file
 // maintains a one page buffer for reading
 // for writable or RW files, see OpenWriteFile
 type Reader struct {
-  inode Inode
+  inodeid uint64
+  names NameService
   datas DataService
+  currBlock Block
+  currReader BlockReader
+  pageBuff []byte
 }
 
-func (f *Reader) ReadAt(p []byte, offset uint64, length uint32) (n uint32, err error) {
+// reads UP TO length bytes from this inode
+// may return early without error, so ensure you loop and call again
+func (r *Reader) ReadAt(p []byte, offset uint64, length uint32) (n uint32, err error) {
+  // have to re-get inode every time because it might have changed
+  inode,err := r.names.GetInode(r.inodeid)
+  if (err != nil) { return 0,err }
+  // confirm currBlock and currReader correct
   nRead := uint32(0)
-  // loop until done
-  for ; nRead < length ; {
-    // get conn to block
-    block,err := blockForPos(offset + uint64(nRead), f.inode)
+  blockNeeded,err := blockForPos(offset + uint64(nRead), inode)
+  if (err != nil) { return 0,err }
+  if (blockNeeded.Id == r.currBlock.Id && blockNeeded.Mtime == r.currBlock.Mtime) {
+    // currBlock is good, stick with currReader
+  } else {
+    // close old one (presumably returns to pool)
+    err = r.currReader.Close()
+    // initialize new blockReader
+    if (err != nil) { return 0,err }
+    r.currBlock = blockNeeded
+    r.currReader,err = r.datas.Read(r.currBlock)
+    if (err != nil) { return 0,err }
+  }
+  // if we're being asked to read past end of block, we just return early
+  numBytesFromBlock := r.currBlock.EndPos - offset
+  if (uint32(numBytesFromBlock) > length) { length = uint32(numBytesFromBlock) }
 
-    if (err != nil) { 
-      return nRead,err 
+  // read first page if fragment
+  firstPageOff := offset & (uint64(4095)) // fast modulo 4096
+  if (firstPageOff != 0) {
+    desiredPage := int(offset / uint64(4096))
+    if (r.currReader.CurrPageNum() != desiredPage) {
+      r.currReader.SeekPage(desiredPage)
     }
-    // read
-    blockPos := offset - block.StartPos
-    numToReadFromBlock := uint32(block.EndPos - blockPos)
-    if (numToReadFromBlock > length) { numToReadFromBlock = length }
-    conn,err := f.datas.Read(block)
+    err = r.currReader.ReadPage(r.pageBuff)
+    if (err != nil) { return 0,err }
+    firstPageLength := int(4096) - int(firstPageOff)
+    copy(p[0:firstPageLength],r.pageBuff[firstPageOff:int(firstPageOff)+firstPageLength])
+    nRead += uint32(firstPageLength)
+  }
+
+  // read whole pages into output buffer
+  numWholePagesToRead := (length - nRead) / uint32(4096)
+  for ; numWholePagesToRead > 0 ; numWholePagesToRead-- {
+    err = r.currReader.ReadPage(p[nRead:nRead+PAGESIZE])
     if (err != nil) { return nRead,err }
-    defer conn.Close()
-    err = conn.Read(uint32(blockPos),numToReadFromBlock,p)
-    if (err != nil) { return nRead,err }
-    nRead += numToReadFromBlock
+    nRead += PAGESIZE
+  }
+
+  // read last page if fragment
+  if (nRead < length) {
+    r.currReader.ReadPage(r.pageBuff)
+    copy(p[nRead:length],r.pageBuff[0:length-nRead])
   }
   return nRead,nil
 }
 
-func blockForPos(offset uint64, inode Inode) (blk Block, err error) {
+func blockForPos(offset uint64, inode *Inode) (blk Block, err error) {
   if (offset >= inode.Length) { 
-    return Block{}, errors.New(fmt.Sprintf("offset %d greater than block length %d", offset, inode.Length))
+    panic(fmt.Sprintf("offset %d greater than block length %d", offset, inode.Length))
   }
   for i := 0 ; i < len(inode.Blocks) ; i++ {
     blk := inode.Blocks[i]
