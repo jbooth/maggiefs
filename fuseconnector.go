@@ -199,7 +199,7 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
     // if none of the items we care about were modified, skip it
     return fuse.OK
   }
-  m.names.Mutate(header.NodeId, func (inode *Inode) {
+  _,err := m.names.Mutate(header.NodeId, func (inode *Inode) error {
     // input.Valid is a bitmask for which fields are modified, so we check for each
     if (input.Valid & raw.FATTR_MODE != 0) {
       inode.Mode = input.Mode
@@ -213,7 +213,10 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
     // mark mtime updated
     inode.Mtime = time.Now().Unix()
     inode.Ctime = inode.Mtime
+    return nil
   })
+  if (err != nil) { return fuse.EROFS }
+
   return fuse.OK
 }
 
@@ -259,9 +262,13 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
   i.Inodeid = id
 
   // link parent
-  m.names.Mutate(parent.Inodeid, func (inode *Inode) {
+  _,err = m.names.Mutate(parent.Inodeid, func (inode *Inode) error {
     inode.Children[name] = i.Inodeid
+    return nil
   })
+  if (err != nil) {
+    return fuse.EROFS
+  }
   // output
   fillEntryOut(out,&i)
 	return fuse.OK
@@ -310,23 +317,19 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
   }
   i.Inodeid = id
   // link parent
-  m.names.Mutate(parent.Inodeid, func (inode *Inode) {
+  _,err = m.names.Mutate(parent.Inodeid, func (inode *Inode) error {
     inode.Children[name] = i.Inodeid
+    return nil
   })
+  if (err != nil) { 
+    return fuse.EROFS
+  }
   // send entry back to child
   fillEntryOut(out,&i)
   return fuse.OK
-
-	return fuse.ENOSYS
 }
 
 func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status) {
-  // writelock for parent
-  pwlock, err := m.names.WriteLock(header.NodeId)
-  defer pwlock.Unlock()
-  if (err != nil) {
-    return fuse.EROFS
-  }
   // pull parent
   parent,err := m.names.GetInode(header.NodeId)
   if (err != nil) { return fuse.EROFS }
@@ -335,40 +338,58 @@ func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status
   if (!hasChild) {
     return fuse.EINVAL
   }
-  // writelock for child
-  cwlock, err := m.names.WriteLock(parent.Children[name])
-  defer cwlock.Unlock()
-  if (err != nil) {
-    return fuse.EROFS
-  }
   // look up node for name
   child,err := m.names.GetInode(parent.Children[name])
   if (err != nil) { return fuse.EROFS }
 
   // if child is dir, err
-  //if (child.
   if (child.IsDir()) { return fuse.Status(syscall.EISDIR) }
 
-  // remove from children list
-  delete(parent.Children,name)
+  // save parent without link 
+  _,err = m.names.Mutate(parent.Inodeid,func (node *Inode) error {
+    delete(node.Children,name)
+    return nil
+  })
+  if (err != nil) { return fuse.EROFS }
   // decrement refcount
-  child.Nlink = child.Nlink - 1
-
-  if (child.Nlink == uint32(0)) {
-    // garbage collect
-    m.names.MarkGC(child.Inodeid)
-  }
-
-  // save node without link 
-  
-	return fuse.ENOSYS
+  _,err = m.names.Mutate(child.Inodeid,func (node *Inode) error {
+    node.Nlink--
+    return nil
+  })
+  if (err != nil) { return fuse.EROFS }
+	return fuse.OK
 }
 
 func (m *MaggieFuse) Rmdir(header *raw.InHeader, name string) (code fuse.Status) {
-  // delete path entry pointing to inode, then inode
+  // pull parent
+  parent,err := m.names.GetInode(header.NodeId)
+  if (err != nil) { return fuse.EROFS }
+  // check if name doesn't exist
+  _,hasChild := parent.Children[name]
+  if (!hasChild) {
+    return fuse.EINVAL
+  }
+  // look up node for name
+  child,err := m.names.GetInode(parent.Children[name])
+  if (err != nil) { return fuse.EROFS }
 
-  // check if dir has children first ?
-	return fuse.ENOSYS
+  // if child is not dir, err
+  if (! child.IsDir()) { return fuse.Status(syscall.ENOTDIR) }
+  if (len(parent.Children) != 0) { return fuse.Status(syscall.ENOTEMPTY) }
+
+  // save parent without link 
+  _,err = m.names.Mutate(parent.Inodeid,func (node *Inode) error {
+    delete(node.Children,name)
+    return nil
+  })
+  if (err != nil) { return fuse.EROFS }
+  // decrement refcount
+  _,err = m.names.Mutate(child.Inodeid,func (node *Inode) error {
+    node.Nlink--
+    return nil
+  })
+  if (err != nil) { return fuse.EROFS }
+	return fuse.OK
 }
 
 func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo string, linkName string) (code fuse.Status) {
@@ -377,13 +398,52 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
 }
 
 func (m *MaggieFuse) Rename(header *raw.InHeader, input *raw.RenameIn, oldName string, newName string) (code fuse.Status) {
-  // alter pathentry object, atomic operation
-	return fuse.ENOSYS
+  // gonna do an unlink and a link here while skipping the refcount steps in between
+  // pull old parent
+  oldParent,err := m.names.GetInode(header.NodeId)
+  if (err != nil) { return fuse.EROFS }
+  // check if name doesn't exist
+  _,hasChild := oldParent.Children[oldName]
+  if (!hasChild) {
+    return fuse.EINVAL
+  }
+  // look up nodeid for name
+  childNodeId := oldParent.Children[oldName]
+  // save parent without link 
+  _,err = m.names.Mutate(oldParent.Inodeid,func (node *Inode) error {
+    delete(node.Children,oldName)
+    return nil
+  })
+  if (err != nil) { return fuse.EROFS } 
+
+  // save new parent with link
+  _,err = m.names.Mutate(input.Newdir, func(node *Inode) error {
+    node.Children[newName] = childNodeId
+    return nil
+  })
+  if (err != nil) { return fuse.EROFS }
+  // ref counts should all stay the same
+
+	return fuse.OK
 }
 
 func (m *MaggieFuse) Link(out *raw.EntryOut, header *raw.InHeader, input *raw.LinkIn, name string) (code fuse.Status) {
-  // new pathentry object pointing to node, update refcount on node
-	return fuse.ENOSYS
+  // new parent is header.NodeId
+  // existing node is input.Oldnodeid
+  
+  // add link to new parent
+  m.names.Mutate(header.NodeId, func(node *Inode) error {
+    node.Children[name] = input.Oldnodeid
+    return nil
+  })
+
+  // increment refcount on child
+  m.names.Mutate(input.Oldnodeid, func(node *Inode) error {
+    node.Nlink++
+    return nil
+  })
+
+	return fuse.OK
 }
 
 func (m *MaggieFuse) GetXAttrSize(header *raw.InHeader, attr string) (size int, code fuse.Status) {

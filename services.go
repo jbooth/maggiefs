@@ -16,7 +16,7 @@ type NameService interface {
   // queues deletion for an entry, optimization instead of waiting for GC
   MarkGC(nodeid uint64) (err error)
   // atomically mutates an inode, optimization over WriteLock for small operations
-  Mutate(nodeid uint64, mutator func(inode *Inode) ()) (err error)
+  Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error)
 }
 
 type WriteLock interface {
