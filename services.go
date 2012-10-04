@@ -17,10 +17,19 @@ type NameService interface {
   MarkGC(nodeid uint64) (err error)
   // atomically mutates an inode, optimization over WriteLock for small operations
   Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error)
+  // add a block to the end of a file, returns new block as convenience
+  AddBlock(nodeid uint64) (blk Block, err error)
+  // takes out a lease for an inode, this is to keep the posix convention that unlinked files
+  // aren't cleaned up until they've been closed by all programs
+  Lease(nodeid uint64) (ls Lease, err error)
 }
 
 type WriteLock interface {
   Unlock()
+}
+
+type Lease interface {
+  Release()
 }
 
 type DataService interface {

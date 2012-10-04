@@ -222,7 +222,9 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
 
 func (m *MaggieFuse) Readlink(header *raw.InHeader) (out []byte, code fuse.Status) {
   // read string destination path for a symlink
-	return nil, fuse.EROFS
+  symlink,err := m.names.GetInode(header.NodeId)
+  if (err != nil) { return nil,fuse.EROFS }
+	return []byte(symlink.Symlinkdest), fuse.OK
 }
 
 func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.MknodIn, name string) (code fuse.Status) {
@@ -250,6 +252,7 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     0,
     header.Uid,
     header.Gid,
+    "",
     make([]Block,0,100),
     map[string] uint64 {},
     }
@@ -306,7 +309,8 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     0,
     header.Uid,
     header.Gid,
-    make([]Block,0,100),
+    "",
+    make([]Block,0,0),
     map[string] uint64{},
     }
 
@@ -393,8 +397,40 @@ func (m *MaggieFuse) Rmdir(header *raw.InHeader, name string) (code fuse.Status)
 }
 
 func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo string, linkName string) (code fuse.Status) {
-  // new path entry
-	return fuse.ENOSYS
+  // new inode type symlink
+  currTime := time.Now().Unix()
+  i := Inode{
+    0, // id 0 to start, we get id when inserting
+    0,
+    FTYPE_LNK,
+    0,
+    0x777,
+    currTime,
+    currTime,
+    0,
+    header.Uid,
+    header.Gid,
+    pointedTo,
+    make([]Block,0,0),
+    map[string] uint64{},
+  }
+  // save
+  id,err := m.names.AddInode(i)
+  if err != nil {
+    return fuse.EROFS
+  }
+  i.Inodeid = id
+  // link parent
+  _,err = m.names.Mutate(header.NodeId, func (inode *Inode) error {
+    inode.Children[linkName] = i.Inodeid
+    return nil
+  })
+  if (err != nil) { 
+    return fuse.EROFS
+  }
+  // send entry back to child
+  fillEntryOut(out,&i)
+  return fuse.OK
 }
 
 func (m *MaggieFuse) Rename(header *raw.InHeader, input *raw.RenameIn, oldName string, newName string) (code fuse.Status) {
@@ -493,7 +529,7 @@ func (m *MaggieFuse) Read(header *raw.InHeader, input *raw.ReadIn, buf []byte) (
 
 
 func (m *MaggieFuse) Release(header *raw.InHeader, input *raw.ReleaseIn) {
-  // release, wtf?
+  // think this is close?
 }
 
 func (m *MaggieFuse) Write(header *raw.InHeader, input *raw.WriteIn, data []byte) (written uint32, code fuse.Status) {
@@ -518,6 +554,7 @@ func (m *MaggieFuse) ReadDir(l *fuse.DirEntryList, header *raw.InHeader, input *
 
 func (m *MaggieFuse) ReleaseDir(header *raw.InHeader, input *raw.ReleaseIn) {
   // drop from map fd->dirobject??
+  // think this is noop for us
 }
 
 func (m *MaggieFuse) FsyncDir(header *raw.InHeader, input *raw.FsyncIn) (code fuse.Status) {

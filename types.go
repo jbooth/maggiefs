@@ -18,7 +18,8 @@ type Inode struct {
   Nlink uint32 // number of paths linked to this inode
   Uid uint32
   Gid uint32
-  Blocks []Block // can be 0 blocks in case of directory or empty file
+  Symlinkdest string // only populated for symlinks, "" otherwise
+  Blocks []Block // can be 0 blocks in case of directory,symlink or empty file
   Children map[string] uint64 // empty unless we are a dir, maps name to inode id 
 }
 
