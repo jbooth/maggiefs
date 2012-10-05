@@ -26,6 +26,15 @@ type OpenFile struct {
   writelock WriteLock
 }
 
+func (f OpenFile) Close() error {
+  var err error = nil
+  if (f.r != nil) { err = f.r.Close() }
+  if (f.w != nil) { err = f.w.Close() }
+  err = f.lease.Release()
+  if (f.writelock != nil) { err = f.writelock.Unlock() }
+  return err
+}
+
 // ghetto concurrent hashmap
 type openFileMap struct {
   numBuckets int
@@ -597,28 +606,49 @@ func (m *MaggieFuse) OpenDir(out *raw.OpenOut, header *raw.InHeader, input *raw.
 }
 
 func (m *MaggieFuse) Read(header *raw.InHeader, input *raw.ReadIn, buf []byte) (fuse.ReadResult, fuse.Status) {
+  reader := m.openFiles.get(input.Fh).r
+  nRead := uint32(0)
+  for ; nRead < input.Size ; {
+    n,err := reader.ReadAt(buf, input.Offset + uint64(nRead), input.Size - nRead)
+    nRead += n
+    if (err != nil) { return &fuse.ReadResultData{buf}, fuse.EROFS }
+  }
   // read from map fd -> file
-	return &fuse.ReadResultData{}, fuse.ENOSYS
+	return &fuse.ReadResultData{buf}, fuse.OK
 }
 
 
 func (m *MaggieFuse) Release(header *raw.InHeader, input *raw.ReleaseIn) {
-  // think this is close?
+  f := m.openFiles.get(input.Fh)
+  err := f.Close()
+  if (err != nil) {
+    m.log.Print("error closing file")
+  }
 }
 
 func (m *MaggieFuse) Write(header *raw.InHeader, input *raw.WriteIn, data []byte) (written uint32, code fuse.Status) {
-  // write using map fd->file
-	return 0, fuse.ENOSYS
+  writer := m.openFiles.get(input.Fh).w
+  written = uint32(0)
+  for ; written < input.Size ; {
+    n,err := writer.WriteAt(data, input.Offset + uint64(written), input.Size - written)
+    written += n
+    if (err != nil) { return written, fuse.EROFS }
+  }
+	return written,fuse.OK
 }
 
 func (m *MaggieFuse) Flush(header *raw.InHeader, input *raw.FlushIn) fuse.Status {
-  // delegate to fsync
+  writer := m.openFiles.get(input.Fh).w
+  err := writer.Fsync()
+  if (err != nil) { return fuse.EROFS }
 	return fuse.OK
 }
 
 func (m *MaggieFuse) Fsync(header *raw.InHeader, input *raw.FsyncIn) (code fuse.Status) {
-  // sync using map fd->file
-	return fuse.ENOSYS
+  writer := m.openFiles.get(input.Fh).w
+  err := writer.Fsync()
+  if (err != nil) { return fuse.EROFS }
+	return fuse.OK
 }
 
 func (m *MaggieFuse) ReadDir(l *fuse.DirEntryList, header *raw.InHeader, input *raw.ReadIn) fuse.Status {

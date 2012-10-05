@@ -25,11 +25,11 @@ type NameService interface {
 }
 
 type WriteLock interface {
-  Unlock()
+  Unlock() error
 }
 
 type Lease interface {
-  Release()
+  Release() error
 }
 
 type DataService interface {

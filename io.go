@@ -108,8 +108,13 @@ type Writer struct {
 }
 
 //io.Writer
-func (w *Writer) WriteAt(p []byte, off uint64, length uint64) (n int, err error) {
+func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (n uint32, err error) {
   // if offset is not within current block, need to switch blocks
+  if (off < w.currBlock.StartPos || off >= w.currBlock.EndPos) {
+    // if current block is last block and it's at max length
+    if (w.currBlock.EndPos == w.inode.Length && w.currBlock.EndPos - w.currBlock.StartPos == BLOCKLENGTH) { 
+    }
+  }
     // if longer
       // if this is the last block of the file, allocate new block
     // else, open existing other block
@@ -128,7 +133,7 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint64) (n int, err error)
     w.currWriter,err = w.datas.Write(w.currBlock)
     if (err != nil) { return 0,err }
   }
-  return int(0),nil
+  return uint32(0),nil
 }
 
 func (w *Writer) Fsync() (err error) {
