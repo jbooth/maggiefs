@@ -1,6 +1,7 @@
 package maggiefs
 
 import (
+  "io"
   "fmt"
   "errors"
 )
@@ -30,6 +31,8 @@ func (r *Reader) ReadAt(p []byte, offset uint64, length uint32) (n uint32, err e
   // have to re-get inode every time because it might have changed
   inode,err := r.names.GetInode(r.inodeid)
   if (err != nil) { return 0,err }
+  if (offset == inode.Length) { return 0,io.EOF }
+  if (offset > inode.Length) { return 0,errors.New("Read past end of file") }
   // confirm currBlock and currReader correct
   nRead := uint32(0)
   blockNeeded,err := blockForPos(offset + uint64(nRead), inode)
@@ -80,9 +83,6 @@ func (r *Reader) ReadAt(p []byte, offset uint64, length uint32) (n uint32, err e
 }
 
 func blockForPos(offset uint64, inode *Inode) (blk Block, err error) {
-  if (offset >= inode.Length) { 
-    panic(fmt.Sprintf("offset %d greater than block length %d", offset, inode.Length))
-  }
   for i := 0 ; i < len(inode.Blocks) ; i++ {
     blk := inode.Blocks[i]
     if (offset > blk.StartPos && offset < blk.EndPos) {
@@ -108,32 +108,65 @@ type Writer struct {
 }
 
 //io.Writer
-func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (n uint32, err error) {
-  // if offset is not within current block, need to switch blocks
-  if (off < w.currBlock.StartPos || off >= w.currBlock.EndPos) {
-    // if current block is last block and it's at max length
-    if (w.currBlock.EndPos == w.inode.Length && w.currBlock.EndPos - w.currBlock.StartPos == BLOCKLENGTH) { 
+func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, err error) {
+  // if offset is greater than length, we can't write (must append or whatever)
+  if (off > w.inode.Length) { return 0,errors.New("offset > length of file") }
+  if (off == w.inode.Length) {
+    currLen := w.currBlock.EndPos - w.currBlock.StartPos
+    // we need to either extend current block or add a new one
+    if (currLen == BLOCKLENGTH) {
+      // add a new block
+      w.currBlock,err = w.names.AddBlock(w.inode.Inodeid)
+      if (err != nil) { return 0, err }
+      w.inode.Blocks = append(w.inode.Blocks,w.currBlock)
+      w.currWriter,err = w.datas.Write(w.currBlock)
+      if (err != nil) { return 0,err }
+      currLen = 0
+    } 
+    // extend currBlock to min(currLen + len, BLOCKLENGTH)
+    maxAddedByte := BLOCKLENGTH - (currLen)
+    if (uint64(length) > maxAddedByte) { length = uint32(maxAddedByte) }
+    w.currBlock.EndPos += uint64(length)
+    w.inode.Length += uint64(length)
+  } else {
+    // find existing block we are overwriting
+    newBlk,err := blockForPos(off, w.inode)
+    if (newBlk.Id != w.currBlock.Id) {
+      // switch blocks
+      w.currBlock = newBlk
+      w.currWriter,err = w.datas.Write(w.currBlock)
+      if (err != nil) { return 0,err }
     }
   }
-    // if longer
-      // if this is the last block of the file, allocate new block
-    // else, open existing other block
-
-  // otherwise, if we're adding to current block, proceed, otherwise, open 
-  // diff block that we're editing
-  blockNeeded,err := blockForPos(off,w.inode)
-  if (blockNeeded.Id == w.currBlock.Id && blockNeeded.Mtime == w.currBlock.Mtime) {
-    // currBlock is good, stick with currWriter
-  } else {
-    // close old one (presumably returns to pool)
-    err = w.currWriter.Close()
-    // initialize new blockReader
+  // now write pages
+  written = uint32(0)
+  // write first page if fragment
+  pageNum := int(off / uint64(4096))
+  firstPageOff := off & (uint64(4095)) // fast modulo 4096
+  if (firstPageOff != 0) {
+    firstPageLength := int(4096) - int(firstPageOff)
+    err = w.currWriter.Write(p, pageNum, 0, firstPageLength)
     if (err != nil) { return 0,err }
-    w.currBlock = blockNeeded
-    w.currWriter,err = w.datas.Write(w.currBlock)
-    if (err != nil) { return 0,err }
+    written += uint32(firstPageLength)
+    pageNum++
   }
-  return uint32(0),nil
+
+  // read whole pages into output buffer
+  numWholePagesToRead := (length - written) / PAGESIZE
+  for ; numWholePagesToRead > 0 ; numWholePagesToRead-- {
+    err = w.currWriter.WritePage(p[written:written+PAGESIZE],pageNum)
+    if (err != nil) { return written,err }
+    pageNum++
+    written += PAGESIZE
+  }
+
+  // write last page if fragment
+  if (written < length) {
+    lastPageLen := int(length - written)
+    err = w.currWriter.WritePage(p[written:written+uint32(lastPageLen)],pageNum)
+    if (err != nil) { return written,err }
+  }
+  return written,nil
 }
 
 func (w *Writer) Fsync() (err error) {

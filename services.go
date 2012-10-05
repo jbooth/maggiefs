@@ -17,8 +17,8 @@ type NameService interface {
   MarkGC(nodeid uint64) (err error)
   // atomically mutates an inode, optimization over WriteLock for small operations
   Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error)
-  // add a block to the end of a file, returns new inode def
-  AddBlock(nodeid uint64) (newNode *Inode, err error)
+  // add a block to the end of a file, returns new block
+  AddBlock(nodeid uint64) (newBlock Block, err error)
   // takes out a lease for an inode, this is to keep the posix convention that unlinked files
   // aren't cleaned up until they've been closed by all programs
   Lease(nodeid uint64) (ls Lease, err error)
@@ -61,9 +61,9 @@ type BlockReader interface {
 type BlockWriter interface {
   // writes a whole page
   // can expand block by one page or overwrite existing page
-  WritePage(p []byte, pageNum int)
+  WritePage(p []byte, pageNum int) error
   // writes a subpage
-  Write(p []byte, pageNum int, off int, len int)
+  Write(p []byte, pageNum int, off int, len int) error
   // flushes changes to system
   Sync() (err error)
   // flushes and closes this writer

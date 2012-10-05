@@ -592,12 +592,19 @@ func (m *MaggieFuse) RemoveXAttr(header *raw.InHeader, attr string) fuse.Status 
 
 func (m *MaggieFuse) Access(header *raw.InHeader, input *raw.AccessIn) (code fuse.Status) {
   // check perms, always return ok
-	return fuse.ENOSYS
+  // we're not doing perms yet handle later
+	return fuse.OK
 }
 
 func (m *MaggieFuse) Create(out *raw.CreateOut, header *raw.InHeader, input *raw.CreateIn, name string) (code fuse.Status) {
   // call mknod and then open
-	return fuse.ENOSYS
+  mknodin := raw.MknodIn { input.Mode, uint32(0), input.Umask, input.Padding }
+  stat := m.Mknod(&out.EntryOut, header,&mknodin, name)
+  if (! stat.Ok()) { return stat }
+  openin := raw.OpenIn{input.Flags, uint32(0)}
+  stat = m.Open(&out.OpenOut, header, &openin)
+  if (! stat.Ok()) { return stat }
+	return fuse.OK
 }
 
 func (m *MaggieFuse) OpenDir(out *raw.OpenOut, header *raw.InHeader, input *raw.OpenIn) (status fuse.Status) {
