@@ -5,6 +5,7 @@ const (
   FTYPE_REG = int(1)
   FTYPE_LNK = int(2)
   PAGESIZE = uint32(4096)
+  BLOCKLENGTH = uint64(1024 * 1024 * 128) // 128MB, hardcoded for now
 )
 
 type Inode struct {
@@ -21,6 +22,7 @@ type Inode struct {
   Symlinkdest string // only populated for symlinks, "" otherwise
   Blocks []Block // can be 0 blocks in case of directory,symlink or empty file
   Children map[string] uint64 // empty unless we are a dir, maps name to inode id 
+  Xattr map[string] []byte
 }
 
 func (i Inode) IsDir() bool {

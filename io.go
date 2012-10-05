@@ -100,10 +100,7 @@ func (r *Reader) Close() error {
 }
 
 type Writer struct {
-  inode Inode
-  globalPos uint64 // pos in file
-  blockPos int // pos within block
-  bufferPos int // pos within buffer
+  inode *Inode
   currBlock Block
   currWriter BlockWriter
   names NameService
@@ -111,8 +108,31 @@ type Writer struct {
 }
 
 //io.Writer
-func (f *Writer) WriteAt(p []byte, off uint64, length uint64) (n int, err error) {
+func (w *Writer) WriteAt(p []byte, off uint64, length uint64) (n int, err error) {
+  // if offset is not within current block, need to switch blocks
+    // if longer
+      // if this is the last block of the file, allocate new block
+    // else, open existing other block
+
+  // otherwise, if we're adding to current block, proceed, otherwise, open 
+  // diff block that we're editing
+  blockNeeded,err := blockForPos(off,w.inode)
+  if (blockNeeded.Id == w.currBlock.Id && blockNeeded.Mtime == w.currBlock.Mtime) {
+    // currBlock is good, stick with currWriter
+  } else {
+    // close old one (presumably returns to pool)
+    err = w.currWriter.Close()
+    // initialize new blockReader
+    if (err != nil) { return 0,err }
+    w.currBlock = blockNeeded
+    w.currWriter,err = w.datas.Write(w.currBlock)
+    if (err != nil) { return 0,err }
+  }
   return int(0),nil
+}
+
+func (w *Writer) Fsync() (err error) {
+  return nil
 }
 
 func (f *Writer) Close() (err error) {

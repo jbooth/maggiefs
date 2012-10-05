@@ -4,17 +4,61 @@ import (
   "time"
   "syscall"
   "sync/atomic"
+  "sync"
   "github.com/hanwen/go-fuse/raw"
   "github.com/hanwen/go-fuse/fuse"
+  "log"
+  "bytes"
 )
 
 type MaggieFuse struct {
   names NameService
   datas DataService
-  openRFiles map[uint64] *Reader
-  openWFiles map[uint64] *Writer
-  fhCounter uint64
+  openFiles openFileMap // maps FD numbers to open files
+  fdCounter uint64 // used to get unique FD numbers
+  log log.Logger
 }
+
+type OpenFile struct {
+  r *Reader
+  w *Writer
+  lease Lease
+  writelock WriteLock
+}
+
+// ghetto concurrent hashmap
+type openFileMap struct {
+  numBuckets int
+  mapmap map[uint64] openFileMapSlice
+}
+
+type openFileMapSlice struct {
+  files map[uint64] OpenFile
+  lock sync.RWMutex
+}
+
+func newOpenFileMap(numBuckets int) openFileMap {
+  ret := openFileMap { numBuckets, make(map[uint64] openFileMapSlice) }
+  for i := 0 ; i < numBuckets ; i++ {
+    ret.mapmap[uint64(i)] = openFileMapSlice{make(map[uint64] OpenFile), sync.RWMutex{}}
+  }
+  return ret
+}
+
+func (m openFileMap) put(k uint64, v OpenFile) {
+  slice := m.mapmap[k % uint64(m.numBuckets)]
+  slice.lock.Lock()
+  defer slice.lock.Unlock()
+  slice.files[k] = v
+}
+
+func (m openFileMap) get(k uint64) OpenFile {
+  slice := m.mapmap[k % uint64(m.numBuckets)]
+  slice.lock.RLock()
+  defer slice.lock.RUnlock()
+  return slice.files[k]
+}
+
 
 // hint to namenode for incremental GC
 
@@ -158,22 +202,29 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
   }
 
 
+
   // allocate new filehandle
-  fh := atomic.AddUint64(&m.fhCounter,uint64(1))
+  fh := atomic.AddUint64(&m.fdCounter,uint64(1))
+  f := OpenFile{nil,nil,nil,nil}
+  f.lease,err = m.names.Lease(inode.Inodeid)
+  if (err != nil) { 
+    return fuse.EROFS
+  }
   if (readable) {
-    r,err := NewReader(inode.Inodeid,m.names,m.datas)
+    f.r,err = NewReader(inode.Inodeid,m.names,m.datas)
     if (err != nil) { return fuse.EROFS }
-    m.openRFiles[fh] = r
   }
   if (writable) {
-    w,err := NewWriter(inode.Inodeid,m.names,m.datas)
+    f.w,err = NewWriter(inode.Inodeid,m.names,m.datas)
     if (err != nil) { return fuse.EROFS }
-    m.openWFiles[fh] = w
+    f.writelock,err = m.names.WriteLock(inode.Inodeid)
+    if (err != nil) { return fuse.EROFS }
   }
 
   // output
   out.Fh = fh
   out.OpenFlags = raw.FOPEN_KEEP_CACHE
+  m.openFiles.put(fh,f)
   // return int val
 	return fuse.OK
 }
@@ -255,6 +306,7 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     "",
     make([]Block,0,100),
     map[string] uint64 {},
+    map[string] []byte {},
     }
 
   // save new node
@@ -312,6 +364,7 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     "",
     make([]Block,0,0),
     map[string] uint64{},
+    map[string] []byte {},
     }
 
   // save
@@ -413,6 +466,7 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
     pointedTo,
     make([]Block,0,0),
     map[string] uint64{},
+    map[string] []byte {},
   }
   // save
   id,err := m.names.AddInode(i)
@@ -483,28 +537,48 @@ func (m *MaggieFuse) Link(out *raw.EntryOut, header *raw.InHeader, input *raw.Li
 }
 
 func (m *MaggieFuse) GetXAttrSize(header *raw.InHeader, attr string) (size int, code fuse.Status) {
-  // punt
-	return 0, fuse.ENOSYS
+  node,err := m.names.GetInode(header.NodeId)
+  if (err != nil) { return 0,fuse.EROFS }
+
+	return len(node.Xattr), fuse.OK
 }
 
 func (m *MaggieFuse) GetXAttrData(header *raw.InHeader, attr string) (data []byte, code fuse.Status) {
+  node,err := m.names.GetInode(header.NodeId)
+  if (err != nil) { return nil,fuse.EROFS }
+  
   // punt
-	return nil, fuse.ENOSYS
+	return node.Xattr[attr], fuse.OK
 }
 
 func (m *MaggieFuse) SetXAttr(header *raw.InHeader, input *raw.SetXAttrIn, attr string, data []byte) fuse.Status {
+  _,err := m.names.Mutate(header.NodeId, func(node *Inode) error {
+    node.Xattr[attr] = data
+    return nil
+  })
+  if (err != nil) { return fuse.EROFS }
   // punt
-	return fuse.ENOSYS
+	return fuse.OK
 }
 
 func (m *MaggieFuse) ListXAttr(header *raw.InHeader) (data []byte, code fuse.Status) {
-  //punt
-	return nil, fuse.ENOSYS
+  node,err := m.names.GetInode(header.NodeId)
+  if (err != nil) { return nil,fuse.EROFS }
+  b := bytes.NewBuffer([]byte{})
+  for k,_ := range node.Xattr {
+    b.Write([]byte(k))
+    b.WriteByte(0)
+  }
+	return b.Bytes(), fuse.ENOSYS
 }
 
 func (m *MaggieFuse) RemoveXAttr(header *raw.InHeader, attr string) fuse.Status {
-  // punt
-	return fuse.ENOSYS
+  _,err := m.names.Mutate(header.NodeId, func(node *Inode) error {
+    delete(node.Xattr,attr)
+    return nil
+  })
+  if (err != nil) { return fuse.EROFS }
+	return fuse.OK
 }
 
 func (m *MaggieFuse) Access(header *raw.InHeader, input *raw.AccessIn) (code fuse.Status) {
@@ -518,8 +592,8 @@ func (m *MaggieFuse) Create(out *raw.CreateOut, header *raw.InHeader, input *raw
 }
 
 func (m *MaggieFuse) OpenDir(out *raw.OpenOut, header *raw.InHeader, input *raw.OpenIn) (status fuse.Status) {
-  // fetch inode, store in map fd-> dirobject 
-	return fuse.ENOSYS
+  // noop, we do stateless dirs
+	return fuse.OK
 }
 
 func (m *MaggieFuse) Read(header *raw.InHeader, input *raw.ReadIn, buf []byte) (fuse.ReadResult, fuse.Status) {
@@ -549,15 +623,21 @@ func (m *MaggieFuse) Fsync(header *raw.InHeader, input *raw.FsyncIn) (code fuse.
 
 func (m *MaggieFuse) ReadDir(l *fuse.DirEntryList, header *raw.InHeader, input *raw.ReadIn) fuse.Status {
   // read from map fd-> dirobject
-	return fuse.ENOSYS
+  dir,err := m.names.GetInode(header.NodeId)
+  if (err != nil) {
+    return fuse.EROFS
+  }
+  for name,id := range dir.Children {
+    l.Add(name,id,uint32(0777))
+  }
+	return fuse.OK
 }
 
 func (m *MaggieFuse) ReleaseDir(header *raw.InHeader, input *raw.ReleaseIn) {
-  // drop from map fd->dirobject??
-  // think this is noop for us
+  // noop, we do stateless dirs
 }
 
 func (m *MaggieFuse) FsyncDir(header *raw.InHeader, input *raw.FsyncIn) (code fuse.Status) {
-  // unnecessary because we persist anyways, i think?
-	return fuse.ENOSYS
+  // unnecessary because we persist on all dir ops anyways
+	return fuse.OK
 }
