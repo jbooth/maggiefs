@@ -13,8 +13,6 @@ type NameService interface {
   AddInode(node Inode) (id uint64, err error)
   // acquires write lock
   WriteLock(nodeid uint64) (lock WriteLock, err error)
-  // queues deletion for an entry, optimization instead of waiting for GC
-  MarkGC(nodeid uint64) (err error)
   // atomically mutates an inode, optimization over WriteLock for small operations
   Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error)
   // add a block to the end of a file, returns new block
