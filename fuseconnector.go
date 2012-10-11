@@ -1,6 +1,7 @@
 package maggiefs
 
 import (
+  "os"
   "time"
   "syscall"
   "sync/atomic"
@@ -16,7 +17,17 @@ type MaggieFuse struct {
   datas DataService
   openFiles openFileMap // maps FD numbers to open files
   fdCounter uint64 // used to get unique FD numbers
-  log log.Logger
+  log *log.Logger
+}
+
+func NewMaggieFuse(names NameService, datas DataService) *MaggieFuse {
+  return &MaggieFuse{
+    names, 
+    datas, 
+    openFileMap{10, make(map[uint64]openFileMapSlice)},
+    uint64(0), 
+    log.New(os.Stderr, "maggie-fuse", 0),
+  }
 }
 
 type OpenFile struct {

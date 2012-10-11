@@ -4,6 +4,7 @@ import (
   "io"
   "fmt"
   "errors"
+  "sync"
 )
 
 func NewReader(inodeid uint64, names NameService, datas DataService) (r *Reader, err error) {
@@ -13,6 +14,26 @@ func NewReader(inodeid uint64, names NameService, datas DataService) (r *Reader,
 func NewWriter(inodeid uint64, names NameService, datas DataService) (w *Writer, err error) {
   return nil,nil
 }
+
+type brentry struct {
+  r BlockReader
+  blockId uint64
+  lastUsedTxn uint64
+}
+// used by reader to store recently used block readers
+type brCache struct {
+  lock sync.Mutex // maybe make this a spinlock later
+  readers []brentry
+  txnCount uint64
+}
+
+func (br brCache) get() {
+}
+
+func (br brCache) ret(brentry) {
+}
+
+
 // represents an open file
 // maintains a one page buffer for reading
 // for writable or RW files, see OpenWriteFile
@@ -23,11 +44,14 @@ type Reader struct {
   currBlock Block
   currReader BlockReader
   pageBuff []byte
+  l sync.Mutex
 }
 
 // reads UP TO length bytes from this inode
 // may return early without error, so ensure you loop and call again
 func (r *Reader) ReadAt(p []byte, offset uint64, length uint32) (n uint32, err error) {
+  r.l.Lock()
+  defer r.l.Unlock() // TODO get lockless on this 
   // have to re-get inode every time because it might have changed
   inode,err := r.names.GetInode(r.inodeid)
   if (err != nil) { return 0,err }
@@ -105,10 +129,13 @@ type Writer struct {
   currWriter BlockWriter
   names NameService
   datas DataService
+  l sync.Mutex
 }
 
 //io.Writer
 func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, err error) {
+  w.l.Lock()
+  defer w.l.Unlock()
   // if offset is greater than length, we can't write (must append or whatever)
   if (off > w.inode.Length) { return 0,errors.New("offset > length of file") }
   if (off == w.inode.Length) {

@@ -5,8 +5,6 @@ import (
 )
 
 type NameService interface {
-  Format() (err error)
-  GetChild(parentid uint64, name string) (i *Inode, err error)
   GetInode(nodeid uint64) (i *Inode, err error)
   StatFs() (statfs syscall.Statfs_t, err error)
   // persists a new inode to backing store
@@ -34,8 +32,6 @@ type DataService interface {
   Read(blk Block) (conn BlockReader, err error)
 
   Write(blk Block) (conn BlockWriter, err error)
-
-  Delete(blk Block) (err error)
 }
 
 // represents a session of interacting with a block of a file
@@ -47,9 +43,9 @@ type BlockReader interface {
   ReadPage(p []byte) (err error)
 
   // seeks to a page
-  SeekPage(pageNum int)
+  SeekPage(pageNum int) error
 
-  // lists the current page number (page num * 4096 is position within block)
+  // lists the current/next page number (page num * 4096 is position within block)
   CurrPageNum() int
 
   // closes or returns to pool
@@ -61,9 +57,15 @@ type BlockWriter interface {
   // can expand block by one page or overwrite existing page
   WritePage(p []byte, pageNum int) error
   // writes a subpage
-  Write(p []byte, pageNum int, off int, len int) error
+  Write(p []byte, pageNum int, off int, length int) error
   // flushes changes to system
   Sync() (err error)
   // flushes and closes this writer
   Close() (err error)
+}
+
+// represents the interface provided by data services to the name service
+type NameDataIface interface {
+  AddBlock(id uint64) error
+  RmBlock(id uint64) error
 }
