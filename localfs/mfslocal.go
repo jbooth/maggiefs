@@ -6,7 +6,6 @@ import (
   "os"
   "flag"
   "github.com/hanwen/go-fuse/fuse"
-  "time"
 )
 
 func usage() {
@@ -21,13 +20,11 @@ func main() {
   fmt.Println(baseDir)
   datas := maggiefs.NewLocalDatas(baseDir)
   names := maggiefs.NewMemNames(datas)
-  maggiefs := maggiefs.NewMaggieFuse(names,datas)
+  maggiefs := maggiefs.NewLoggingFs(os.Stderr,maggiefs.NewMaggieFuse(names,datas))
   fmt.Println(maggiefs)
   mountState := fuse.NewMountState(maggiefs)
   err := mountState.Mount("/tmp/maggiefs",nil)
   if (err != nil) { fmt.Println(err) }
   fmt.Println("Mounted")
-  for ; true ; {
-    time.Sleep(1000 * time.Millisecond)
-  }
+  mountState.Loop()
 }
