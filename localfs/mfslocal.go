@@ -20,9 +20,10 @@ func main() {
   fmt.Println(baseDir)
   datas := maggiefs.NewLocalDatas(baseDir)
   names := maggiefs.NewMemNames(datas)
-  maggiefs := maggiefs.NewLoggingFs(os.Stderr,maggiefs.NewMaggieFuse(names,datas))
+  maggiefs := maggiefs.NewMaggieFuse(names,datas)
   fmt.Println(maggiefs)
   mountState := fuse.NewMountState(maggiefs)
+  mountState.Debug = true
   err := mountState.Mount("/tmp/maggiefs",nil)
   if (err != nil) { fmt.Println(err) }
   fmt.Println("Mounted")

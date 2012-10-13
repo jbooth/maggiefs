@@ -4,9 +4,9 @@ import (
   "syscall"
   "sync"
   "sync/atomic"
-  "unsafe"
   "errors"
   "time"
+  "fmt"
 )
   //GetInode(nodeid uint64) (i *Inode, err error)
   //StatFs() (statfs syscall.Statfs_t, err error)
@@ -37,8 +37,32 @@ type MemNames struct {
   l *sync.RWMutex
 }
 
+func emptyDir(id uint64) *Inode {
+  currTime := time.Now().Unix()
+  return &Inode{
+    id, 
+    0,
+    FTYPE_DIR,
+    0,
+    0777,
+    currTime,
+    currTime,
+    1,
+    0,
+    0,
+    "",
+    make([]Block,0,0),
+    make(map[string] Dentry),
+    make(map[string] []byte),
+    }
+}
+
 func NewMemNames(dataNode NameDataIface) *MemNames {
-  return &MemNames{dataNode, make(map[uint64] *memnode), uint64(0), uint64(0), new(sync.RWMutex)}
+  ret := &MemNames{dataNode, make(map[uint64] *memnode), uint64(2), uint64(2), new(sync.RWMutex)}
+  ret.l.Lock()
+  defer ret.l.Unlock()
+  ret.nodes[uint64(1)] = &memnode { emptyDir(uint64(1)),new(sync.Mutex),new(sync.Mutex)}
+  return ret
 }
 
 type wlwrapper struct {
@@ -46,9 +70,9 @@ type wlwrapper struct {
 }
 
 func (w wlwrapper) Unlock() error {
-  w.wlock.Unlock()
   return nil
 }
+
 
 //func NewMemNames() (names NameService) {
   //return MemNames{make(map[string]PathEntry),make(map[uint64]Inode),uint64(0),sync.Mutex{}}
@@ -57,7 +81,13 @@ func (w wlwrapper) Unlock() error {
 func (n MemNames) GetInode(nodeid uint64) (i *Inode, err error) {
   n.l.RLock()
   defer n.l.RUnlock()
-  return n.nodes[nodeid].node,nil
+  memnode := n.nodes[nodeid]
+  if (memnode == nil) {
+    return nil,errors.New("inode doesn't exist!")
+  }
+  memnode.mlock.Lock()
+  defer memnode.mlock.Unlock()
+  return memnode.node,nil
 }
 
 func (n MemNames) AddInode(node Inode) (id uint64, err error) {
@@ -78,6 +108,7 @@ func (n MemNames) StatFs() (stat syscall.Statfs_t, err error) {
 func (n MemNames) WriteLock(nodeid uint64) (w WriteLock,err error) {
   n.l.RLock()
   defer n.l.RUnlock()
+
   return wlwrapper{ n.nodes[nodeid].wlock },nil
 }
 
@@ -87,11 +118,13 @@ func (n MemNames) Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNo
   mn := n.nodes[nodeid]
   mn.mlock.Lock()
   defer mn.mlock.Unlock()
+  fmt.Printf("Mutating node id %d val %+v\n",nodeid,mn.node)
   newNode = CopyInode(mn.node)
+  fmt.Printf("Mutating node %+v\n",newNode)
   err = mutator(newNode)
+  fmt.Printf("\n AFTER MUTATE \n %+v \n",newNode)
   if (err != nil) { return nil,err }
-  atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&mn.node)),unsafe.Pointer(mn.node))
-
+  mn.node = newNode
   // TODO handle case where Nlinks becomes 0 -- or don't i guess, whatever, we'll just orphan them
   return mn.node,nil
 }

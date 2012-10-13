@@ -8,11 +8,18 @@ import (
 )
 
 func NewReader(inodeid uint64, names NameService, datas DataService) (r *Reader, err error) {
-  return nil,nil
+  return &Reader { inodeid,names,datas,nonBlock(),nil,make([]byte,PAGESIZE,PAGESIZE),new(sync.Mutex)},nil
 }
 
 func NewWriter(inodeid uint64, names NameService, datas DataService) (w *Writer, err error) {
-  return nil,nil
+  inode,err := names.GetInode(inodeid)
+  if (err != nil) { return nil,err }
+
+  return &Writer{inode,nonBlock(),nil,names,datas,new(sync.Mutex)},nil
+}
+
+func nonBlock() Block {
+  return Block{uint64(0),uint64(0),uint64(0),uint64(0),uint64(0),make([]string,0,0)}
 }
 
 type brentry struct {
@@ -44,7 +51,7 @@ type Reader struct {
   currBlock Block
   currReader BlockReader
   pageBuff []byte
-  l sync.Mutex
+  l *sync.Mutex
 }
 
 // reads UP TO length bytes from this inode
@@ -119,7 +126,7 @@ func blockForPos(offset uint64, inode *Inode) (blk Block, err error) {
 
 //io.Closer
 func (r *Reader) Close() error {
-  r.currReader.Close()
+  if (r.currReader != nil) { r.currReader.Close() }
   return nil
 }
 
@@ -129,7 +136,7 @@ type Writer struct {
   currWriter BlockWriter
   names NameService
   datas DataService
-  l sync.Mutex
+  l *sync.Mutex
 }
 
 //io.Writer

@@ -13,6 +13,8 @@ func CopyInode(i *Inode) *Inode {
   ret. Uid = i.Uid
   ret.Gid = i.Gid
   ret.Symlinkdest = i.Symlinkdest
+  ret.Children = make(map[string] Dentry)
+  ret.Xattr = make(map[string] []byte)
   ret.Blocks = make([]Block,len(i.Blocks),len(i.Blocks))
   for i,b := range(i.Blocks) {
     ret.Blocks[i] = b

@@ -21,8 +21,13 @@ type Inode struct {
   Gid uint32
   Symlinkdest string // only populated for symlinks, "" otherwise
   Blocks []Block // can be 0 blocks in case of directory,symlink or empty file
-  Children map[string] uint64 // empty unless we are a dir, maps name to inode id 
+  Children map[string] Dentry // empty unless we are a dir, maps name to inode id 
   Xattr map[string] []byte
+}
+
+type Dentry struct {
+  Inodeid uint64
+  CreatedTime int64 // time this link was created.  used to return consistent ordering in ReadDir.
 }
 
 func (i Inode) IsDir() bool {

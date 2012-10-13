@@ -1,6 +1,7 @@
 package maggiefs
 
 import (
+  "fmt"
   "os"
   "time"
   "syscall"
@@ -10,6 +11,7 @@ import (
   "github.com/hanwen/go-fuse/fuse"
   "log"
   "bytes"
+  "sort"
 )
 
 type MaggieFuse struct {
@@ -24,7 +26,7 @@ func NewMaggieFuse(names NameService, datas DataService) *MaggieFuse {
   return &MaggieFuse{
     names, 
     datas, 
-    openFileMap{10, make(map[uint64]openFileMapSlice)},
+    newOpenFileMap(10),
     uint64(0), 
     log.New(os.Stderr, "maggie-fuse", 0),
   }
@@ -137,9 +139,10 @@ func numBlocks(size uint64, blksize uint32) uint64 {
 func (m *MaggieFuse) Lookup(out *raw.EntryOut, h *raw.InHeader, name string) (code fuse.Status) {
   // fetch parent
   parent,err := m.names.GetInode(h.NodeId)
-  childId := parent.Children[name]
+  childEntry,exists := parent.Children[name]
+  if (! exists) { return fuse.ENOENT }
   // Lookup PathEntry by name
-  child,err := m.names.GetInode(childId)
+  child,err := m.names.GetInode(childEntry.Inodeid)
   if err != nil { return fuse.EIO }
   //if (child == nil) { return fuse.ENOENT }
   fillEntryOut(out,child)
@@ -152,8 +155,8 @@ func fillEntryOut(out *raw.EntryOut, i *Inode) {
   out.Generation = i.Generation
   out.EntryValid = uint64(0)
   out.AttrValid = uint64(0)
-  out.EntryValidNsec = uint32(0)
-  out.AttrValidNsec = uint32(0)
+  out.EntryValidNsec = uint32(100)
+  out.AttrValidNsec = uint32(100)
   //Inode
   out.Ino = i.Inodeid
   out.Size = i.Length
@@ -176,12 +179,8 @@ func (m *MaggieFuse) Forget(nodeID, nlookup uint64) {
   // noop
 }
 
-func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.GetAttrIn) (code fuse.Status) {
-  i,err := m.names.GetInode(header.NodeId)
-  if err != nil {
-    return fuse.EROFS
-  }
-  // raw.Attr
+func fillAttrOut(out *raw.AttrOut, i *Inode) {
+    // raw.Attr
   out.Ino = i.Inodeid
   out.Size = i.Length
   out.Blocks = numBlocks(i.Length, PAGESIZE)
@@ -191,7 +190,7 @@ func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
   out.Atimensec = uint32(0)
   out.Mtimensec = uint32(0)
   out.Ctimensec = uint32(0)
-  out.Mode = i.Mode
+  out.Mode = mode(i.Ftype)
   out.Nlink = i.Nlink
   out.Uid = i.Uid
   out.Gid = i.Gid
@@ -199,7 +198,15 @@ func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
   out.Blksize = PAGESIZE
   // raw.AttrOut
   out.AttrValid = uint64(0)
-  out.AttrValidNsec = uint32(0)
+  out.AttrValidNsec = uint32(100)
+}
+
+func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.GetAttrIn) (code fuse.Status) {
+  i,err := m.names.GetInode(header.NodeId)
+  if err != nil {
+    return fuse.EROFS
+  }
+  fillAttrOut(out,i)
 	return fuse.OK
 }
 
@@ -270,7 +277,7 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
     // if none of the items we care about were modified, skip it
     return fuse.OK
   }
-  _,err := m.names.Mutate(header.NodeId, func (inode *Inode) error {
+  newNode,err := m.names.Mutate(header.NodeId, func (inode *Inode) error {
     // input.Valid is a bitmask for which fields are modified, so we check for each
     if (input.Valid & raw.FATTR_MODE != 0) {
       inode.Mode = input.Mode
@@ -287,6 +294,7 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
     return nil
   })
   if (err != nil) { return fuse.EROFS }
+  fillAttrOut(out,newNode)
 
   return fuse.OK
 }
@@ -317,16 +325,16 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     0, // gen 0
     FTYPE_REG,
     0,
-    0x775,
+    0777,
     currTime,
     currTime,
-    0,
+    1,
     header.Uid,
     header.Gid,
     "",
     make([]Block,0,100),
-    map[string] uint64 {},
-    map[string] []byte {},
+    make(map[string] Dentry),
+    make(map[string] []byte),
     }
 
   // save new node
@@ -338,7 +346,8 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 
   // link parent
   _,err = m.names.Mutate(parent.Inodeid, func (inode *Inode) error {
-    inode.Children[name] = i.Inodeid
+    fmt.Printf("inside mutator function %+v",inode)
+    inode.Children[name] = Dentry { i.Inodeid, time.Now().Unix() }
     return nil
   })
   if (err != nil) {
@@ -375,7 +384,7 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     0,
     FTYPE_DIR,
     0,
-    0x777,
+    0777,
     currTime,
     currTime,
     0,
@@ -383,8 +392,8 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     header.Gid,
     "",
     make([]Block,0,0),
-    map[string] uint64{},
-    map[string] []byte {},
+    make(map[string] Dentry),
+    make(map[string] []byte),
     }
 
   // save
@@ -395,7 +404,7 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
   i.Inodeid = id
   // link parent
   _,err = m.names.Mutate(parent.Inodeid, func (inode *Inode) error {
-    inode.Children[name] = i.Inodeid
+    inode.Children[name] = Dentry { i.Inodeid, time.Now().Unix() }
     return nil
   })
   if (err != nil) { 
@@ -416,7 +425,9 @@ func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status
     return fuse.EINVAL
   }
   // look up node for name
-  child,err := m.names.GetInode(parent.Children[name])
+  childEntry,exists := parent.Children[name]
+  if (! exists ) { return fuse.ENOENT }
+  child,err := m.names.GetInode(childEntry.Inodeid)
   if (err != nil) { return fuse.EROFS }
 
   // if child is dir, err
@@ -442,12 +453,11 @@ func (m *MaggieFuse) Rmdir(header *raw.InHeader, name string) (code fuse.Status)
   parent,err := m.names.GetInode(header.NodeId)
   if (err != nil) { return fuse.EROFS }
   // check if name doesn't exist
-  _,hasChild := parent.Children[name]
-  if (!hasChild) {
-    return fuse.EINVAL
-  }
+  childEntry,exists := parent.Children[name]
+  if !exists { return fuse.ENOENT }
+
   // look up node for name
-  child,err := m.names.GetInode(parent.Children[name])
+  child,err := m.names.GetInode(childEntry.Inodeid)
   if (err != nil) { return fuse.EROFS }
 
   // if child is not dir, err
@@ -477,7 +487,7 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
     0,
     FTYPE_LNK,
     0,
-    0x777,
+    0777,
     currTime,
     currTime,
     0,
@@ -485,8 +495,8 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
     header.Gid,
     pointedTo,
     make([]Block,0,0),
-    map[string] uint64{},
-    map[string] []byte {},
+    make(map[string] Dentry),
+    make(map[string] []byte) ,
   }
   // save
   id,err := m.names.AddInode(i)
@@ -496,7 +506,7 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
   i.Inodeid = id
   // link parent
   _,err = m.names.Mutate(header.NodeId, func (inode *Inode) error {
-    inode.Children[linkName] = i.Inodeid
+    inode.Children[linkName] = Dentry { i.Inodeid, time.Now().Unix() }
     return nil
   })
   if (err != nil) { 
@@ -543,7 +553,7 @@ func (m *MaggieFuse) Link(out *raw.EntryOut, header *raw.InHeader, input *raw.Li
   
   // add link to new parent
   m.names.Mutate(header.NodeId, func(node *Inode) error {
-    node.Children[name] = input.Oldnodeid
+    node.Children[name] = Dentry { input.Oldnodeid, time.Now().Unix() }
     return nil
   })
 
@@ -669,15 +679,40 @@ func (m *MaggieFuse) Fsync(header *raw.InHeader, input *raw.FsyncIn) (code fuse.
 	return fuse.OK
 }
 
+type dentryWithName struct {
+  name string
+  Dentry
+}
+
+type dentrylist []dentryWithName
+func (d dentrylist) Len() int { return len(d) }
+func (d dentrylist) Swap(i, j int) { d[i],d[j] = d[j],d[i] }
+func (d dentrylist) Less(i,j int) bool { return d[i].CreatedTime < d[j].CreatedTime }
+
 func (m *MaggieFuse) ReadDir(l *fuse.DirEntryList, header *raw.InHeader, input *raw.ReadIn) fuse.Status {
   // read from map fd-> dirobject
+  fmt.Printf("Called ReadDir with offset %d",input.Offset)
   dir,err := m.names.GetInode(header.NodeId)
   if (err != nil) {
     return fuse.EROFS
   }
-  for name,id := range dir.Children {
-    l.Add(name,id,uint32(0777))
+  fmt.Printf("dir.children %+v",dir.Children)
+  // create sorted list
+  entryList := dentrylist(make([]dentryWithName, len(dir.Children), len(dir.Children)))
+
+  i := 0
+  for name,entry := range dir.Children {
+    entryList[i] = dentryWithName{name,entry}
+    i++
   }
+  sort.Sort(entryList)
+  for i := int(input.Offset) ; i < len(entryList) ; i++ {
+    if ! l.Add(entryList[i].name,entryList[i].Inodeid,syscall.S_IFREG | 0777) {
+      break
+    }
+  }
+  // fill until offset
+  fmt.Printf("Readdir returning %+v",l)
 	return fuse.OK
 }
 
