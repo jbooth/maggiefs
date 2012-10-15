@@ -347,7 +347,8 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
   // link parent
   _,err = m.names.Mutate(parent.Inodeid, func (inode *Inode) error {
     fmt.Printf("inside mutator function %+v",inode)
-    inode.Children[name] = Dentry { i.Inodeid, time.Now().Unix() }
+    inode.Children[name] = Dentry { id, time.Now().Unix() }
+    fmt.Printf("Setting new child %s to id %d",name,id)
     return nil
   })
   if (err != nil) {
@@ -462,7 +463,10 @@ func (m *MaggieFuse) Rmdir(header *raw.InHeader, name string) (code fuse.Status)
 
   // if child is not dir, err
   if (! child.IsDir()) { return fuse.Status(syscall.ENOTDIR) }
-  if (len(parent.Children) != 0) { return fuse.Status(syscall.ENOTEMPTY) }
+  fmt.Printf("removing directory %d with children %+v",child.Inodeid,child.Children)
+  if (len(child.Children) != 0) { 
+    return fuse.Status(syscall.ENOTEMPTY) 
+  }
 
   // save parent without link 
   _,err = m.names.Mutate(parent.Inodeid,func (node *Inode) error {
@@ -707,7 +711,9 @@ func (m *MaggieFuse) ReadDir(l *fuse.DirEntryList, header *raw.InHeader, input *
   }
   sort.Sort(entryList)
   for i := int(input.Offset) ; i < len(entryList) ; i++ {
-    if ! l.Add(entryList[i].name,entryList[i].Inodeid,syscall.S_IFREG | 0777) {
+    inode,err := m.names.GetInode(entryList[i].Inodeid)
+    if (err != nil) { return fuse.EROFS }
+    if ! l.Add(entryList[i].name,entryList[i].Inodeid,mode(inode.Ftype)) {
       break
     }
   }

@@ -75,10 +75,10 @@ func (w wlwrapper) Unlock() error {
 
 
 //func NewMemNames() (names NameService) {
-  //return MemNames{make(map[string]PathEntry),make(map[uint64]Inode),uint64(0),sync.Mutex{}}
+  //return *MemNames{make(map[string]PathEntry),make(map[uint64]Inode),uint64(0),sync.Mutex{}}
 //}
 
-func (n MemNames) GetInode(nodeid uint64) (i *Inode, err error) {
+func (n *MemNames) GetInode(nodeid uint64) (i *Inode, err error) {
   n.l.RLock()
   defer n.l.RUnlock()
   memnode := n.nodes[nodeid]
@@ -90,29 +90,31 @@ func (n MemNames) GetInode(nodeid uint64) (i *Inode, err error) {
   return memnode.node,nil
 }
 
-func (n MemNames) AddInode(node Inode) (id uint64, err error) {
+func (n *MemNames) AddInode(node Inode) (id uint64, err error) {
   n.l.Lock()
   defer n.l.Unlock()
-  id = atomic.AddUint64(&n.inodeIdCounter,uint64(1))
+  fmt.Printf("last id %d",n.inodeIdCounter)
+  id = IncrementAndGet(&n.inodeIdCounter,uint64(1))
+  fmt.Printf("new id %d" ,id)
   node.Inodeid = id
   n.nodes[id] = &memnode{ &node, new(sync.Mutex), new(sync.Mutex) }
   return id,nil
 }
 
-func (n MemNames) StatFs() (stat syscall.Statfs_t, err error) {
+func (n *MemNames) StatFs() (stat syscall.Statfs_t, err error) {
   n.l.RLock()
   defer n.l.RUnlock()
   return syscall.Statfs_t{},nil
 }
 
-func (n MemNames) WriteLock(nodeid uint64) (w WriteLock,err error) {
+func (n *MemNames) WriteLock(nodeid uint64) (w WriteLock,err error) {
   n.l.RLock()
   defer n.l.RUnlock()
 
   return wlwrapper{ n.nodes[nodeid].wlock },nil
 }
 
-func (n MemNames) Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error) {
+func (n *MemNames) Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error) {
   n.l.RLock()
   defer n.l.RUnlock()
   mn := n.nodes[nodeid]
@@ -129,7 +131,7 @@ func (n MemNames) Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNo
   return mn.node,nil
 }
 
-func (n MemNames) AddBlock(nodeid uint64) (newBlock Block, err error) {
+func (n *MemNames) AddBlock(nodeid uint64) (newBlock Block, err error) {
   newId := atomic.AddUint64(&n.blockIdCounter,uint64(1))
   node,err := n.Mutate(nodeid, func(inode *Inode) error {
     lastBlock := inode.Blocks[len(inode.Blocks) - 1]
@@ -156,7 +158,7 @@ func (n MemNames) AddBlock(nodeid uint64) (newBlock Block, err error) {
   return node.Blocks[len(node.Blocks) - 1],nil
 }
 
-func (n MemNames) Lease(nodeid uint64) (ls Lease, err error) { 
+func (n *MemNames) Lease(nodeid uint64) (ls Lease, err error) { 
   return &nonLease{},nil
 }
 type nonLease struct {

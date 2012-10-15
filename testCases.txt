@@ -1,0 +1,4 @@
+1 test that mutate works for existing node
+
+2 test that add inode increments IDs correctly
+
