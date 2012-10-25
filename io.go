@@ -19,7 +19,7 @@ func NewWriter(inodeid uint64, names NameService, datas DataService) (w *Writer,
 }
 
 func nonBlock() Block {
-  return Block{uint64(0),uint64(0),uint64(0),uint64(0),uint64(0),make([]string,0,0)}
+  return Block{uint64(0),uint64(0),uint64(0),uint64(0),uint64(0),uint32(0)}
 }
 
 type brentry struct {
@@ -143,14 +143,19 @@ type Writer struct {
 func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, err error) {
   w.l.Lock()
   defer w.l.Unlock()
+  // first figure which block we're supposed to be at
   // if offset is greater than length, we can't write (must append or whatever)
   if (off > w.inode.Length) { return 0,errors.New("offset > length of file") }
   if (off == w.inode.Length) {
+    fmt.Printf("switching block\n")
     currLen := w.currBlock.EndPos - w.currBlock.StartPos
-    // we need to either extend current block or add a new one
-    if (currLen == BLOCKLENGTH) {
+    // we need to either extend current block or add a new one if we're just starting a file or at the end of current block
+    if (off == 0 || currLen == BLOCKLENGTH) {
+      fmt.Printf("adding block\n")
       // add a new block
-      w.currBlock,err = w.names.AddBlock(w.inode.Inodeid)
+      blockLength := length
+      if (blockLength > uint32(BLOCKLENGTH) ) { blockLength = uint32(BLOCKLENGTH) }
+      w.currBlock,err = w.names.AddBlock(w.inode.Inodeid,blockLength)
       if (err != nil) { return 0, err }
       w.inode.Blocks = append(w.inode.Blocks,w.currBlock)
       w.currWriter,err = w.datas.Write(w.currBlock)
@@ -160,17 +165,28 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
     // extend currBlock to min(currLen + len, BLOCKLENGTH)
     maxAddedByte := BLOCKLENGTH - (currLen)
     if (uint64(length) > maxAddedByte) { length = uint32(maxAddedByte) }
+    w.currBlock,err = w.names.ExtendBlock(w.inode.Inodeid,w.currBlock.Id,length)
+    if (err != nil) { return 0,err }
+    // patch up local model
     w.currBlock.EndPos += uint64(length)
     w.inode.Length += uint64(length)
   } else {
     // find existing block we are overwriting
     newBlk,err := blockForPos(off, w.inode)
+    if err != nil { return 0,err }
+    fmt.Printf("block for pos %+v\n",w.currBlock)
     if (newBlk.Id != w.currBlock.Id) {
       // switch blocks
       w.currBlock = newBlk
-      w.currWriter,err = w.datas.Write(w.currBlock)
-      if (err != nil) { return 0,err }
     }
+  }
+  // if writer isn't configured to this block, switch it
+  if w.currWriter == nil || w.currWriter.BlockId() != w.currBlock.Id {
+    // force any pending changes
+    if w.currWriter != nil { w.currWriter.Close() }
+    fmt.Printf("allocating writer for block %d inode %d\n",w.currBlock.Id,w.inode.Inodeid)
+    w.currWriter,err = w.datas.Write(w.currBlock)
+    if (err != nil) { return 0,err }
   }
   // now write pages
   written = uint32(0)
@@ -185,9 +201,10 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
     pageNum++
   }
 
-  // read whole pages into output buffer
-  numWholePagesToRead := (length - written) / PAGESIZE
-  for ; numWholePagesToRead > 0 ; numWholePagesToRead-- {
+  // write whole pages into output buffer
+  numWholePagesToWrite := (length - written) / PAGESIZE
+  for ; numWholePagesToWrite > 0 ; numWholePagesToWrite-- {
+    fmt.Printf("writing page to block %+v\n",w.currBlock)
     err = w.currWriter.WritePage(p[written:written+PAGESIZE],pageNum)
     if (err != nil) { return written,err }
     pageNum++
@@ -197,7 +214,10 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
   // write last page if fragment
   if (written < length) {
     lastPageLen := int(length - written)
-    err = w.currWriter.WritePage(p[written:written+uint32(lastPageLen)],pageNum)
+
+    fmt.Println("writing lage page len %d \n",lastPageLen)
+    fmt.Println("writing from slice %v at offsets %d %d\n",p,written,written+uint32(lastPageLen)-1)
+    err = w.currWriter.Write(p[written:],pageNum,int(written),int(lastPageLen))
     if (err != nil) { return written,err }
   }
   return written,nil

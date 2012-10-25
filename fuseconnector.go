@@ -664,7 +664,10 @@ func (m *MaggieFuse) Write(header *raw.InHeader, input *raw.WriteIn, data []byte
   for ; written < input.Size ; {
     n,err := writer.WriteAt(data, input.Offset + uint64(written), input.Size - written)
     written += n
-    if (err != nil) { return written, fuse.EROFS }
+    if (err != nil) { 
+      m.log.Print("Error writing %v \n",err)
+      return written, fuse.EROFS 
+    }
   }
 	return written,fuse.OK
 }

@@ -2,6 +2,7 @@ package maggiefs
 
 import (
   "os"
+  "fmt"
 )
 
 type LocalBlockReader struct {
@@ -29,6 +30,11 @@ func (f LocalBlockReader) Close() error {
 
 type LocalBlockWriter struct {
   file *os.File
+  blockId uint64
+}
+
+func (f LocalBlockWriter) BlockId() uint64 {
+  return f.blockId
 }
 
 func (f LocalBlockWriter) WritePage(p []byte, pageNum int) error {
@@ -60,8 +66,12 @@ func (d LocalDatas) Read(blk Block) (conn BlockReader, err error) {
 }
 
 func (d LocalDatas) Write(blk Block) (conn BlockWriter, err error) {
+  if (blk.Id == 0) { 
+    return nil,fmt.Errorf("Bad blk descriptor %d in block %+v",blk.Id,blk)
+  }
+  fmt.Printf("opening file %s for block %d",d.pathFor(blk.Id),blk.Id)
   file,err := os.Open(d.pathFor(blk.Id))
-  return LocalBlockWriter{file},err
+  return LocalBlockWriter{file,blk.Id},err
 }
 
 func (d LocalDatas) AddBlock(id uint64) error {
@@ -73,6 +83,11 @@ func (d LocalDatas) AddBlock(id uint64) error {
 
 func (d LocalDatas) RmBlock(id uint64) error {
   return os.Remove(d.pathFor(id))
+}
+
+// os extends blocks for us do we need this even?
+func (d LocalDatas) ExtendBlock(id uint64, delta uint32) error {
+  return nil 
 }
 
 func (d LocalDatas) pathFor(blkId uint64) string {

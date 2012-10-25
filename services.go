@@ -14,7 +14,11 @@ type NameService interface {
   // atomically mutates an inode, optimization over WriteLock for small operations
   Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error)
   // add a block to the end of a file, returns new block
-  AddBlock(nodeid uint64) (newBlock Block, err error)
+  AddBlock(nodeid uint64, length uint32) (newBlock Block, err error)
+  // extend a block and the relevant inode
+  ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (newBlock Block, err error)
+
+
   // takes out a lease for an inode, this is to keep the posix convention that unlinked files
   // aren't cleaned up until they've been closed by all programs
   Lease(nodeid uint64) (ls Lease, err error)
@@ -32,6 +36,10 @@ type DataService interface {
   Read(blk Block) (conn BlockReader, err error)
 
   Write(blk Block) (conn BlockWriter, err error)
+
+  AddBlock(id uint64) error
+  RmBlock(id uint64) error
+  ExtendBlock(id uint64, delta uint32) error
 }
 
 // represents a session of interacting with a block of a file
@@ -53,6 +61,8 @@ type BlockReader interface {
 }
 
 type BlockWriter interface {
+  // return which block id this writer is writing
+  BlockId() uint64
   // writes a whole page
   // can expand block by one page or overwrite existing page
   WritePage(p []byte, pageNum int) error
@@ -64,8 +74,5 @@ type BlockWriter interface {
   Close() (err error)
 }
 
-// represents the interface provided by data services to the name service
-type NameDataIface interface {
-  AddBlock(id uint64) error
-  RmBlock(id uint64) error
+type SegmentLeader interface {
 }

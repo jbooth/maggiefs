@@ -40,7 +40,7 @@ type Block struct {
   Inodeid uint64
   StartPos uint64
   EndPos uint64
-  Locations []string
+  Container uint32
 }
 
 

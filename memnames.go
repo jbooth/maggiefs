@@ -30,7 +30,7 @@ type memnode struct {
   mlock *sync.Mutex // guards for mutations, could be replaced with lockless algo
 }
 type MemNames struct {
-  dataNode NameDataIface
+  dataNode DataService
   nodes map[uint64] *memnode
   inodeIdCounter uint64
   blockIdCounter uint64
@@ -57,7 +57,7 @@ func emptyDir(id uint64) *Inode {
     }
 }
 
-func NewMemNames(dataNode NameDataIface) *MemNames {
+func NewMemNames(dataNode DataService) *MemNames {
   ret := &MemNames{dataNode, make(map[uint64] *memnode), uint64(2), uint64(2), new(sync.RWMutex)}
   ret.l.Lock()
   defer ret.l.Unlock()
@@ -131,21 +131,27 @@ func (n *MemNames) Mutate(nodeid uint64, mutator func(inode *Inode) error) (newN
   return mn.node,nil
 }
 
-func (n *MemNames) AddBlock(nodeid uint64) (newBlock Block, err error) {
+func (n *MemNames) AddBlock(nodeid uint64, length uint32) (newBlock Block, err error) {
   newId := atomic.AddUint64(&n.blockIdCounter,uint64(1))
   node,err := n.Mutate(nodeid, func(inode *Inode) error {
-    lastBlock := inode.Blocks[len(inode.Blocks) - 1]
-    // sanity check that last block is actually full
-    if (lastBlock.EndPos - lastBlock.StartPos < BLOCKLENGTH) { 
-      return errors.New("Last block not quite full!") 
+    nextStartPos := uint64(0)
+    nextEndPos := uint64(length)
+    if (len(inode.Blocks) > 0) {
+      lastBlock := inode.Blocks[len(inode.Blocks) - 1]
+      // sanity check that last block is actually full
+      if (lastBlock.EndPos - lastBlock.StartPos < BLOCKLENGTH) {
+        return errors.New("Last block not quite full!")
+      }
+      nextStartPos = lastBlock.EndPos + uint64(1)
+      nextEndPos = lastBlock.EndPos + uint64(length)
     }
     newBlock := Block {
       Id: newId,
       Mtime: uint64(time.Now().Unix()),
       Inodeid: inode.Inodeid,
-      StartPos: lastBlock.EndPos + uint64(1),
-      EndPos: lastBlock.EndPos + uint64(1), // size initially 0
-      Locations: make([]string,0,0),
+      StartPos: nextStartPos,
+      EndPos: nextEndPos, // size initially 0
+      Container: uint32(0),
     }
     inode.Blocks = append(inode.Blocks,newBlock)
     return nil
@@ -158,9 +164,34 @@ func (n *MemNames) AddBlock(nodeid uint64) (newBlock Block, err error) {
   return node.Blocks[len(node.Blocks) - 1],nil
 }
 
+func (n *MemNames) ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (newBlock Block, err error) {
+  _,err = n.Mutate(nodeid, func(inode *Inode) error {
+    var success bool
+    for idx,blk := range inode.Blocks {
+      if blk.Id == blockId {
+        newBlock = blk
+        newBlock.EndPos += uint64(delta)
+        inode.Blocks[idx] = newBlock
+        success = true
+      }
+    }
+    if (! success) {
+      return fmt.Errorf("No block with id %d attached to inode %d",blockId,nodeid)
+    }
+    return nil
+  })
+  // extend on data nodes
+  err = n.dataNode.ExtendBlock(blockId,delta)
+  if err != nil {
+    return Block{},err
+  }
+  return newBlock,nil
+}
+
 func (n *MemNames) Lease(nodeid uint64) (ls Lease, err error) { 
   return &nonLease{},nil
 }
+
 type nonLease struct {
 }
 
