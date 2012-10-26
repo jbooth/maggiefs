@@ -1,5 +1,9 @@
 package maggiefs
 
+import (
+  "fmt"
+)
+
 const (
   FTYPE_DIR = int(0)
   FTYPE_REG = int(1)
@@ -23,6 +27,18 @@ type Inode struct {
   Blocks []Block // can be 0 blocks in case of directory,symlink or empty file
   Children map[string] Dentry // empty unless we are a dir, maps name to inode id 
   Xattr map[string] []byte
+}
+
+func (i *Inode) String() string {
+  return fmt.Sprintf(
+    "Inode { InodeId: %d, Length %d Ftype %d Mode %o Mtime %d Blocks %+v Children %v}",
+    i.Inodeid,
+    i.Length,
+    i.Ftype,
+    i.Mode,
+    i.Mtime,
+    i.Blocks,
+    i.Children)
 }
 
 type Dentry struct {

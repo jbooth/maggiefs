@@ -1,6 +1,7 @@
 package maggiefs
 
 import (
+  "time"
   "io"
   "fmt"
   "errors"
@@ -68,13 +69,15 @@ func (r *Reader) ReadAt(p []byte, offset uint64, length uint32) (n uint32, err e
   nRead := uint32(0)
   blockNeeded,err := blockForPos(offset + uint64(nRead), inode)
   if (err != nil) { return 0,err }
-  if (blockNeeded.Id == r.currBlock.Id && blockNeeded.Mtime == r.currBlock.Mtime) {
+  if (r.currReader != nil && blockNeeded.Id == r.currBlock.Id && blockNeeded.Mtime == r.currBlock.Mtime) {
     // currBlock is good, stick with currReader
   } else {
     // close old one (presumably returns to pool)
-    err = r.currReader.Close()
+    if (r.currReader != nil) {
+      err = r.currReader.Close()
+      if (err != nil) { return 0,err }
+    }
     // initialize new blockReader
-    if (err != nil) { return 0,err }
     r.currBlock = blockNeeded
     r.currReader,err = r.datas.Read(r.currBlock)
     if (err != nil) { return 0,err }
@@ -116,7 +119,7 @@ func (r *Reader) ReadAt(p []byte, offset uint64, length uint32) (n uint32, err e
 func blockForPos(offset uint64, inode *Inode) (blk Block, err error) {
   for i := 0 ; i < len(inode.Blocks) ; i++ {
     blk := inode.Blocks[i]
-    if (offset > blk.StartPos && offset < blk.EndPos) {
+    if (offset >= blk.StartPos && offset < blk.EndPos) {
       return blk,nil
     }
   }
@@ -144,10 +147,9 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
   w.l.Lock()
   defer w.l.Unlock()
   // first figure which block we're supposed to be at
-  // if offset is greater than length, we can't write (must append or whatever)
+  // if offset is greater than length, we can't write (must append from eof)
   if (off > w.inode.Length) { return 0,errors.New("offset > length of file") }
   if (off == w.inode.Length) {
-    fmt.Printf("switching block\n")
     currLen := w.currBlock.EndPos - w.currBlock.StartPos
     // we need to either extend current block or add a new one if we're just starting a file or at the end of current block
     if (off == 0 || currLen == BLOCKLENGTH) {
@@ -161,14 +163,15 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
       w.currWriter,err = w.datas.Write(w.currBlock)
       if (err != nil) { return 0,err }
       currLen = 0
-    } 
+    } else if (currLen == w.inode.Length) {
+      fmt.Printf("adding to end of current block\n")
+    }
     // extend currBlock to min(currLen + len, BLOCKLENGTH)
     maxAddedByte := BLOCKLENGTH - (currLen)
     if (uint64(length) > maxAddedByte) { length = uint32(maxAddedByte) }
     w.currBlock,err = w.names.ExtendBlock(w.inode.Inodeid,w.currBlock.Id,length)
     if (err != nil) { return 0,err }
     // patch up local model
-    w.currBlock.EndPos += uint64(length)
     w.inode.Length += uint64(length)
   } else {
     // find existing block we are overwriting
@@ -215,15 +218,36 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
   if (written < length) {
     lastPageLen := int(length - written)
 
-    fmt.Println("writing lage page len %d \n",lastPageLen)
+    fmt.Println("writing last page len %d \n",lastPageLen)
     fmt.Println("writing from slice %v at offsets %d %d\n",p,written,written+uint32(lastPageLen)-1)
     err = w.currWriter.Write(p[written:],pageNum,int(written),int(lastPageLen))
+    written += uint32(lastPageLen)
     if (err != nil) { return written,err }
   }
+  // update block with modified time
+  w.currBlock.Mtime = uint64(time.Now().Unix())
   return written,nil
 }
 
 func (w *Writer) Fsync() (err error) {
+  // update namenode with our inode's status
+  if (w.names == nil) { fmt.Println("w.names nil wtf man") }
+  newNode,err := w.names.Mutate(w.inode.Inodeid, func(i *Inode) error {
+    i.Length = w.inode.Length
+    currTime := time.Now().Unix()
+    i.Mtime = currTime
+    i.Ctime = currTime
+    for idx,b := range(w.inode.Blocks) {
+      if (idx < len(i.Blocks)) {
+        i.Blocks[idx] = b
+      } else {
+        i.Blocks = append(i.Blocks,b)
+      }
+    }
+    return nil
+  })
+  if (err != nil) { return err}
+  w.inode = newNode
   return nil
 }
 

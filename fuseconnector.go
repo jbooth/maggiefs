@@ -1,6 +1,7 @@
 package maggiefs
 
 import (
+  "io"
   "fmt"
   "os"
   "time"
@@ -220,6 +221,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
     // if file length > 0, we must be either TRUNC or APPEND
   // open flags
   readable,writable := parseWRFlags(input.Flags)
+  fmt.Printf("opening inode %d with flag %b, readable %t writable %t\n",header.NodeId,input.Flags,readable,writable)
   //appnd := (input.Flags & syscall.O_APPEND != 0)
 
   // get inode
@@ -251,6 +253,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
   // output
   out.Fh = fh
   out.OpenFlags = raw.FOPEN_KEEP_CACHE
+  fmt.Printf("putting openFile %+v in map under key %d\n",f,fh)
   m.openFiles.put(fh,f)
   // return int val
 	return fuse.OK
@@ -260,21 +263,24 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 // returns whether readable, writable
 func parseWRFlags(flags uint32) (bool, bool) {
   switch {
-      case flags & syscall.O_RDWR != 0:
+      case int(flags) & os.O_RDWR != 0:
+        fmt.Printf("O_RDWR\n")
         return true,true
-      case flags & syscall.O_RDONLY != 0:
-        return true,false
-      case flags & syscall.O_WRONLY != 0:
+      case int(flags) & os.O_WRONLY != 0:
         return false,true
 
   }
-  // shouldn't happen
-  return false,false
+  // default is read only
+  return true,false
 }
 
 func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.SetAttrIn) (code fuse.Status) {
   if (input.Valid & (raw.FATTR_MODE | raw.FATTR_UID | raw.FATTR_GID | raw.FATTR_MTIME | raw.FATTR_MTIME_NOW) == 0) {
     // if none of the items we care about were modified, skip it
+    inode,err := m.names.GetInode(header.NodeId)
+    if (inode == nil) { return fuse.ENOENT }
+    if (err != nil) { return fuse.EROFS }
+    fillAttrOut(out,inode)
     return fuse.OK
   }
   newNode,err := m.names.Mutate(header.NodeId, func (inode *Inode) error {
@@ -627,6 +633,8 @@ func (m *MaggieFuse) Create(out *raw.CreateOut, header *raw.InHeader, input *raw
   stat := m.Mknod(&out.EntryOut, header,&mknodin, name)
   if (! stat.Ok()) { return stat }
   openin := raw.OpenIn{input.Flags, uint32(0)}
+  // set header.NodeId to child, because that's what we actually open
+  header.NodeId = out.NodeId
   stat = m.Open(&out.OpenOut, header, &openin)
   if (! stat.Ok()) { return stat }
 	return fuse.OK
@@ -643,9 +651,18 @@ func (m *MaggieFuse) Read(header *raw.InHeader, input *raw.ReadIn, buf []byte) (
   for ; nRead < input.Size ; {
     n,err := reader.ReadAt(buf, input.Offset + uint64(nRead), input.Size - nRead)
     nRead += n
-    if (err != nil) { return &fuse.ReadResultData{buf}, fuse.EROFS }
+    if (err != nil) { 
+      if (err == io.EOF) {
+        fmt.Printf("returning data numbytes %d val %s\n",nRead,string(buf[0:int(nRead)]))
+        return &fuse.ReadResultData{buf[0:int(nRead)]},fuse.OK
+      } else {
+        fmt.Printf("Error reading %s\n",err.Error())
+        return &fuse.ReadResultData{buf}, fuse.EROFS 
+      }
+    }
   }
   // read from map fd -> file
+  fmt.Printf("returning data %s\n",string(buf))
 	return &fuse.ReadResultData{buf}, fuse.OK
 }
 
@@ -660,12 +677,14 @@ func (m *MaggieFuse) Release(header *raw.InHeader, input *raw.ReleaseIn) {
 
 func (m *MaggieFuse) Write(header *raw.InHeader, input *raw.WriteIn, data []byte) (written uint32, code fuse.Status) {
   writer := m.openFiles.get(input.Fh).w
+  fmt.Printf("Got writer %+v\n",writer)
   written = uint32(0)
   for ; written < input.Size ; {
+    fmt.Printf("Writing from offset %d len %d\n",input.Offset + uint64(written),input.Size-written)
     n,err := writer.WriteAt(data, input.Offset + uint64(written), input.Size - written)
     written += n
     if (err != nil) { 
-      m.log.Print("Error writing %v \n",err)
+      fmt.Printf("Error writing: %s \n",err.Error())
       return written, fuse.EROFS 
     }
   }
@@ -673,9 +692,11 @@ func (m *MaggieFuse) Write(header *raw.InHeader, input *raw.WriteIn, data []byte
 }
 
 func (m *MaggieFuse) Flush(header *raw.InHeader, input *raw.FlushIn) fuse.Status {
-  writer := m.openFiles.get(input.Fh).w
-  err := writer.Fsync()
-  if (err != nil) { return fuse.EROFS }
+  f := m.openFiles.get(input.Fh)
+  if (f.w != nil) {
+    err := f.w.Fsync()
+    if (err != nil) { return fuse.EROFS }
+  }
 	return fuse.OK
 }
 

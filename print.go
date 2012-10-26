@@ -1,0 +1,3 @@
+package maggiefs
+
+// String() functions

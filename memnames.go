@@ -120,11 +120,10 @@ func (n *MemNames) Mutate(nodeid uint64, mutator func(inode *Inode) error) (newN
   mn := n.nodes[nodeid]
   mn.mlock.Lock()
   defer mn.mlock.Unlock()
-  fmt.Printf("Mutating node id %d val %+v\n",nodeid,mn.node)
   newNode = CopyInode(mn.node)
-  fmt.Printf("Mutating node %+v\n",newNode)
+  fmt.Printf("Mutating node %+v\n",mn.node)
   err = mutator(newNode)
-  fmt.Printf("\n AFTER MUTATE \n %+v \n",newNode)
+  fmt.Printf("AFTER MUTATE \n %+v \n",newNode)
   if (err != nil) { return nil,err }
   mn.node = newNode
   // TODO handle case where Nlinks becomes 0 -- or don't i guess, whatever, we'll just orphan them

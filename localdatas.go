@@ -1,6 +1,7 @@
 package maggiefs
 
 import (
+  "syscall"
   "os"
   "fmt"
 )
@@ -61,16 +62,16 @@ type LocalDatas struct {
 }
 
 func (d LocalDatas) Read(blk Block) (conn BlockReader, err error) {
-  file,err := os.Open(d.pathFor(blk.Id))
+  file,err := os.OpenFile(d.pathFor(blk.Id),syscall.O_RDONLY,0777)
   return LocalBlockReader{file,0},err
 }
 
 func (d LocalDatas) Write(blk Block) (conn BlockWriter, err error) {
   if (blk.Id == 0) { 
-    return nil,fmt.Errorf("Bad blk descriptor %d in block %+v",blk.Id,blk)
+    return nil,fmt.Errorf("Bad blk descriptor %d in block %+v\n",blk.Id,blk)
   }
   fmt.Printf("opening file %s for block %d",d.pathFor(blk.Id),blk.Id)
-  file,err := os.Open(d.pathFor(blk.Id))
+  file,err := os.OpenFile(d.pathFor(blk.Id),syscall.O_RDWR,0777)
   return LocalBlockWriter{file,blk.Id},err
 }
 
@@ -91,7 +92,7 @@ func (d LocalDatas) ExtendBlock(id uint64, delta uint32) error {
 }
 
 func (d LocalDatas) pathFor(blkId uint64) string {
-  return d.baseDir + "/" + string(blkId)
+  return d.baseDir + "/" + fmt.Sprintf("%d",blkId)
 }
 
 func NewLocalDatas(baseDir string) *LocalDatas {

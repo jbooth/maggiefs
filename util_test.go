@@ -2,18 +2,23 @@ package maggiefs
 
 import (
   "testing"
+  "os"
   "fmt"
-  "sync/atomic"
 )
-
-func TestIncrementAndGet (t *testing.T) {
-  x := uint64(0)
-  for i := 0 ; i < 10 ; i++ {
-    oldX := atomic.LoadUint64(&x)
-    x = IncrementAndGet(&x,uint64(i))
-    fmt.Printf("oldX: %d i: %d newX: %d\n",oldX,i,x)
-    if x != oldX+uint64(i) {
-      t.Errorf("x+i != x.IncrementAndGet(i)")
-    }
+func TestParseWRFlags(t *testing.T) {
+  flag := uint32(os.O_RDONLY)
+  readable,_ := parseWRFlags(flag)
+  if (readable) { 
+    fmt.Println("pass")
+  } else {
+    fmt.Println("fail")
+    t.Fail()
+  }
+  flag = uint32(os.O_RDWR)
+  readable,writable := parseWRFlags(flag)
+  if (readable && writable) {
+    fmt.Println("pass\n")
+  } else {
+    t.Fail()
   }
 }
