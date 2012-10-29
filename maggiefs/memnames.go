@@ -26,7 +26,6 @@ import (
 // implements nameservice
 type memnode struct {
   node *Inode
-  wlock *sync.Mutex
   mlock *sync.Mutex // guards for mutations, could be replaced with lockless algo
 }
 type MemNames struct {
@@ -61,7 +60,7 @@ func NewMemNames(dataNode DataService) *MemNames {
   ret := &MemNames{dataNode, make(map[uint64] *memnode), uint64(2), uint64(2), new(sync.RWMutex)}
   ret.l.Lock()
   defer ret.l.Unlock()
-  ret.nodes[uint64(1)] = &memnode { emptyDir(uint64(1)),new(sync.Mutex),new(sync.Mutex)}
+  ret.nodes[uint64(1)] = &memnode { emptyDir(uint64(1)),new(sync.Mutex)}
   return ret
 }
 
@@ -97,7 +96,7 @@ func (n *MemNames) AddInode(node Inode) (id uint64, err error) {
   id = IncrementAndGet(&n.inodeIdCounter,uint64(1))
   fmt.Printf("new id %d" ,id)
   node.Inodeid = id
-  n.nodes[id] = &memnode{ &node, new(sync.Mutex), new(sync.Mutex) }
+  n.nodes[id] = &memnode{ &node, new(sync.Mutex) }
   return id,nil
 }
 
@@ -107,12 +106,6 @@ func (n *MemNames) StatFs() (stat syscall.Statfs_t, err error) {
   return syscall.Statfs_t{},nil
 }
 
-func (n *MemNames) WriteLock(nodeid uint64) (w WriteLock,err error) {
-  n.l.RLock()
-  defer n.l.RUnlock()
-
-  return wlwrapper{ n.nodes[nodeid].wlock },nil
-}
 
 func (n *MemNames) Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error) {
   n.l.RLock()

@@ -16,6 +16,7 @@ import (
 )
 
 type MaggieFuse struct {
+  leases maggiefs.LeaseService
   names maggiefs.NameService
   datas maggiefs.DataService
   openFiles openFileMap // maps FD numbers to open files
@@ -23,8 +24,9 @@ type MaggieFuse struct {
   log *log.Logger
 }
 
-func NewMaggieFuse(names maggiefs.NameService, datas maggiefs.DataService) *MaggieFuse {
+func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService) *MaggieFuse {
   return &MaggieFuse{
+    leases,
     names, 
     datas, 
     newOpenFileMap(10),
@@ -197,8 +199,8 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
   if (writable) {
     f.w,err = NewWriter(inode.Inodeid,m.names,m.datas)
     if (err != nil) { return fuse.EROFS }
-    f.writelock,err = m.names.WriteLock(inode.Inodeid)
-    if (err != nil) { return fuse.EROFS }
+//    f.writelock,err = m.names.WriteLease(inode.Inodeid)
+//    if (err != nil) { return fuse.EROFS }
   }
 
   // output
@@ -211,8 +213,9 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 }
 
 
-// returns whether readable, writable
+// returns whether readable, writable, truncate, append
 func parseWRFlags(flags uint32) (bool, bool) {
+  
   switch {
       case int(flags) & os.O_RDWR != 0:
         fmt.Printf("O_RDWR\n")
@@ -264,14 +267,13 @@ func (m *MaggieFuse) Readlink(header *raw.InHeader) (out []byte, code fuse.Statu
 }
 
 func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.MknodIn, name string) (code fuse.Status) {
-  // write lock on parent so 2 processes can't add the same child simultaneously
-  wlock,err := m.names.WriteLock(header.NodeId)
-  defer wlock.Unlock()
+
+
+  //get parent
+  parent,err := m.names.GetInode(header.NodeId)
   if err != nil {
     return fuse.EROFS
   }
-  //get parent
-  parent,err := m.names.GetInode(header.NodeId)
   _,alreadyHasChild := parent.Children[name]
   if (alreadyHasChild) {
     return fuse.EINVAL
@@ -303,7 +305,10 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 
   // link parent
   _,err = m.names.Mutate(parent.Inodeid, func (inode *maggiefs.Inode) error {
-    fmt.Printf("inside mutator function %+v",inode)
+    _,exists := inode.Children[name]
+    if (exists) {
+      return fmt.Errorf("Previous child existed when trying to add new child %s, node %+v",name,parent)
+    }
     inode.Children[name] = maggiefs.Dentry { id, time.Now().Unix() }
     fmt.Printf("Setting new child %s to id %d",name,id)
     return nil
@@ -318,11 +323,6 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 }
 
 func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.MkdirIn, name string) (code fuse.Status) {
-  wlock, err := m.names.WriteLock(header.NodeId)
-  defer wlock.Unlock()
-  if (err != nil) {
-    return fuse.EROFS
-  }
   // lookup parent
   parent,err := m.names.GetInode(header.NodeId)
   if (err != nil) {
@@ -362,6 +362,10 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
   i.Inodeid = id
   // link parent
   _,err = m.names.Mutate(parent.Inodeid, func (inode *maggiefs.Inode) error {
+     _,exists := inode.Children[name]
+    if (exists) {
+      return fmt.Errorf("Previous child existed when trying to add new child %s, node %+v",name,parent)
+    }
     inode.Children[name] = maggiefs.Dentry { i.Inodeid, time.Now().Unix() }
     return nil
   })

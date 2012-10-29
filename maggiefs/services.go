@@ -2,15 +2,41 @@ package maggiefs
 
 import (
   "syscall"
+  "sync"
 )
+
+type LeaseService interface {
+  
+  
+  WriteLease(nodeid uint64, commit func(), onChange func(*Inode)) (l WriteLease, err error)
+  
+  // takes out a lease for an inode, this is to keep the posix convention that unlinked files
+  // aren't cleaned up until they've been closed by all programs
+  // also registers a callback for when the node is remotely changed, so we can signal to page cache on localhost
+  ReadLease(nodeid uint64, onChange func(*Inode)) (l Lease, err error)
+  
+  // returns number of outstanding leases for the given node so we can know whether to garbage collect or not
+  NumOutstandingLeases(nodeid uint64) (n int, err error)
+}
+
+type WriteLease interface {
+  Lease
+  // commits changes, notifies readers afterwards.  May yield and reacquire lock.
+  Commit() 
+  // fetch a short term lock to insure that we're not interrupted by a write takeover during a short-lived op
+  // write takeovers can happen once this lock is released
+  ShortTermLock() *sync.Mutex
+}
+
+type Lease interface {
+  Release() error
+}
 
 type NameService interface {
   GetInode(nodeid uint64) (i *Inode, err error)
   StatFs() (statfs syscall.Statfs_t, err error)
   // persists a new inode to backing store
   AddInode(node Inode) (id uint64, err error)
-  // acquires write lock
-  WriteLock(nodeid uint64) (lock WriteLock, err error)
   // atomically mutates an inode, optimization over WriteLock for small operations
   Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error)
   // add a block to the end of a file, returns new block
@@ -24,13 +50,7 @@ type NameService interface {
   Lease(nodeid uint64) (ls Lease, err error)
 }
 
-type WriteLock interface {
-  Unlock() error
-}
 
-type Lease interface {
-  Release() error
-}
 
 type DataService interface {
   Read(blk Block) (conn BlockReader, err error)
