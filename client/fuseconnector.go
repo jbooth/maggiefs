@@ -15,6 +15,12 @@ import (
   "github.com/jbooth/maggiefs/maggiefs"
 )
 
+
+const (
+  PAGESIZE = maggiefs.PAGESIZE
+  BLOCKLENGTH = maggiefs.BLOCKLENGTH
+)
+
 type MaggieFuse struct {
   leases maggiefs.LeaseService
   names maggiefs.NameService

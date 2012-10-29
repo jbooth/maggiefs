@@ -7,7 +7,12 @@ import (
 
 type LeaseService interface {
   
-  
+  // acquires the write lease for the given inode
+  // only one client may have the writelease at a time, however it is pre-emptable in case 
+  // a higher priority process (re-replication etc) needs this lease.
+  // on pre-emption, the supplied commit() function will be called
+  // pre-emption will not happen while WriteLease.ShortTermLock() is held, however that lock should 
+  // not be held for the duration of anything blocking
   WriteLease(nodeid uint64, commit func(), onChange func(*Inode)) (l WriteLease, err error)
   
   // takes out a lease for an inode, this is to keep the posix convention that unlinked files
