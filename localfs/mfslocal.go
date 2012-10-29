@@ -19,9 +19,10 @@ func main() {
   fmt.Println(args)
   baseDir := args[0]
   fmt.Println(baseDir)
+  leases := maggiefs.NewLocalLeases()
   datas := maggiefs.NewLocalDatas(baseDir)
   names := maggiefs.NewMemNames(datas)
-  mfs := client.NewMaggieFuse(names,datas)
+  mfs := client.NewMaggieFuse(leases,names,datas)
   fmt.Println(mfs)
   mountState := fuse.NewMountState(mfs)
   mountState.Debug = true

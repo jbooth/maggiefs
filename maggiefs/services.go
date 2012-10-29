@@ -20,8 +20,8 @@ type LeaseService interface {
   // also registers a callback for when the node is remotely changed, so we can signal to page cache on localhost
   ReadLease(nodeid uint64, onChange func(*Inode)) (l Lease, err error)
   
-  // returns number of outstanding leases for the given node so we can know whether to garbage collect or not
-  NumOutstandingLeases(nodeid uint64) (n int, err error)
+  // blocks until all leases are released for the given node
+  WaitAllReleased(nodeid uint64) error
 }
 
 type WriteLease interface {
