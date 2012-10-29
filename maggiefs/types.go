@@ -2,6 +2,7 @@ package maggiefs
 
 import (
   "fmt"
+  "syscall"
 )
 
 const (
@@ -41,6 +42,18 @@ func (i *Inode) String() string {
     i.Children)
 }
 
+// all 0777 for now
+func (i *Inode) FullMode() uint32 {
+  switch {
+    case FTYPE_DIR == i.Ftype:
+      return syscall.S_IFDIR | 0777
+    case FTYPE_REG == i.Ftype:
+      return syscall.S_IFREG | 0777
+    case FTYPE_LNK == i.Ftype:
+      return syscall.S_IFLNK | 0777
+  }
+  return syscall.S_IFREG | 0777
+}
 type Dentry struct {
   Inodeid uint64
   CreatedTime int64 // time this link was created.  used to return consistent ordering in ReadDir.

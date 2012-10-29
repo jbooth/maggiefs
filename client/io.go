@@ -1,4 +1,4 @@
-package maggiefs
+package client
 
 import (
   "time"
@@ -6,25 +6,31 @@ import (
   "fmt"
   "errors"
   "sync"
+  "github.com/jbooth/maggiefs/maggiefs"
 )
 
-func NewReader(inodeid uint64, names NameService, datas DataService) (r *Reader, err error) {
-  return &Reader { inodeid,names,datas,nonBlock(),nil,make([]byte,PAGESIZE,PAGESIZE),new(sync.Mutex)},nil
+const (
+  PAGESIZE = maggiefs.PAGESIZE
+  BLOCKLENGTH = maggiefs.BLOCKLENGTH
+)
+
+func NewReader(inodeid uint64, names maggiefs.NameService, datas maggiefs.DataService) (r *Reader, err error) {
+  return &Reader { inodeid,names,datas,nonBlock(),nil,make([]byte,maggiefs.PAGESIZE,maggiefs.PAGESIZE),new(sync.Mutex)},nil
 }
 
-func NewWriter(inodeid uint64, names NameService, datas DataService) (w *Writer, err error) {
+func NewWriter(inodeid uint64, names maggiefs.NameService, datas maggiefs.DataService) (w *Writer, err error) {
   inode,err := names.GetInode(inodeid)
   if (err != nil) { return nil,err }
 
   return &Writer{inode,nonBlock(),nil,names,datas,new(sync.Mutex)},nil
 }
 
-func nonBlock() Block {
-  return Block{uint64(0),uint64(0),uint64(0),uint64(0),uint64(0),uint32(0)}
+func nonBlock() maggiefs.Block {
+  return maggiefs.Block{uint64(0),uint64(0),uint64(0),uint64(0),uint64(0),uint32(0)}
 }
 
 type brentry struct {
-  r BlockReader
+  r maggiefs.BlockReader
   blockId uint64
   lastUsedTxn uint64
 }
@@ -47,10 +53,10 @@ func (br brCache) ret(brentry) {
 // for writable or RW files, see OpenWriteFile
 type Reader struct {
   inodeid uint64
-  names NameService
-  datas DataService
-  currBlock Block
-  currReader BlockReader
+  names maggiefs.NameService
+  datas maggiefs.DataService
+  currBlock maggiefs.Block
+  currReader maggiefs.BlockReader
   pageBuff []byte
   l *sync.Mutex
 }
@@ -103,9 +109,9 @@ func (r *Reader) ReadAt(p []byte, offset uint64, length uint32) (n uint32, err e
   // read whole pages into output buffer
   numWholePagesToRead := (length - nRead) / uint32(4096)
   for ; numWholePagesToRead > 0 ; numWholePagesToRead-- {
-    err = r.currReader.ReadPage(p[nRead:nRead+PAGESIZE])
+    err = r.currReader.ReadPage(p[nRead:nRead+maggiefs.PAGESIZE])
     if (err != nil) { return nRead,err }
-    nRead += PAGESIZE
+    nRead += maggiefs.PAGESIZE
   }
 
   // read last page if fragment
@@ -116,14 +122,14 @@ func (r *Reader) ReadAt(p []byte, offset uint64, length uint32) (n uint32, err e
   return nRead,nil
 }
 
-func blockForPos(offset uint64, inode *Inode) (blk Block, err error) {
+func blockForPos(offset uint64, inode *maggiefs.Inode) (blk maggiefs.Block, err error) {
   for i := 0 ; i < len(inode.Blocks) ; i++ {
     blk := inode.Blocks[i]
     if (offset >= blk.StartPos && offset < blk.EndPos) {
       return blk,nil
     }
   }
-  return Block{},errors.New(fmt.Sprintf("offset %d not found in any blocks for inode %d, bad file?", offset, inode.Inodeid))
+  return maggiefs.Block{},errors.New(fmt.Sprintf("offset %d not found in any blocks for inode %d, bad file?", offset, inode.Inodeid))
 
 }
 
@@ -134,11 +140,11 @@ func (r *Reader) Close() error {
 }
 
 type Writer struct {
-  inode *Inode
-  currBlock Block
-  currWriter BlockWriter
-  names NameService
-  datas DataService
+  inode *maggiefs.Inode
+  currBlock maggiefs.Block
+  currWriter maggiefs.BlockWriter
+  names maggiefs.NameService
+  datas maggiefs.DataService
   l *sync.Mutex
 }
 
@@ -232,7 +238,7 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
 func (w *Writer) Fsync() (err error) {
   // update namenode with our inode's status
   if (w.names == nil) { fmt.Println("w.names nil wtf man") }
-  newNode,err := w.names.Mutate(w.inode.Inodeid, func(i *Inode) error {
+  newNode,err := w.names.Mutate(w.inode.Inodeid, func(i *maggiefs.Inode) error {
     i.Length = w.inode.Length
     currTime := time.Now().Unix()
     i.Mtime = currTime

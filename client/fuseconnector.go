@@ -1,4 +1,4 @@
-package maggiefs
+package client
 
 import (
   "io"
@@ -7,23 +7,23 @@ import (
   "time"
   "syscall"
   "sync/atomic"
-  "sync"
   "github.com/hanwen/go-fuse/raw"
   "github.com/hanwen/go-fuse/fuse"
   "log"
   "bytes"
   "sort"
+  "github.com/jbooth/maggiefs/maggiefs"
 )
 
 type MaggieFuse struct {
-  names NameService
-  datas DataService
+  names maggiefs.NameService
+  datas maggiefs.DataService
   openFiles openFileMap // maps FD numbers to open files
   fdCounter uint64 // used to get unique FD numbers
   log *log.Logger
 }
 
-func NewMaggieFuse(names NameService, datas DataService) *MaggieFuse {
+func NewMaggieFuse(names maggiefs.NameService, datas maggiefs.DataService) *MaggieFuse {
   return &MaggieFuse{
     names, 
     datas, 
@@ -31,55 +31,6 @@ func NewMaggieFuse(names NameService, datas DataService) *MaggieFuse {
     uint64(0), 
     log.New(os.Stderr, "maggie-fuse", 0),
   }
-}
-
-type OpenFile struct {
-  r *Reader
-  w *Writer
-  lease Lease
-  writelock WriteLock
-}
-
-func (f OpenFile) Close() error {
-  var err error = nil
-  if (f.r != nil) { err = f.r.Close() }
-  if (f.w != nil) { err = f.w.Close() }
-  err = f.lease.Release()
-  if (f.writelock != nil) { err = f.writelock.Unlock() }
-  return err
-}
-
-// ghetto concurrent hashmap
-type openFileMap struct {
-  numBuckets int
-  mapmap map[uint64] openFileMapSlice
-}
-
-type openFileMapSlice struct {
-  files map[uint64] OpenFile
-  lock sync.RWMutex
-}
-
-func newOpenFileMap(numBuckets int) openFileMap {
-  ret := openFileMap { numBuckets, make(map[uint64] openFileMapSlice) }
-  for i := 0 ; i < numBuckets ; i++ {
-    ret.mapmap[uint64(i)] = openFileMapSlice{make(map[uint64] OpenFile), sync.RWMutex{}}
-  }
-  return ret
-}
-
-func (m openFileMap) put(k uint64, v OpenFile) {
-  slice := m.mapmap[k % uint64(m.numBuckets)]
-  slice.lock.Lock()
-  defer slice.lock.Unlock()
-  slice.files[k] = v
-}
-
-func (m openFileMap) get(k uint64) OpenFile {
-  slice := m.mapmap[k % uint64(m.numBuckets)]
-  slice.lock.RLock()
-  defer slice.lock.RUnlock()
-  return slice.files[k]
 }
 
 
@@ -114,11 +65,11 @@ func (m *MaggieFuse) StatFs(out *fuse.StatfsOut, h *raw.InHeader) fuse.Status {
 // all files are 0777 yaaaaaaay
 func mode(ftype int) uint32 {
   switch {
-    case FTYPE_DIR == ftype:
+    case maggiefs.FTYPE_DIR == ftype:
       return syscall.S_IFDIR | 0777
-    case FTYPE_REG == ftype:
+    case maggiefs.FTYPE_REG == ftype:
       return syscall.S_IFREG | 0777
-    case FTYPE_LNK == ftype:
+    case maggiefs.FTYPE_LNK == ftype:
       return syscall.S_IFLNK | 0777
   }
   return syscall.S_IFREG | 0777
@@ -150,7 +101,7 @@ func (m *MaggieFuse) Lookup(out *raw.EntryOut, h *raw.InHeader, name string) (co
 	return fuse.OK
 }
 
-func fillEntryOut(out *raw.EntryOut, i *Inode) {
+func fillEntryOut(out *raw.EntryOut, i *maggiefs.Inode) {
     // fill out
   out.NodeId = i.Inodeid
   out.Generation = i.Generation
@@ -161,7 +112,7 @@ func fillEntryOut(out *raw.EntryOut, i *Inode) {
   //Inode
   out.Ino = i.Inodeid
   out.Size = i.Length
-  out.Blocks = numBlocks(i.Length, PAGESIZE)
+  out.Blocks = numBlocks(i.Length, maggiefs.PAGESIZE)
   out.Atime = uint64(0) // always 0 for atime
   out.Mtime = uint64(i.Mtime) // Mtime is user modifiable and is the last time data changed
   out.Ctime = uint64(i.Ctime) // Ctime is tracked by the FS and changes when attrs or data change
@@ -173,18 +124,18 @@ func fillEntryOut(out *raw.EntryOut, i *Inode) {
   out.Uid = i.Uid
   out.Gid = i.Gid
   out.Rdev = uint32(0) // regular file, not block dvice
-  out.Blksize = PAGESIZE
+  out.Blksize = maggiefs.PAGESIZE
 }
 
 func (m *MaggieFuse) Forget(nodeID, nlookup uint64) {
   // noop
 }
 
-func fillAttrOut(out *raw.AttrOut, i *Inode) {
+func fillAttrOut(out *raw.AttrOut, i *maggiefs.Inode) {
     // raw.Attr
   out.Ino = i.Inodeid
   out.Size = i.Length
-  out.Blocks = numBlocks(i.Length, PAGESIZE)
+  out.Blocks = numBlocks(i.Length, maggiefs.PAGESIZE)
   out.Atime = uint64(0) // always 0 for atime
   out.Mtime = uint64(i.Mtime) // Mtime is user modifiable and is the last time data changed
   out.Ctime = uint64(i.Ctime) // Ctime is tracked by the FS and changes when attrs or data change
@@ -196,7 +147,7 @@ func fillAttrOut(out *raw.AttrOut, i *Inode) {
   out.Uid = i.Uid
   out.Gid = i.Gid
   out.Rdev = uint32(0) // regular file, not block dvice
-  out.Blksize = PAGESIZE
+  out.Blksize = maggiefs.PAGESIZE
   // raw.AttrOut
   out.AttrValid = uint64(0)
   out.AttrValidNsec = uint32(100)
@@ -283,7 +234,7 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
     fillAttrOut(out,inode)
     return fuse.OK
   }
-  newNode,err := m.names.Mutate(header.NodeId, func (inode *Inode) error {
+  newNode,err := m.names.Mutate(header.NodeId, func (inode *maggiefs.Inode) error {
     // input.Valid is a bitmask for which fields are modified, so we check for each
     if (input.Valid & raw.FATTR_MODE != 0) {
       inode.Mode = input.Mode
@@ -326,10 +277,10 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     return fuse.EINVAL
   }
   currTime := time.Now().Unix()
-  i := Inode{
+  i := maggiefs.Inode{
     0, // id 0 to start
     0, // gen 0
-    FTYPE_REG,
+    maggiefs.FTYPE_REG,
     0,
     0777,
     currTime,
@@ -338,8 +289,8 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     header.Uid,
     header.Gid,
     "",
-    make([]Block,0,100),
-    make(map[string] Dentry),
+    make([]maggiefs.Block,0,100),
+    make(map[string] maggiefs.Dentry),
     make(map[string] []byte),
     }
 
@@ -351,9 +302,9 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
   i.Inodeid = id
 
   // link parent
-  _,err = m.names.Mutate(parent.Inodeid, func (inode *Inode) error {
+  _,err = m.names.Mutate(parent.Inodeid, func (inode *maggiefs.Inode) error {
     fmt.Printf("inside mutator function %+v",inode)
-    inode.Children[name] = Dentry { id, time.Now().Unix() }
+    inode.Children[name] = maggiefs.Dentry { id, time.Now().Unix() }
     fmt.Printf("Setting new child %s to id %d",name,id)
     return nil
   })
@@ -386,10 +337,10 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 
   // make new child
   currTime := time.Now().Unix()
-  i := Inode{
+  i := maggiefs.Inode{
     0, // id 0 to start, we get id when inserting
     0,
-    FTYPE_DIR,
+    maggiefs.FTYPE_DIR,
     0,
     0777,
     currTime,
@@ -398,8 +349,8 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
     header.Uid,
     header.Gid,
     "",
-    make([]Block,0,0),
-    make(map[string] Dentry),
+    make([]maggiefs.Block,0,0),
+    make(map[string] maggiefs.Dentry),
     make(map[string] []byte),
     }
 
@@ -410,8 +361,8 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
   }
   i.Inodeid = id
   // link parent
-  _,err = m.names.Mutate(parent.Inodeid, func (inode *Inode) error {
-    inode.Children[name] = Dentry { i.Inodeid, time.Now().Unix() }
+  _,err = m.names.Mutate(parent.Inodeid, func (inode *maggiefs.Inode) error {
+    inode.Children[name] = maggiefs.Dentry { i.Inodeid, time.Now().Unix() }
     return nil
   })
   if (err != nil) { 
@@ -441,13 +392,13 @@ func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status
   if (child.IsDir()) { return fuse.Status(syscall.EISDIR) }
 
   // save parent without link 
-  _,err = m.names.Mutate(parent.Inodeid,func (node *Inode) error {
+  _,err = m.names.Mutate(parent.Inodeid,func (node *maggiefs.Inode) error {
     delete(node.Children,name)
     return nil
   })
   if (err != nil) { return fuse.EROFS }
   // decrement refcount
-  _,err = m.names.Mutate(child.Inodeid,func (node *Inode) error {
+  _,err = m.names.Mutate(child.Inodeid,func (node *maggiefs.Inode) error {
     node.Nlink--
     return nil
   })
@@ -475,13 +426,13 @@ func (m *MaggieFuse) Rmdir(header *raw.InHeader, name string) (code fuse.Status)
   }
 
   // save parent without link 
-  _,err = m.names.Mutate(parent.Inodeid,func (node *Inode) error {
+  _,err = m.names.Mutate(parent.Inodeid,func (node *maggiefs.Inode) error {
     delete(node.Children,name)
     return nil
   })
   if (err != nil) { return fuse.EROFS }
   // decrement refcount
-  _,err = m.names.Mutate(child.Inodeid,func (node *Inode) error {
+  _,err = m.names.Mutate(child.Inodeid,func (node *maggiefs.Inode) error {
     node.Nlink--
     return nil
   })
@@ -492,10 +443,10 @@ func (m *MaggieFuse) Rmdir(header *raw.InHeader, name string) (code fuse.Status)
 func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo string, linkName string) (code fuse.Status) {
   // new inode type symlink
   currTime := time.Now().Unix()
-  i := Inode{
+  i := maggiefs.Inode{
     0, // id 0 to start, we get id when inserting
     0,
-    FTYPE_LNK,
+    maggiefs.FTYPE_LNK,
     0,
     0777,
     currTime,
@@ -504,8 +455,8 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
     header.Uid,
     header.Gid,
     pointedTo,
-    make([]Block,0,0),
-    make(map[string] Dentry),
+    make([]maggiefs.Block,0,0),
+    make(map[string] maggiefs.Dentry),
     make(map[string] []byte) ,
   }
   // save
@@ -515,8 +466,8 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
   }
   i.Inodeid = id
   // link parent
-  _,err = m.names.Mutate(header.NodeId, func (inode *Inode) error {
-    inode.Children[linkName] = Dentry { i.Inodeid, time.Now().Unix() }
+  _,err = m.names.Mutate(header.NodeId, func (inode *maggiefs.Inode) error {
+    inode.Children[linkName] = maggiefs.Dentry { i.Inodeid, time.Now().Unix() }
     return nil
   })
   if (err != nil) { 
@@ -540,14 +491,14 @@ func (m *MaggieFuse) Rename(header *raw.InHeader, input *raw.RenameIn, oldName s
   // look up nodeid for name
   childNodeId := oldParent.Children[oldName]
   // save parent without link 
-  _,err = m.names.Mutate(oldParent.Inodeid,func (node *Inode) error {
+  _,err = m.names.Mutate(oldParent.Inodeid,func (node *maggiefs.Inode) error {
     delete(node.Children,oldName)
     return nil
   })
   if (err != nil) { return fuse.EROFS } 
 
   // save new parent with link
-  _,err = m.names.Mutate(input.Newdir, func(node *Inode) error {
+  _,err = m.names.Mutate(input.Newdir, func(node *maggiefs.Inode) error {
     node.Children[newName] = childNodeId
     return nil
   })
@@ -562,13 +513,13 @@ func (m *MaggieFuse) Link(out *raw.EntryOut, header *raw.InHeader, input *raw.Li
   // existing node is input.Oldnodeid
   
   // add link to new parent
-  m.names.Mutate(header.NodeId, func(node *Inode) error {
-    node.Children[name] = Dentry { input.Oldnodeid, time.Now().Unix() }
+  m.names.Mutate(header.NodeId, func(node *maggiefs.Inode) error {
+    node.Children[name] = maggiefs.Dentry { input.Oldnodeid, time.Now().Unix() }
     return nil
   })
 
   // increment refcount on child
-  m.names.Mutate(input.Oldnodeid, func(node *Inode) error {
+  m.names.Mutate(input.Oldnodeid, func(node *maggiefs.Inode) error {
     node.Nlink++
     return nil
   })
@@ -592,7 +543,7 @@ func (m *MaggieFuse) GetXAttrData(header *raw.InHeader, attr string) (data []byt
 }
 
 func (m *MaggieFuse) SetXAttr(header *raw.InHeader, input *raw.SetXAttrIn, attr string, data []byte) fuse.Status {
-  _,err := m.names.Mutate(header.NodeId, func(node *Inode) error {
+  _,err := m.names.Mutate(header.NodeId, func(node *maggiefs.Inode) error {
     node.Xattr[attr] = data
     return nil
   })
@@ -613,7 +564,7 @@ func (m *MaggieFuse) ListXAttr(header *raw.InHeader) (data []byte, code fuse.Sta
 }
 
 func (m *MaggieFuse) RemoveXAttr(header *raw.InHeader, attr string) fuse.Status {
-  _,err := m.names.Mutate(header.NodeId, func(node *Inode) error {
+  _,err := m.names.Mutate(header.NodeId, func(node *maggiefs.Inode) error {
     delete(node.Xattr,attr)
     return nil
   })
@@ -709,7 +660,7 @@ func (m *MaggieFuse) Fsync(header *raw.InHeader, input *raw.FsyncIn) (code fuse.
 
 type dentryWithName struct {
   name string
-  Dentry
+  maggiefs.Dentry
 }
 
 type dentrylist []dentryWithName

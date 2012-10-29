@@ -1,10 +1,11 @@
 package main
 
 import (
-  "maggiefs"
   "fmt"
   "os"
   "flag"
+  "github.com/jbooth/maggiefs/maggiefs"
+  "github.com/jbooth/maggiefs/client"
   "github.com/hanwen/go-fuse/fuse"
 )
 
@@ -20,9 +21,9 @@ func main() {
   fmt.Println(baseDir)
   datas := maggiefs.NewLocalDatas(baseDir)
   names := maggiefs.NewMemNames(datas)
-  maggiefs := maggiefs.NewMaggieFuse(names,datas)
-  fmt.Println(maggiefs)
-  mountState := fuse.NewMountState(maggiefs)
+  mfs := client.NewMaggieFuse(names,datas)
+  fmt.Println(mfs)
+  mountState := fuse.NewMountState(mfs)
   mountState.Debug = true
   err := mountState.Mount("/tmp/maggiefs",nil)
   if (err != nil) { fmt.Println(err) }

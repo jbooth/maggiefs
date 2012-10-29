@@ -1,4 +1,4 @@
-package maggiefs
+package client
 
 import (
   "fmt"
