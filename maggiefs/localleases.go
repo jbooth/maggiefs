@@ -22,7 +22,7 @@ type LocalLeases struct {
 }
 
 func NewLocalLeases() LeaseService {
-  return LocalLeases{new(sync.Mutex)}
+  return LocalLeases{new(sync.Mutex),map[uint64]onelease{}}
 }
 
 func (l LocalLeases) WriteLease(nodeid uint64, commit func(), onChange func(*Inode)) (lease WriteLease, err error) {
