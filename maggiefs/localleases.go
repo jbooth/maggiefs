@@ -1,41 +1,156 @@
 package maggiefs
 
 import (
-
-  "sync"
+	"sync"
 )
 
-type onelease struct {
-  releaseChan chan bool
-  released bool
-  onChangeChan chan bool
+type singleWriteLease struct {
+	i *inodeLeaseState
 }
 
-func (l onelease) Release() {
-  l.releaseChan <- true
+func (s *singleWriteLease) Release() error {
+	s.i.Lock()
+	defer s.i.Unlock()
+	s.i.outstandingWriteLease = nil
+	// signal to any that were waiting on write lease becoming available
+	s.i.writeLeaseClosed.Broadcast()
+	return nil
 }
 
+func (s *singleWriteLease) Commit() {
+	// trigger all readers
+	s.i.Lock()
+	defer s.i.Unlock()
+	wg := sync.WaitGroup{}
+	for _, lease := range s.i.outstandingReadLeases {
+		wg.Add(1)
+		go func() {
+			lease.onChange(s.i.inodeId)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+}
+
+type singleReadLease struct {
+	i        *inodeLeaseState
+	myId     uint64
+	onChange func(uint64)
+}
+
+func (s *singleReadLease) Release() error {
+	s.i.Lock()
+	defer s.i.Unlock()
+	delete(s.i.outstandingReadLeases, s.myId)
+	if len(s.i.outstandingReadLeases) == 0 {
+		s.i.allReadLeasesClosed.Broadcast()
+	}
+	return nil
+}
+
+// represents lease state for a single inode
+// tracks all outstanding read leases and provides callbacks for them to deregister themselves
+type inodeLeaseState struct {
+	*sync.Mutex
+	inodeId               uint64
+	idCounter             uint64
+	outstandingReadLeases map[uint64]*singleReadLease
+	outstandingWriteLease *singleWriteLease
+	allReadLeasesClosed   *sync.Cond // signalled when readLeases == 0 after closing
+	writeLeaseClosed      *sync.Cond
+}
+
+func (s *inodeLeaseState) ReadLease(onChange func(uint64)) Lease {
+	s.Lock()
+	defer s.Unlock()
+	newId := IncrementAndGet(&s.idCounter, 1)
+	rl := &singleReadLease{
+		i:        s,
+		myId:     newId,
+		onChange: onChange}
+	s.outstandingReadLeases[newId] = rl
+	return rl
+}
+
+func (s *inodeLeaseState) WriteLease() WriteLease {
+	// need to atomically make sure we can get writelease
+	s.Lock()
+	defer s.Unlock()
+	// wait until writeLease == nil
+	for s.outstandingWriteLease != nil {
+		s.writeLeaseClosed.Wait()
+	}
+	s.outstandingWriteLease = &singleWriteLease{s}
+	return s.outstandingWriteLease
+}
+
+func newInodeLeaseState(inode uint64) *inodeLeaseState {
+	l := new(sync.Mutex)
+	return &inodeLeaseState{
+		l,
+		inode,
+		uint64(0),
+		make(map[uint64]*singleReadLease),
+		nil,
+		sync.NewCond(l),
+		sync.NewCond(l),
+	}
+
+}
+
+// on writer commit, readers need to be notified
+// on writer takeover, writer needs to be removed (not needed yet)
 type LocalLeases struct {
+	numBuckets uint64
+	maps       map[uint64]submap
+}
 
-  bigLock *sync.Mutex
-  lmap map[uint64] onelease
+type submap struct {
+	l *sync.Mutex
+	m map[uint64]*inodeLeaseState
 }
 
 func NewLocalLeases() LeaseService {
-  return LocalLeases{new(sync.Mutex),map[uint64]onelease{}}
+	numBuckets := 10
+	ret := LocalLeases{uint64(numBuckets), make(map[uint64]submap)}
+	for i := 0; i < numBuckets; i++ {
+		ret.maps[uint64(i)] = submap{new(sync.Mutex), make(map[uint64]*inodeLeaseState)}
+	}
+	return ret
 }
 
-func (l LocalLeases) WriteLease(nodeid uint64, commit func(), onChange func(*Inode)) (lease WriteLease, err error) {
-  return nil,nil
+func (l LocalLeases) getOrCreateInodeLeaseState(nodeid uint64) *inodeLeaseState {
+	idx := nodeid % l.numBuckets
+	m := l.maps[idx]
+	m.l.Lock()
+	defer m.l.Unlock()
+	prev, exists := m.m[nodeid]
+	if exists {
+		return prev
+	}
+	// else
+	prev = newInodeLeaseState(nodeid)
+	m.m[nodeid] = prev
+	return prev
 }
 
-func (l LocalLeases) ReadLease(nodeid uint64, onChange func(*Inode)) (lease Lease, err error) {
-  return nil,nil
+func (l LocalLeases) WriteLease(nodeid uint64) (lease WriteLease, err error) {
+  inodeLease := l.getOrCreateInodeLeaseState(nodeid)
+  return inodeLease.WriteLease(),nil
+}
+
+func (l LocalLeases) ReadLease(nodeid uint64, onChange func(uint64)) (lease Lease, err error) {
+  return l.getOrCreateInodeLeaseState(nodeid).ReadLease(onChange),nil
 }
 
 func (l LocalLeases) WaitAllReleased(nodeid uint64) error {
-  return nil
+  inodeLease := l.getOrCreateInodeLeaseState(nodeid)
+  inodeLease.Lock()
+  defer inodeLease.Unlock()
+  inodeLease.allReadLeasesClosed.Wait()
+	return nil
 }
+
 //
 //type LeaseService interface {
 //  

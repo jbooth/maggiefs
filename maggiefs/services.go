@@ -2,7 +2,6 @@ package maggiefs
 
 import (
   "syscall"
-  "sync"
 )
 
 type LeaseService interface {
@@ -13,24 +12,23 @@ type LeaseService interface {
   // on pre-emption, the supplied commit() function will be called
   // pre-emption will not happen while WriteLease.ShortTermLock() is held, however that lock should 
   // not be held for the duration of anything blocking
-  WriteLease(nodeid uint64, commit func(), onChange func(*Inode)) (l WriteLease, err error)
+  WriteLease(nodeid uint64) (l WriteLease, err error)
   
   // takes out a lease for an inode, this is to keep the posix convention that unlinked files
   // aren't cleaned up until they've been closed by all programs
-  // also registers a callback for when the node is remotely changed, so we can signal to page cache on localhost
-  ReadLease(nodeid uint64, onChange func(*Inode)) (l Lease, err error)
+  // also registers a callback for when the node is remotely changed, this will be triggered
+  // upon the file changing *unless* we've cancelled this lease.  Recommend 
+  ReadLease(nodeid uint64, onChange func(uint64)) (l Lease, err error)
   
   // blocks until all leases are released for the given node
   WaitAllReleased(nodeid uint64) error
 }
 
 type WriteLease interface {
-  Lease
+  // lets go of lock
+  Release() error
   // commits changes, notifies readers afterwards.  May yield and reacquire lock.
   Commit() 
-  // fetch a short term lock to insure that we're not interrupted by a write takeover during a short-lived op
-  // write takeovers can happen once this lock is released
-  ShortTermLock() *sync.Mutex
 }
 
 type Lease interface {
