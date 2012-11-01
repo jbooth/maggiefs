@@ -180,15 +180,4 @@ func (n *MemNames) ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (new
   return newBlock,nil
 }
 
-func (n *MemNames) Lease(nodeid uint64) (ls Lease, err error) { 
-  return &nonLease{},nil
-}
-
-type nonLease struct {
-}
-
-func (n nonLease) Release() error {
-  return nil
-}
-
 

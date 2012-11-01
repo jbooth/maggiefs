@@ -9,7 +9,7 @@ import (
 type OpenFile struct {
   r *Reader
   w *Writer
-  lease maggiefs.Lease
+  lease maggiefs.ReadLease
   writelock maggiefs.WriteLease
 }
 

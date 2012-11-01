@@ -179,7 +179,8 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
     // if file length = 0, open fine
     // if file length > 0, we must be either TRUNC or APPEND
   // open flags
-  readable,writable := parseWRFlags(input.Flags)
+  readable,writable,truncate,appnd := parseWRFlags(input.Flags)
+  
   fmt.Printf("opening inode %d with flag %b, readable %t writable %t\n",header.NodeId,input.Flags,readable,writable)
   //appnd := (input.Flags & syscall.O_APPEND != 0)
 
@@ -189,7 +190,13 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
     return fuse.EROFS
   }
 
-
+  if (truncate) {
+    // clear file before writing
+  }
+  
+  if (appnd) {
+    // make sure file writer is in append mode
+  }
 
   // allocate new filehandle
   fh := atomic.AddUint64(&m.fdCounter,uint64(1))
@@ -220,18 +227,26 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 
 
 // returns whether readable, writable, truncate, append
-func parseWRFlags(flags uint32) (bool, bool) {
-  
+func parseWRFlags(flags uint32) (bool, bool, bool, bool) {
+  // default is read only
+  readable,writable,truncate,appnd := true,false,false,false  
   switch {
       case int(flags) & os.O_RDWR != 0:
-        fmt.Printf("O_RDWR\n")
-        return true,true
+        readable = true
+        writable = true
       case int(flags) & os.O_WRONLY != 0:
-        return false,true
+        readable = false
+        writable = true
+      case int(flags) & os.O_TRUNC != 0:
+        writable = true
+        truncate = true
+      case int(flags) & os.O_APPEND != 0:
+        appnd = true
+        writable = true
 
   }
-  // default is read only
-  return true,false
+  // not handling O_CREAT just yet
+  return readable,writable,truncate,appnd
 }
 
 func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.SetAttrIn) (code fuse.Status) {

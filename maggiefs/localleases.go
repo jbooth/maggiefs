@@ -1,6 +1,7 @@
 package maggiefs
 
 import (
+	"time"
 	"sync"
 )
 
@@ -22,10 +23,14 @@ func (s *singleWriteLease) Commit() {
 	s.i.Lock()
 	defer s.i.Unlock()
 	wg := sync.WaitGroup{}
+	cn := ChangeNotify {
+	  Inodeid: s.i.inodeId,
+	  Mtime: time.Now().Unix(),
+	}
 	for _, lease := range s.i.outstandingReadLeases {
 		wg.Add(1)
 		go func() {
-			lease.onChange(s.i.inodeId)
+      lease.changeNotify <- cn
 			wg.Done()
 		}()
 	}
@@ -35,7 +40,7 @@ func (s *singleWriteLease) Commit() {
 type singleReadLease struct {
 	i        *inodeLeaseState
 	myId     uint64
-	onChange func(uint64)
+	changeNotify chan ChangeNotify
 }
 
 func (s *singleReadLease) Release() error {
@@ -60,14 +65,14 @@ type inodeLeaseState struct {
 	writeLeaseClosed      *sync.Cond
 }
 
-func (s *inodeLeaseState) ReadLease(onChange func(uint64)) Lease {
+func (s *inodeLeaseState) ReadLease(changeNotify chan ChangeNotify) ReadLease {
 	s.Lock()
 	defer s.Unlock()
 	newId := IncrementAndGet(&s.idCounter, 1)
 	rl := &singleReadLease{
 		i:        s,
 		myId:     newId,
-		onChange: onChange}
+		changeNotify: changeNotify}
 	s.outstandingReadLeases[newId] = rl
 	return rl
 }
@@ -139,8 +144,8 @@ func (l LocalLeases) WriteLease(nodeid uint64) (lease WriteLease, err error) {
   return inodeLease.WriteLease(),nil
 }
 
-func (l LocalLeases) ReadLease(nodeid uint64, onChange func(uint64)) (lease Lease, err error) {
-  return l.getOrCreateInodeLeaseState(nodeid).ReadLease(onChange),nil
+func (l LocalLeases) ReadLease(nodeid uint64, changeNotify chan ChangeNotify) (lease ReadLease, err error) {
+  return l.getOrCreateInodeLeaseState(nodeid).ReadLease(changeNotify),nil
 }
 
 func (l LocalLeases) WaitAllReleased(nodeid uint64) error {

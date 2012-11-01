@@ -18,7 +18,7 @@ type LeaseService interface {
   // aren't cleaned up until they've been closed by all programs
   // also registers a callback for when the node is remotely changed, this will be triggered
   // upon the file changing *unless* we've cancelled this lease.  Recommend 
-  ReadLease(nodeid uint64, onChange func(uint64)) (l Lease, err error)
+  ReadLease(nodeid uint64, notifier chan ChangeNotify) (l ReadLease, err error)
   
   // blocks until all leases are released for the given node
   WaitAllReleased(nodeid uint64) error
@@ -27,12 +27,17 @@ type LeaseService interface {
 type WriteLease interface {
   // lets go of lock
   Release() error
-  // commits changes, notifies readers afterwards.  May yield and reacquire lock.
+  // commits changes, sending uint64(now()) to all readers registered for this inode id.  May yield and reacquire lock.
   Commit() 
 }
 
-type Lease interface {
+type ReadLease interface {
   Release() error
+}
+
+type ChangeNotify struct {
+  Inodeid uint64 // inode that was modified
+  Mtime int64 // unixtime of time in seconds
 }
 
 type NameService interface {
@@ -46,11 +51,6 @@ type NameService interface {
   AddBlock(nodeid uint64, length uint32) (newBlock Block, err error)
   // extend a block and the relevant inode
   ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (newBlock Block, err error)
-
-
-  // takes out a lease for an inode, this is to keep the posix convention that unlinked files
-  // aren't cleaned up until they've been closed by all programs
-  Lease(nodeid uint64) (ls Lease, err error)
 }
 
 
