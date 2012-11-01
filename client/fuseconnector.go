@@ -27,18 +27,32 @@ type MaggieFuse struct {
   datas maggiefs.DataService
   openFiles openFileMap // maps FD numbers to open files
   fdCounter uint64 // used to get unique FD numbers
+  changeNotifier chan maggiefs.ChangeNotify // remote changes to inodes are notified through this chan
+  inodeNotify func(*raw.NotifyInvalInodeOut) fuse.Status // used to signal to OS that a remote inode changed
   log *log.Logger
 }
 
 func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService) *MaggieFuse {
-  return &MaggieFuse{
+  m := &MaggieFuse{
     leases,
     names, 
     datas, 
     newOpenFileMap(10),
     uint64(0), 
+    make(chan maggiefs.ChangeNotify,3),
+    nil,
     log.New(os.Stderr, "maggie-fuse", 0),
   }
+  // 
+  go func() {
+    notify := &raw.NotifyInvalInodeOut{}
+    for cn := range m.changeNotifier {
+      notify.Ino = cn.Inodeid
+      stat := m.inodeNotify(notify)
+      fmt.Printf("notified for inode %d, got value %+v",notify.Ino,stat)
+    }
+  }()
+  return m
 }
 
 
@@ -46,6 +60,7 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 
 // FUSE implementation
 func (m *MaggieFuse) Init(init *fuse.RawFsInit) {
+  m.inodeNotify = init.InodeNotify
 }
 
 func (m *MaggieFuse) String() string {
@@ -181,8 +196,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
   // open flags
   readable,writable,truncate,appnd := parseWRFlags(input.Flags)
   
-  fmt.Printf("opening inode %d with flag %b, readable %t writable %t\n",header.NodeId,input.Flags,readable,writable)
-  //appnd := (input.Flags & syscall.O_APPEND != 0)
+  fmt.Printf("opening inode %d with flag %b, readable %t writable %t truncate %t append %t \n",header.NodeId,input.Flags,readable,writable,truncate,appnd)
 
   // get inode
   inode,err := m.names.GetInode(header.NodeId)
@@ -201,7 +215,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
   // allocate new filehandle
   fh := atomic.AddUint64(&m.fdCounter,uint64(1))
   f := OpenFile{nil,nil,nil,nil}
-  //f.lease,err = m.names.Lease(inode.Inodeid)
+  f.lease,err = m.leases.ReadLease(inode.Inodeid, m.changeNotifier)
   if (err != nil) { 
     return fuse.EROFS
   }
