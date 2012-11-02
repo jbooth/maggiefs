@@ -16,7 +16,12 @@ type OpenFile struct {
 func (f OpenFile) Close() error {
   var err error = nil
   if (f.r != nil) { err = f.r.Close() }
-  if (f.w != nil) { err = f.w.Close() }
+  if (f.w != nil) { 
+    err = f.w.Fsync()
+    if (err != nil) { return err }
+    err = f.w.Close() 
+    if (err != nil) { return err }
+  }
   err = f.lease.Release()
   if (f.writelock != nil) { err = f.writelock.Release() }
   return err

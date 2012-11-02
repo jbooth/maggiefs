@@ -9,6 +9,15 @@ import (
 )
 
 
+type Writer struct {
+  inode *maggiefs.Inode
+  currBlock maggiefs.Block
+  currWriter maggiefs.BlockWriter
+  names maggiefs.NameService
+  datas maggiefs.DataService
+  l *sync.Mutex
+}
+
 func NewWriter(inodeid uint64, names maggiefs.NameService, datas maggiefs.DataService) (w *Writer, err error) {
   inode,err := names.GetInode(inodeid)
   if (err != nil) { return nil,err }

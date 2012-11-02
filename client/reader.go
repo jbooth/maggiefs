@@ -123,12 +123,3 @@ func (r *Reader) Close() error {
   if (r.currReader != nil) { r.currReader.Close() }
   return nil
 }
-
-type Writer struct {
-  inode *maggiefs.Inode
-  currBlock maggiefs.Block
-  currWriter maggiefs.BlockWriter
-  names maggiefs.NameService
-  datas maggiefs.DataService
-  l *sync.Mutex
-}
