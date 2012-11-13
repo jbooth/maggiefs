@@ -18,7 +18,12 @@ type LeaseService interface {
   // aren't cleaned up until they've been closed by all programs
   // also registers a callback for when the node is remotely changed, this will be triggered
   // upon the file changing *unless* we've cancelled this lease.  Recommend 
-  ReadLease(nodeid uint64, notifier chan ChangeNotify) (l ReadLease, err error)
+  ReadLease(nodeid uint64) (l ReadLease, err error)
+  
+  // returns a chan which will contain an event every time any inode in the system is changed
+  // used for cache coherency
+  // the fuse client runs a goroutine reading all changes from this chan
+  GetNotifier() chan ChangeNotify
   
   // blocks until all leases are released for the given node
   WaitAllReleased(nodeid uint64) error
@@ -28,7 +33,7 @@ type WriteLease interface {
   // lets go of lock
   Release() error
   // commits changes, sending uint64(now()) to all readers registered for this inode id.  May yield and reacquire lock.
-  Commit() 
+  Commit() error
 }
 
 type ReadLease interface {

@@ -7,6 +7,7 @@ import (
 
 type singleWriteLease struct {
 	i *inodeLeaseState
+	notifier chan ChangeNotify
 }
 
 func (s *singleWriteLease) Release() error {
@@ -18,23 +19,10 @@ func (s *singleWriteLease) Release() error {
 	return nil
 }
 
-func (s *singleWriteLease) Commit() {
-	// trigger all readers
-	s.i.Lock()
-	defer s.i.Unlock()
-	wg := sync.WaitGroup{}
-	cn := ChangeNotify {
-	  Inodeid: s.i.inodeId,
-	  Mtime: time.Now().Unix(),
-	}
-	for _, lease := range s.i.outstandingReadLeases {
-		wg.Add(1)
-		go func() {
-      lease.changeNotify <- cn
-			wg.Done()
-		}()
-	}
-	wg.Wait()
+func (s *singleWriteLease) Commit() error {
+	// notify the notifier
+	s.notifier <- ChangeNotify{s.i.inodeId,time.Now().Unix()}
+	return nil
 }
 
 type singleReadLease struct {
@@ -65,19 +53,18 @@ type inodeLeaseState struct {
 	writeLeaseClosed      *sync.Cond
 }
 
-func (s *inodeLeaseState) ReadLease(changeNotify chan ChangeNotify) ReadLease {
+func (s *inodeLeaseState) ReadLease() ReadLease {
 	s.Lock()
 	defer s.Unlock()
 	newId := IncrementAndGet(&s.idCounter, 1)
 	rl := &singleReadLease{
 		i:        s,
-		myId:     newId,
-		changeNotify: changeNotify}
+		myId:     newId}
 	s.outstandingReadLeases[newId] = rl
 	return rl
 }
 
-func (s *inodeLeaseState) WriteLease() WriteLease {
+func (s *inodeLeaseState) WriteLease(notifier chan ChangeNotify) WriteLease {
 	// need to atomically make sure we can get writelease
 	s.Lock()
 	defer s.Unlock()
@@ -85,7 +72,7 @@ func (s *inodeLeaseState) WriteLease() WriteLease {
 	for s.outstandingWriteLease != nil {
 		s.writeLeaseClosed.Wait()
 	}
-	s.outstandingWriteLease = &singleWriteLease{s}
+	s.outstandingWriteLease = &singleWriteLease{s,notifier}
 	return s.outstandingWriteLease
 }
 
@@ -108,6 +95,7 @@ func newInodeLeaseState(inode uint64) *inodeLeaseState {
 type LocalLeases struct {
 	numBuckets uint64
 	maps       map[uint64]submap
+	notifier chan ChangeNotify
 }
 
 type submap struct {
@@ -117,7 +105,7 @@ type submap struct {
 
 func NewLocalLeases() LeaseService {
 	numBuckets := 10
-	ret := LocalLeases{uint64(numBuckets), make(map[uint64]submap)}
+	ret := LocalLeases{uint64(numBuckets), make(map[uint64]submap),make(chan ChangeNotify,100)}
 	for i := 0; i < numBuckets; i++ {
 		ret.maps[uint64(i)] = submap{new(sync.Mutex), make(map[uint64]*inodeLeaseState)}
 	}
@@ -141,11 +129,15 @@ func (l LocalLeases) getOrCreateInodeLeaseState(nodeid uint64) *inodeLeaseState 
 
 func (l LocalLeases) WriteLease(nodeid uint64) (lease WriteLease, err error) {
   inodeLease := l.getOrCreateInodeLeaseState(nodeid)
-  return inodeLease.WriteLease(),nil
+  return inodeLease.WriteLease(l.notifier),nil
 }
 
-func (l LocalLeases) ReadLease(nodeid uint64, changeNotify chan ChangeNotify) (lease ReadLease, err error) {
-  return l.getOrCreateInodeLeaseState(nodeid).ReadLease(changeNotify),nil
+func (l LocalLeases) ReadLease(nodeid uint64) (lease ReadLease, err error) {
+  return l.getOrCreateInodeLeaseState(nodeid).ReadLease(),nil
+}
+
+func (l LocalLeases) GetNotifier() chan ChangeNotify {
+  return l.notifier
 }
 
 func (l LocalLeases) WaitAllReleased(nodeid uint64) error {

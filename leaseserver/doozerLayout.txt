@@ -1,0 +1,11 @@
+
+/leases
+   /inodeId
+     /r
+       /hostId
+       /hostId
+     /w  -- value HOSTID
+
+
+
+       
