@@ -39,7 +39,7 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
     datas, 
     newOpenFileMap(10),
     uint64(0), 
-    make(chan maggiefs.ChangeNotify,3),
+    leases.GetNotifier(),
     nil,
     log.New(os.Stderr, "maggie-fuse", 0),
   }
@@ -215,7 +215,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
   // allocate new filehandle
   fh := atomic.AddUint64(&m.fdCounter,uint64(1))
   f := OpenFile{nil,nil,nil,nil}
-  f.lease,err = m.leases.ReadLease(inode.Inodeid, m.changeNotifier)
+  f.lease,err = m.leases.ReadLease(inode.Inodeid)
   if (err != nil) { 
     return fuse.EROFS
   }
