@@ -1,20 +1,17 @@
 package leaseserver
 
 import (
+  "sync"
   "github.com/4ad/doozer"
 )
 
-type ReadLease struct {
+type readLease struct {
   doozer *doozer.Conn
   leasePath string
   leaseRev int64
-  inodeid uint64
-  releaseChan chan int
 }
 
-func (r ReadLease) Release() error {
-  // unregister our channel with the
-  r.releaseChan <- 1 
+func (r readLease) Release() error {
   // delete our readpath
   return r.doozer.Del(r.leasePath,r.leaseRev)
 }
@@ -24,21 +21,29 @@ func (r ReadLease) Release() error {
 
 
 
-type WriteLease struct {
+type writeLease struct {
   doozer *doozer.Conn
-  leaseRoot string
+  m *sync.Mutex
   leasePath string
+  leaseBody []byte
   leaseRev int64
   inodeid uint64
 }
 
-func (w WriteLease) Release() error {
+func (w writeLease) Release() error {
+  w.m.Lock()
+  defer w.m.Unlock()
   // delete our write path
   return w.doozer.Del(w.leasePath,w.leaseRev)
 }
 
-func (w WriteLease) Commit() error {
-  // push notification to all readers
+func (w writeLease) Commit() error {
+  w.m.Lock()
+  defer w.m.Unlock()
+  // modifying node at writepath will notify all readers
+  lr,err := w.doozer.Set(w.leasePath,w.leaseRev,w.leaseBody)
+  if (err != nil) { return err }
+  w.leaseRev = lr
   return nil
 }
 
