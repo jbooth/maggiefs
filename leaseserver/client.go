@@ -152,8 +152,9 @@ func leasePath(nodeid uint64) string {
 	return fmt.Sprintf("/leases/%d", nodeid)
 }
 
-func NewLeaseClient() maggiefs.LeaseService {
-	// make sure the base lease path exists
-
-	return LeaseClient{}
+func NewLeaseClient(doozerHost string) (maggiefs.LeaseService,error) {
+  doozer,err := doozer.Dial(doozerHost)
+  if (err != nil) { return nil,err }
+	return LeaseClient{doozer, []byte{}, make(chan maggiefs.ChangeNotify)},nil
 }
+ 
