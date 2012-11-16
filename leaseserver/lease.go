@@ -2,6 +2,7 @@ package leaseserver
 
 import (
   "sync"
+  "fmt"
   "github.com/4ad/doozer"
 )
 
@@ -41,7 +42,12 @@ func (w writeLease) Commit() error {
   w.m.Lock()
   defer w.m.Unlock()
   // modifying node at writepath will notify all readers
+  fmt.Printf("setting at %s with ref %d\n",w.leasePath,w.leaseRev)
+  prevRev,_ := w.doozer.Rev()
+  prevStat,_ := w.doozer.Statinfo(prevRev,w.leasePath)
+  fmt.Printf("prev stat %+v\n",prevStat)
   lr,err := w.doozer.Set(w.leasePath,w.leaseRev,w.leaseBody)
+  fmt.Printf("got err %s with rev %d",err,lr)
   if (err != nil) { return err }
   w.leaseRev = lr
   return nil

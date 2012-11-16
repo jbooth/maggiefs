@@ -7,19 +7,24 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"sync"
 	"strings"
-	"time"
+)
+
+const(
+//  CREATE_BODY byte[] = {1,2}
+//  COMMIT_BODY = []byte{2}
 )
 
 type LeaseClient struct {
 	doozer    *doozer.Conn
 	leaseBody []byte
-	notifier chan maggiefs.ChangeNotify
+	notifier chan uint64
 }
 
 func (lc LeaseClient) WriteLease(nodeid uint64) (l maggiefs.WriteLease, err error) {
 	path := leasePath(nodeid) + "/w"
 	success := false
-	nodeRev := int64(0)
+	nodeRev,err := lc.doozer.Rev()
+	if err != nil { return nil,err }
 	// keep trying until we're successful
 	for !success {
 		// check if lock exists
@@ -46,6 +51,7 @@ func (lc LeaseClient) WriteLease(nodeid uint64) (l maggiefs.WriteLease, err erro
 
 		// try to claim
 		newRev, err := lc.doozer.Set(path, nodeRev, lc.leaseBody)
+		if err != nil { panic(err) }
 		if newRev != 0 {
 			success = true
 			nodeRev = newRev
@@ -56,7 +62,7 @@ func (lc LeaseClient) WriteLease(nodeid uint64) (l maggiefs.WriteLease, err erro
 		doozer:    lc.doozer,
 		m:         new(sync.Mutex),
 		leasePath: path,
-		leaseRev:  nodeRev,
+		leaseRev:  nodeRev + 1,
 		inodeid:   nodeid,
 	}, nil
 }
@@ -124,7 +130,7 @@ func (lc LeaseClient) WaitAllReleased(nodeid uint64) error {
 	return nil
 }
 
-func (lc LeaseClient) GetNotifier() chan maggiefs.ChangeNotify {
+func (lc LeaseClient) GetNotifier() chan uint64 {
 	return lc.notifier
 }
 
@@ -142,7 +148,7 @@ func (lc LeaseClient) GoNotify() {
     
     inodeId,err := strconv.ParseUint(splits[2],10,64)
     if err != nil { panic(err) }
-    lc.notifier <- maggiefs.ChangeNotify{inodeId,time.Now().Unix()}
+    lc.notifier <- inodeId
   }
 }
 
@@ -155,6 +161,8 @@ func leasePath(nodeid uint64) string {
 func NewLeaseClient(doozerHost string) (maggiefs.LeaseService,error) {
   doozer,err := doozer.Dial(doozerHost)
   if (err != nil) { return nil,err }
-	return LeaseClient{doozer, []byte{}, make(chan maggiefs.ChangeNotify)},nil
+	ret := LeaseClient{doozer, []byte{}, make(chan uint64)}
+	go ret.GoNotify()
+	return ret,nil
 }
  
