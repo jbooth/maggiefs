@@ -1,13 +1,12 @@
 package maggiefs
 
 import (
-	"time"
 	"sync"
 )
 
 type singleWriteLease struct {
 	i *inodeLeaseState
-	notifier chan ChangeNotify
+	notifier chan uint64
 }
 
 func (s *singleWriteLease) Release() error {
@@ -21,14 +20,14 @@ func (s *singleWriteLease) Release() error {
 
 func (s *singleWriteLease) Commit() error {
 	// notify the notifier
-	s.notifier <- ChangeNotify{s.i.inodeId,time.Now().Unix()}
+	s.notifier <- s.i.inodeId
 	return nil
 }
 
 type singleReadLease struct {
 	i        *inodeLeaseState
 	myId     uint64
-	changeNotify chan ChangeNotify
+	changeNotify chan uint64
 }
 
 func (s *singleReadLease) Release() error {
@@ -64,7 +63,7 @@ func (s *inodeLeaseState) ReadLease() ReadLease {
 	return rl
 }
 
-func (s *inodeLeaseState) WriteLease(notifier chan ChangeNotify) WriteLease {
+func (s *inodeLeaseState) WriteLease(notifier chan uint64) WriteLease {
 	// need to atomically make sure we can get writelease
 	s.Lock()
 	defer s.Unlock()
@@ -95,7 +94,7 @@ func newInodeLeaseState(inode uint64) *inodeLeaseState {
 type LocalLeases struct {
 	numBuckets uint64
 	maps       map[uint64]submap
-	notifier chan ChangeNotify
+	notifier chan uint64
 }
 
 type submap struct {
@@ -105,7 +104,7 @@ type submap struct {
 
 func NewLocalLeases() LeaseService {
 	numBuckets := 10
-	ret := LocalLeases{uint64(numBuckets), make(map[uint64]submap),make(chan ChangeNotify,100)}
+	ret := LocalLeases{uint64(numBuckets), make(map[uint64]submap),make(chan uint64,100)}
 	for i := 0; i < numBuckets; i++ {
 		ret.maps[uint64(i)] = submap{new(sync.Mutex), make(map[uint64]*inodeLeaseState)}
 	}
@@ -136,7 +135,7 @@ func (l LocalLeases) ReadLease(nodeid uint64) (lease ReadLease, err error) {
   return l.getOrCreateInodeLeaseState(nodeid).ReadLease(),nil
 }
 
-func (l LocalLeases) GetNotifier() chan ChangeNotify {
+func (l LocalLeases) GetNotifier() chan uint64 {
   return l.notifier
 }
 

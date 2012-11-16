@@ -23,7 +23,7 @@ type LeaseService interface {
   // returns a chan which will contain an event every time any inode in the system is changed
   // used for cache coherency
   // the fuse client runs a goroutine reading all changes from this chan
-  GetNotifier() chan ChangeNotify
+  GetNotifier() chan uint64
   
   // blocks until all leases are released for the given node
   WaitAllReleased(nodeid uint64) error
@@ -40,10 +40,6 @@ type ReadLease interface {
   Release() error
 }
 
-type ChangeNotify struct {
-  Inodeid uint64 // inode that was modified
-  Mtime int64 // unixtime of time in seconds
-}
 
 type NameService interface {
   GetInode(nodeid uint64) (i *Inode, err error)
