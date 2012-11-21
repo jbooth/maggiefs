@@ -83,7 +83,7 @@ func (c rawclient) readResponses() {
 	respDecoder := gob.NewDecoder(c.c)
 	for {
     resp := response{}
-    respDecoder.Decode(resp)
+    respDecoder.Decode(&resp)
     c.responses <- resp  
 	}
 }
