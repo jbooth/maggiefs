@@ -9,7 +9,7 @@ func CopyInode(i *Inode) *Inode {
   ret := Inode{}
   ret.Inodeid = i.Inodeid
   ret.Generation = i.Generation
-  ret. Ftype = i.Ftype
+  ret.Ftype = i.Ftype
   ret.Length = i.Length
   ret.Mode = i.Mode
   ret.Mtime = i.Mtime

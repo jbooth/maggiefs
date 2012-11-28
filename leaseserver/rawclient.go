@@ -2,7 +2,6 @@ package leaseserver
 
 import (
 	"encoding/gob"
-  "github.com/jbooth/maggiefs/maggiefs"
 	"fmt"
 	"net"
 )
@@ -36,6 +35,8 @@ func newRawClient(addr string) (*rawclient, error) {
 	return &rawclient{c, 0, make(chan uint64, 100), make(chan queuedRequest), make(chan response), make(chan bool)}, nil
 }
 
+// executes a request and blocks until response
+// don't worry about the reqno field of request, that's handled internally
 func (c *rawclient) doRequest(r request) (response, error) {
 	respChan := make(chan response)
 	q := queuedRequest{r, respChan}
@@ -88,34 +89,5 @@ func (c *rawclient) readResponses() {
 	}
 }
 
-  // acquires the write lease for the given inode
-  // only one client may have the writelease at a time, however it is pre-emptable in case 
-  // a higher priority process (re-replication etc) needs this lease.
-  // on pre-emption, the supplied commit() function will be called
-  // pre-emption will not happen while WriteLease.ShortTermLock() is held, however that lock should 
-  // not be held for the duration of anything blocking
-  func (c *rawclient) WriteLease(nodeid uint64) (l maggiefs.WriteLease, err error) {
-    return nil,nil
-  }
-  
-  // takes out a lease for an inode, this is to keep the posix convention that unlinked files
-  // aren't cleaned up until they've been closed by all programs
-  // also registers a callback for when the node is remotely changed, this will be triggered
-  // upon the file changing *unless* we've cancelled this lease.  Recommend 
-  func (c *rawclient) ReadLease(nodeid uint64) (l maggiefs.ReadLease, err error) {
-    return nil,nil
-  }
-  
-  // returns a chan which will contain an event every time any inode in the system is changed
-  // used for cache coherency
-  // the fuse client runs a goroutine reading all changes from this chan
-  func (c *rawclient) GetNotifier() chan uint64 {
-    return nil
-  }
-  
-  // blocks until all leases are released for the given node
-  func (c *rawclient) WaitAllReleased(nodeid uint64) error {
-    return nil
-  }
 
 
