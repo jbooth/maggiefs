@@ -13,18 +13,21 @@ const(
   
   STATUS_OK byte = 0
   STATUS_ERR byte = 1
-  STATUS_NOTIFY byte = 2
+  STATUS_WAIT byte = 2
+  STATUS_NOTIFY byte = 3
 )
 
 type request struct {
   op byte
-  arg uint64 // arg is either an inode id or a lease id
-  reqno uint64 // sent back with response so we know which request it was
+  leaseid uint64
+  inodeid uint64
+  reqno uint32 // sent back with response so we know which request it was
 }
 
 type response struct {
-  reqno uint64 // 
-  leaseid uint64 // if allocating new lease, here's your id, otherwise it's an inode notification
+  reqno uint32 // reqno that was sent with the request, 0 if a notify 
+  leaseid uint64
+  inodeid uint64
   status byte // ok, err, or we're a notify
 }
 
