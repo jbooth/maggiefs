@@ -2,6 +2,7 @@ package leaseserver
 
 import (
 	"github.com/jbooth/maggiefs/maggiefs"
+	"time"
 )
 
 type LeaseClient struct {
@@ -18,6 +19,11 @@ func (lc LeaseClient) WriteLease(nodeid uint64) (l maggiefs.WriteLease, err erro
   req := request{OP_WRITELEASE,0,nodeid,0}
   resp,err := lc.c.doRequest(req)
   if err != nil { return nil,err }
+  for resp.status == STATUS_WAIT {
+    time.Sleep(100 * time.Millisecond)
+    resp,err = lc.c.doRequest(req)
+    if err != nil { return nil,err }
+  }
   lease := &WriteLease { Lease{resp.leaseid,nodeid,true,lc.c}}
 	return lease,nil
 }
