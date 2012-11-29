@@ -10,7 +10,8 @@ const(
   OP_WRITELEASE = iota
   OP_WRITELEASE_RELEASE = iota
   OP_WRITELEASE_COMMIT = iota
-  
+  OP_CHECKLEASES = iota
+
   STATUS_OK byte = 0
   STATUS_ERR byte = 1
   STATUS_WAIT byte = 2
