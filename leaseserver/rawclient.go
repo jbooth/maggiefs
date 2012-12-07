@@ -32,7 +32,10 @@ func newRawClient(addr string) (*rawclient, error) {
 	}
 	c.SetNoDelay(true)
 	c.SetKeepAlive(true)
-	return &rawclient{c, 0, make(chan uint64, 100), make(chan queuedRequest), make(chan response), make(chan bool)}, nil
+	ret := &rawclient{c, 0, make(chan uint64, 100), make(chan queuedRequest), make(chan response), make(chan bool)}
+	go ret.mux()
+	go ret.readResponses()
+	return ret, nil
 }
 
 // executes a request and blocks until response
@@ -40,7 +43,9 @@ func newRawClient(addr string) (*rawclient, error) {
 func (c *rawclient) doRequest(r request) (response, error) {
 	respChan := make(chan response)
 	q := queuedRequest{r, respChan}
+	fmt.Println("queueing req")
 	c.requests <- q
+	fmt.Printf("queued, awaiting resp on %+v\n",respChan)
 	resp := <-respChan
 	return resp, nil
 }
@@ -51,25 +56,30 @@ func (c *rawclient) mux() {
 	for {
 		select {
 		case req := <-c.requests:
+		  fmt.Printf("client got req %+v, sending\n",req)
 			// register response channel
 			c.reqcounter++
-			req.r.reqno = c.reqcounter
-			responseChans[req.r.reqno] = make(chan response)
+			req.r.Reqno = c.reqcounter
+			fmt.Printf("storing respChan %+v under reqno %d\n",req.whenDone,req.r.Reqno)
+			responseChans[req.r.Reqno] = req.whenDone
 			// write the req to socket
-			err := reqEncoder.Encode(req)
+			err := reqEncoder.Encode(req.r)
 			if err != nil {
 				fmt.Println("error encoding req %+v : %s", req, err.Error())
 				continue
 			}
 		case resp := <-c.responses:
-			if resp.status == STATUS_NOTIFY {
+		  fmt.Printf("client got resp %+v\n",resp)
+			if resp.Status == STATUS_NOTIFY {
 			  // this is a notification so forward to the notification chan
-			  c.notifier <- resp.leaseid  // lease id is overridden here with inode id
+			  fmt.Printf("Got commit notification for inode %d",resp.Inodeid)
+			  c.notifier <- resp.Inodeid  
 			} else {
 				// response to a request, forward to it's response chan
-				k := resp.reqno
+				k := resp.Reqno
 				respChan := responseChans[k]
 				delete(responseChans, k)
+				fmt.Printf("sending response %+v to %+v\n",resp,respChan)
 				respChan <- resp
 				close(respChan)
 			}  
@@ -85,6 +95,7 @@ func (c *rawclient) readResponses() {
 	for {
     resp := response{}
     respDecoder.Decode(&resp)
+    fmt.Printf("client read response %+v from sock \n",resp)
     c.responses <- resp  
 	}
 }

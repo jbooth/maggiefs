@@ -9,8 +9,14 @@ type LeaseClient struct {
 	c *rawclient
 }
 
+func NewLeaseClient(hostAddr string) (*LeaseClient,error) {
+  raw,err := newRawClient(hostAddr)
+  if err != nil { return nil,err }
+  return &LeaseClient{raw},nil
+}
+
 // acquires the write lease for the given inode
-// only one client may have the writelease at a time, however it is pre-emptable in case 
+// only one client may have the writelease at a time, however it is pre-emptable in case r
 // a higher priority process (re-replication etc) needs this lease.
 // on pre-emption, the supplied commit() function will be called
 // pre-emption will not happen while WriteLease.ShortTermLock() is held, however that lock should 
@@ -19,12 +25,12 @@ func (lc LeaseClient) WriteLease(nodeid uint64) (l maggiefs.WriteLease, err erro
   req := request{OP_WRITELEASE,0,nodeid,0}
   resp,err := lc.c.doRequest(req)
   if err != nil { return nil,err }
-  for resp.status == STATUS_WAIT {
+  for resp.Status == STATUS_WAIT {
     time.Sleep(100 * time.Millisecond)
     resp,err = lc.c.doRequest(req)
     if err != nil { return nil,err }
   }
-  lease := &WriteLease { Lease{resp.leaseid,nodeid,true,lc.c}}
+  lease := &WriteLease { Lease{resp.Leaseid,nodeid,true,lc.c}}
 	return lease,nil
 }
 
@@ -36,7 +42,7 @@ func (lc LeaseClient) ReadLease(nodeid uint64) (l maggiefs.ReadLease, err error)
 	req := request{OP_READLEASE,0,nodeid,0}
   resp,err := lc.c.doRequest(req)
   if err != nil { return nil,err }
-  lease := &Lease{resp.leaseid,nodeid,false,lc.c}
+  lease := &Lease{resp.Leaseid,nodeid,false,lc.c}
   return lease,nil
 }
 

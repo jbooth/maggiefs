@@ -5,6 +5,7 @@ import (
 )
 
 const(
+  LEASESERVER_PORT = 1111
   OP_READLEASE = iota
   OP_READLEASE_RELEASE = iota
   OP_WRITELEASE = iota
@@ -19,17 +20,17 @@ const(
 )
 
 type request struct {
-  op byte
-  leaseid uint64
-  inodeid uint64
-  reqno uint32 // sent back with response so we know which request it was
+  Op byte
+  Leaseid uint64
+  Inodeid uint64
+  Reqno uint32 // sent back with response so we know which request it was
 }
 
 type response struct {
-  reqno uint32 // reqno that was sent with the request, 0 if a notify 
-  leaseid uint64
-  inodeid uint64
-  status byte // ok, err, or we're a notify
+  Reqno uint32 // reqno that was sent with the request, 0 if a notify 
+  Leaseid uint64
+  Inodeid uint64
+  Status byte // ok, err, or we're a notify
 }
 
 
