@@ -143,7 +143,7 @@ func (n *MemNames) AddBlock(nodeid uint64, length uint32) (newBlock Block, err e
       Inodeid: inode.Inodeid,
       StartPos: nextStartPos,
       EndPos: nextEndPos, // size initially 0
-      Container: uint32(0),
+      Segment: uint32(0),
     }
     inode.Blocks = append(inode.Blocks,newBlock)
     return nil

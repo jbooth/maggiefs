@@ -69,7 +69,7 @@ type Block struct {
   Inodeid uint64
   StartPos uint64
   EndPos uint64
-  Container uint32
+  Segment uint32
 }
 
 

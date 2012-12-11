@@ -10,7 +10,7 @@ import (
 
 
 func NewReader(inodeid uint64, names maggiefs.NameService, datas maggiefs.DataService) (r *Reader, err error) {
-  return &Reader { inodeid,names,datas,nonBlock(),nil,make([]byte,maggiefs.PAGESIZE,maggiefs.PAGESIZE),new(sync.Mutex)},nil
+  return &Reader { inodeid,names,datas,maggiefs.Block{},nil,make([]byte,maggiefs.PAGESIZE,maggiefs.PAGESIZE),new(sync.Mutex)},nil
 }
 
 

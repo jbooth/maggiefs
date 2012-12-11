@@ -23,11 +23,7 @@ func NewWriter(inodeid uint64, names maggiefs.NameService, datas maggiefs.DataSe
 		return nil, err
 	}
 
-	return &Writer{inode, nonBlock(), nil, names, datas, new(sync.Mutex)}, nil
-}
-
-func nonBlock() maggiefs.Block {
-	return maggiefs.Block{uint64(0), uint64(0), uint64(0), uint64(0), uint64(0), uint32(0)}
+	return &Writer{inode, maggiefs.Block{}, nil, names, datas, new(sync.Mutex)}, nil
 }
 
 //io.Writer
