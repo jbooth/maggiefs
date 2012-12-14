@@ -2,6 +2,11 @@ package maggiefs
 
 import (
   "syscall"
+  "errors"
+)
+
+var (
+  E_EXISTS = errors.New("file exists!")
 )
 
 type LeaseService interface {
@@ -48,6 +53,10 @@ type NameService interface {
   AddInode(node Inode) (id uint64, err error)
   // atomically mutates an inode, optimization over WriteLock for small operations
   Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error)
+  // Links the given child to the given parent, with the given name
+  Link(parent uint64, child uint64, name string) (newNode *Inode, err error)
+  // Unlinks the child with the given name
+  Unlink(parent uint64, name string) (newNode *Inode, err error)
   // add a block to the end of a file, returns new block
   AddBlock(nodeid uint64, length uint32) (newBlock Block, err error)
   // extend a block and the relevant inode
@@ -98,5 +107,18 @@ type BlockWriter interface {
   Close() (err error)
 }
 
-type SegmentLeader interface {
+// interface exposed from datanodes to namenode
+// this is typically over a single socket which 
+type NameDataIface interface {
+
+  HeartBeat() (DataNodeStat, error)
+  AddBlock(id uint64) error
+  RmBlock(id uint64) error
+  ExtendBlock() error  
+}
+
+type DataNodeStat struct {
+  totalBytes uint64
+  bytesUsed uint64
+  numBlocks uint64
 }
