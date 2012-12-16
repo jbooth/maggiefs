@@ -6,7 +6,7 @@ import (
   "encoding/binary"
   "sync"
   "sync/atomic"
-  
+  "fmt"
   "github.com/jbooth/maggiefs/maggiefs"
 )
 
@@ -47,6 +47,7 @@ func (nd *NameData) GetInode(inodeid uint64) ([]byte,error) {
   key := make([]byte,8)
   binary.LittleEndian.PutUint64(key,inodeid)
   ret,err := nd.inodb.Get(ReadOpts,key)
+  if len(ret) == 0 { return nil,fmt.Errorf("No inode for id %d",inodeid) }
   return ret,err
 }
 

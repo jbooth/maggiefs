@@ -118,7 +118,7 @@ type NameDataIface interface {
 }
 
 type DataNodeStat struct {
-  totalBytes uint64
-  bytesUsed uint64
-  numBlocks uint64
+  TotalBytes uint64
+  BytesUsed uint64
+  NumBlocks uint64
 }
