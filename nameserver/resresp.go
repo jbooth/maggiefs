@@ -1,7 +1,6 @@
 package nameserver
 
 import (
-  "github.com/jbooth/maggiefs/maggiefs"
   "encoding/binary"
   "bytes"
 )
@@ -22,21 +21,6 @@ const (
   STAT_E_ISDIRgit
   
 )
-
-
-func fromInode(i *maggiefs.Inode) []byte {
-  if i == nil { return []byte{} }
-  ret := make([]byte,binary.Size(*i))
-  binary.Write(bytes.NewBuffer(ret),binary.LittleEndian,i)
-  return ret
-}
-
-
-func toInode(b []byte) *maggiefs.Inode {
-  ret := &maggiefs.Inode{}
-  binary.Read(bytes.NewBuffer(b),binary.LittleEndian,ret)
-  return ret
-}
 
 
 

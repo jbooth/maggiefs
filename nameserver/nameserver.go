@@ -2,12 +2,15 @@ package nameserver
 
 import (
 	"encoding/gob"
+	"encoding/binary"
+	"bytes"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"net"
 	"sync"
 	"time"
 	"sort"
+	
 )
 
 // we need to keep
@@ -45,7 +48,8 @@ func (s dnFreeSlice) Less(i,j int) bool { return s[i].freeSpace < s[j].freeSpace
 
 // returns a slice of hosts for a new block, should be ns.replicationFactor in length
 // finds N with most space
-func (ns *NameServer) HostsForNewBlock() ([]uint32,error) {
+// if suggested > 0, will include suggested
+func (ns *NameServer) HostsForNewBlock(suggested *uint32) ([]uint32,error) {
   ns.dnLock.Lock()
   defer ns.dnLock.Unlock()
   if ns.replicationFactor > len(ns.dataNodes) {
@@ -61,7 +65,12 @@ func (ns *NameServer) HostsForNewBlock() ([]uint32,error) {
   sort.Sort(freeSizes)
   // return first N
   ret := make([]uint32,ns.replicationFactor)
-  for i := 0 ; i < ns.replicationFactor ; i++ {
+  i = 0
+  if (suggested != nil) { 
+    ret[0] = *suggested
+    i++
+  }
+  for ; i < ns.replicationFactor ; i++ {
     ret[i] = freeSizes[i].dn
   }
   // todo should provisionally += the affected datanodes so we don't thundering-herd them
@@ -95,6 +104,7 @@ func (c conn) serve() {
 				resp.Status = STAT_RETRY
 			}
 		case OP_LINK:
+		  // 2 scenarios here, forced and unforced
 			linkReq := toLinkReq(req.Body)
 			var success bool = false
 			for !success {
@@ -104,35 +114,46 @@ func (c conn) serve() {
 					break
 				}
 
-				if resp.Status == STAT_E_EXISTS && linkReq.Force {
-					// unlink and loop around again
-					err = c.ns.doUnLink(req.Inodeid, linkReq.Name)
+				if resp.Status == STAT_E_EXISTS {
+				  if (linkReq.Force) {
+  					// unlink and loop around again
+	   				err = c.ns.doUnLink(req.Inodeid, linkReq.Name)
+				  } else {
+				    // bail and return E_EXISTS
+				    break
+				  }
 				} else {
 					// done!
+					resp.Status = STAT_OK
 					success = true
 				}
 			}
 
 		case OP_UNLINK:
-			// child name is crammed into body
+			// child name is sent as body
 			err = c.ns.doUnLink(req.Inodeid, string(req.Body))
 			if err != nil {
 				resp.Status = STAT_ERR
+			} else {
+			  resp.Status = STAT_OK
 			}
+			// we send no body
 		case OP_ADDBLOCK:
-
+      // find block locations
+      // notify each to allocate
+      // add to inode
+      // return new block
 		case OP_EXTENDBLOCK:
-
-			// unlink
-			// addblock
-			// extendblock
+      // notify each DN location
+      // modify on inode, update inode size
+      // return
 		}
 
 		// send response
 		if err != nil {
 			resp.Status = STAT_ERR
 			resp.Body = []byte(err.Error())
-			fmt.Printf("error handling req %+v : %s", req, err)
+			fmt.Printf("error handling req %+v : %s", req, err.Error())
 		}
 		err = c.e.Encode(resp)
 		if err != nil {
@@ -141,40 +162,66 @@ func (c conn) serve() {
 	}
 }
 
+func fromInode(i *maggiefs.Inode) []byte {
+  if i == nil { return []byte{} }
+  ret := make([]byte,binary.Size(*i))
+  binary.Write(bytes.NewBuffer(ret),binary.LittleEndian,i)
+  return ret
+}
+
+
+func toInode(b []byte) *maggiefs.Inode {
+  ret := &maggiefs.Inode{}
+  binary.Read(bytes.NewBuffer(b),binary.LittleEndian,ret)
+  return ret
+}
+
+// mutate an inode -- encoded as in binary.Read, binary.Write
+func (ns *NameServer) mutate(inode uint64, mutator func(*maggiefs.Inode) (i *maggiefs.Inode,stat byte,e error)) (*maggiefs.Inode,byte,error) {
+  success := false
+  var i *maggiefs.Inode
+  for !success{
+    bytes,err := ns.nd.GetInode(inode)
+    if err != nil {
+      return nil,STAT_ERR,err
+    }
+    i = toInode(bytes)
+    lastGen := i.Generation
+    i,stat,err := mutator(i)
+    if err != nil || stat != STAT_OK {
+      return i,stat,err
+    }
+    success,err = ns.nd.SetInode(inode,lastGen,fromInode(i))
+    if err != nil {
+      return nil,STAT_ERR,err
+    }
+  }
+  return i,STAT_OK,nil
+}
+
+
 func (ns *NameServer) doLink(parentId uint64, linkReq linkReqBody) (status byte, err error) {
-	// loop until parent updated
-	success := false
-	for !success {
-		parentBytes, err := ns.nd.GetInode(parentId)
-		if err != nil {
-			return STAT_ERR, err
-		}
-		parent := toInode(parentBytes)
-		_, childExists := parent.Children[linkReq.Name]
-		if childExists {
-			return STAT_E_EXISTS, nil
-		}
-		parent.Children[linkReq.Name] = maggiefs.Dentry{linkReq.ChildId, time.Now().Unix()}
-		success, err = ns.nd.SetInode(parentId, parent.Generation, fromInode(parent))
-		if err != nil {
-			return STAT_ERR, err
-		}
-	}
-	// loop until child nlinks updated
-	success = false
-	for !success {
-		childBytes, err := ns.nd.GetInode(linkReq.ChildId)
-		if err != nil {
-			return STAT_ERR, err
-		}
-		child := toInode(childBytes)
-		child.Nlink++
-		success, err = ns.nd.SetInode(linkReq.ChildId, child.Generation, fromInode(child))
-		if err != nil {
-			return STAT_ERR, err
-		}
-	}
-	return STAT_OK, nil
+  // add link to parent, returning STAT_E_EXISTS if necessary
+  _,status,err = ns.mutate(parentId,
+    func(parent *maggiefs.Inode) (*maggiefs.Inode,byte,error) {
+    
+      _, childExists := parent.Children[linkReq.Name]
+      if childExists {
+        return nil,STAT_E_EXISTS, nil
+      }
+      parent.Children[linkReq.Name] = maggiefs.Dentry{linkReq.ChildId, time.Now().Unix()}
+      return parent,STAT_OK,nil
+    })
+  if status != STAT_OK || err != nil {
+    return status,err
+  }
+  
+  // add Nlink to child
+  _,status,err = ns.mutate( linkReq.ChildId,func(child *maggiefs.Inode) (*maggiefs.Inode,byte,error) {
+    child.Nlink++
+    return child,STAT_OK,nil
+  })
+  return status,err
 }
 
 func (ns *NameServer) doUnLink(parentId uint64, name string) error {
