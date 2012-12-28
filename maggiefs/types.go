@@ -59,7 +59,7 @@ type Dentry struct {
   CreatedTime int64 // time this link was created.  used to return consistent ordering in ReadDir.
 }
 
-func (i Inode) IsDir() bool {
+func (i *Inode) IsDir() bool {
   return i.Ftype == FTYPE_DIR
 }
 
@@ -69,7 +69,23 @@ type Block struct {
   Inodeid uint64
   StartPos uint64
   EndPos uint64
-  DNHosts []uint32
+  Volumes []uint32 // IDs for the volumes we're replicated over
 }
 
+type DataNodeStat struct {
+  Dnid int32
+  Size uint64 // total bytes
+  Used uint64 // bytes used
+  Free uint64 // bytes free
+  Volumes []VolumeStat
+}
+
+type VolumeStat struct {
+  Id int32
+  DnId int32
+  Size uint64 // total bytes
+  Used uint64 // bytes used
+  Free uint64 // bytes free
+  NumBlocks uint64
+}
 

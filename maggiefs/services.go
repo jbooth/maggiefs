@@ -115,10 +115,7 @@ type NameDataIface interface {
   AddBlock(id uint64) error
   RmBlock(id uint64) error
   ExtendBlock() error  
+  BlockReport() <- chan Block
 }
 
-type DataNodeStat struct {
-  TotalBytes uint64
-  BytesUsed uint64
-  NumBlocks uint64
-}
+
