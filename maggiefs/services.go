@@ -110,8 +110,8 @@ type BlockWriter interface {
 // interface exposed from datanodes to namenode
 // this is typically over a single socket which 
 type NameDataIface interface {
-
   HeartBeat() (DataNodeStat, error)
+  Format(volId int32) (VolumeStat, error)
   AddBlock(id uint64) error
   RmBlock(id uint64) error
   ExtendBlock() error  

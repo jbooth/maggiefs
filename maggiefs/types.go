@@ -65,11 +65,11 @@ func (i *Inode) IsDir() bool {
 
 type Block struct {
   Id uint64 // globally unique block id
-  Mtime uint64 // last modified
+  Mtime int64 // last modified
   Inodeid uint64
   StartPos uint64
   EndPos uint64
-  Volumes []uint32 // IDs for the volumes we're replicated over
+  Volumes []int32 // IDs for the volumes we're replicated over
 }
 
 type DataNodeStat struct {
