@@ -36,6 +36,10 @@ type replicationManager struct {
 	l          *sync.RWMutex
 }
 
+func newReplicationManager() *replicationManager {
+  return nil
+}
+
 func (rm *replicationManager) formatVolume() error {
   return nil
 }
@@ -49,7 +53,8 @@ func (rm *replicationManager) addDN(c *net.TCPConn) error {
   return nil
 }
 
-// adds a block to the end of the given inode, incorporating the suggested DN if possible
+// adds a block to the end of the given inode, incorporating the suggested DN if possible.
+// updates state on provided NameData
 func (rm *replicationManager) addBlock(inodeid uint64, blockid uint64, startPos uint64, suggestedDN *int32) (maggiefs.Block, error) {
   volumes := rm.volumesForNewBlock(suggestedDN)
   ret := maggiefs.Block{}

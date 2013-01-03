@@ -23,17 +23,19 @@ type NameData struct {
   inodeStripeLock map[uint64] *sync.RWMutex
   blkStripeLock map[uint64] *sync.RWMutex
   
+  
+  
   inodb *levigo.DB // inodeid -> inode
   allBlocks *levigo.DB // blockid -> block
-  dnBlocks *levigo.DB // nodeIdBlockId (12 byte key) -> block, we can scan this to find all blocks belonging to a given datanode
-  dnIds *levigo.DB // maps dn uint32 id -> hostname
+  volBlocks *levigo.DB // volIdBlockId (12 byte key) -> block, we can scan this to find all blocks belonging to a given volume
+  volumes *levigo.DB // maps dn uint32 volume id  -> volume and host info
 }
 const STRIPE_SIZE = 1024 // must be power of 2
 
-const dir_inodb = "inodb"
-const dir_allBlocks = "allBlocks"
-const dir_dnBlocks = "dnBlocks"
-const dir_dnIds = "dnIds"
+const dir_inodb = "inodes"
+const dir_allBlocks = "blocks"
+const dir_volBlocks = "volBlocks"
+const dir_volumes = "volumes"
 
 // formats a new filesystem in the given data dir
 func Format(dataDir string) error {
@@ -42,9 +44,9 @@ func Format(dataDir string) error {
   if err != nil { return err }
   err = os.RemoveAll(dataDir + "/" + dir_allBlocks)
   if err != nil { return err }
-  err = os.RemoveAll(dataDir + "/" + dir_dnBlocks)
+  err = os.RemoveAll(dataDir + "/" + dir_volBlocks)
   if err != nil { return err }
-  err = os.RemoveAll(dataDir + "/" + dir_dnIds)
+  err = os.RemoveAll(dataDir + "/" + dir_volumes)
   if err != nil { return err }
   // create
   opts := levigo.NewOptions()
@@ -57,10 +59,10 @@ func Format(dataDir string) error {
   db,err = levigo.Open(dataDir + "/" + dir_allBlocks, opts)
   if err != nil { return err }
   db.Close()
-  db,err = levigo.Open(dataDir + "/" + dir_dnBlocks,opts)
+  db,err = levigo.Open(dataDir + "/" + dir_volBlocks,opts)
   if err != nil { return err }
   db.Close()
-  db,err = levigo.Open(dataDir + "/" + dir_dnIds,opts)
+  db,err = levigo.Open(dataDir + "/" + dir_volumes,opts)
   if err != nil { return err }
   db.Close()
   
@@ -70,31 +72,55 @@ func Format(dataDir string) error {
 // initializes a namedata
 func NewNameData(dataDir string) (*NameData, error) {
   opts := levigo.NewOptions()
+  // todo configure caching
+  // todo investigate turning off compression
   inodb, err := levigo.Open(dataDir + "/" + dir_inodb,opts)
   if err != nil { return nil,err }
   allBlocks, err := levigo.Open(dataDir + "/" + dir_allBlocks,opts)
   if err != nil { return nil,err }
-  dnBlocks, err := levigo.Open(dataDir + "/" + dir_dnBlocks,opts)
+  volBlocks, err := levigo.Open(dataDir + "/" + dir_volBlocks,opts)
   if err != nil { return nil,err }
-  dnIds, err := levigo.Open(dataDir + "/" + dir_dnIds,opts)
+  volumes, err := levigo.Open(dataDir + "/" + dir_volumes,opts)
   if err != nil { return nil,err }
   
   ret := &NameData{}
   ret.inodb = inodb
   ret.allBlocks = allBlocks
-  ret.dnBlocks = dnBlocks
-  ret.dnIds = dnIds
-  
+  ret.volBlocks = volBlocks
+  ret.volumes = volumes
+  ret.inodeStripeLock = make(map[uint64] *sync.RWMutex)
+  for i := uint64(0) ; i < STRIPE_SIZE ; i++ {
+    ret.inodeStripeLock[i] = &sync.RWMutex{}
+  }
+  ret.blkStripeLock = make(map[uint64] *sync.RWMutex)
+  for i := uint64(0) ; i < STRIPE_SIZE ; i++ {
+    ret.blkStripeLock[i] = &sync.RWMutex{}
+  }
+  ret.inodeIdCounter = highestKey(ret.inodb)
+  ret.blockIdCounter = highestKey(ret.allBlocks)
   return ret,nil
 }
 
+func (nd *NameData) Close() {
+  nd.inodb.Close()
+  nd.allBlocks.Close()
+  nd.volBlocks.Close()
+  nd.volumes.Close()
+}
+
 // scans the uint64 keys of the indicated db, returning the highest one by value
-// scans all keys rather than using a comaprator
-func highestKey(db *levigo.DB) (uint64,error) {
+// scans all keys rather than using a comparator, this is slow, replace later
+func highestKey(db *levigo.DB) uint64 {
   opts := levigo.NewReadOptions()
   defer opts.Close()
-  //iter := db.NewIterator()
-  return 0,nil
+  opts.SetFillCache(false)
+  iter := db.NewIterator(opts)
+  highest := uint64(0)
+  for iter.Valid() {
+    key := binary.LittleEndian.Uint64(iter.Key())
+    if key > highest { highest = key }
+  }
+  return highest
 }
 
 // gets an inode in binary representation (call maggiefs.ToInode to turn into object)

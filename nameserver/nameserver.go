@@ -1,8 +1,8 @@
 package nameserver
 
 import (
-	"encoding/gob"
 	"encoding/binary"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
@@ -19,24 +19,53 @@ import (
 //   connections to data servers
 //   poll them to update stats
 
-func NewNameServer(clPort int, dnPort int, dataDir string, format bool ) *NameServer {
-  
-  return nil
+func NewNameServer(clPort int, dnPort int, dataDir string, format bool) (*NameServer, error) {
+	ret := &NameServer{}
+	clientListenAddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("0.0.0.0:%d", clPort))
+	if err != nil {
+		ret.Close()
+		return nil, err
+	}
+	ret.listenCL, err = net.ListenTCP("tcp", clientListenAddr)
+	if err != nil {
+		ret.Close()
+		return nil, err
+	}
+	dnListenAddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("0.0.0.0:%d", dnPort))
+	if err != nil {
+		ret.Close()
+		return nil, err
+	}
+	ret.listenDN, err = net.ListenTCP("tcp", dnListenAddr)
+	if err != nil {
+		ret.Close()
+		return nil, err
+	}
+	ret.shutdownCL = make(chan bool, 1)
+	ret.shutdownDN = make(chan bool, 1)
+	ret.nd, err = NewNameData(dataDir)
+	if err != nil {
+		ret.Close()
+		return nil, err
+	}
+	ret.rm = newReplicationManager()
+	return ret, nil
 }
 
 type NameServer struct {
-  rm                *replicationManager
-	nd                *NameData
-	clients           *net.TCPListener
-	datanodes         *net.TCPListener
-	shutdownCL        chan bool // these chans are triggered on shutdown
-	shutdownDN        chan bool
+	rm         *replicationManager
+	nd         *NameData
+	listenCL   *net.TCPListener
+	listenDN   *net.TCPListener
+	conns      []*conn
+	shutdownCL chan bool // these chans are triggered to stop accepting conns
+	shutdownDN chan bool
 }
 
 func (ns *NameServer) acceptClients() {
 	for {
 		// accept (and listen for shutdown while accepting)
-		cli, err := acceptOrShutdown(ns.clients, ns.shutdownCL)
+		cli, err := acceptOrShutdown(ns.listenCL, ns.shutdownCL)
 		if err != nil {
 			if err == e_shutdown {
 				break
@@ -50,7 +79,7 @@ func (ns *NameServer) acceptClients() {
 		go c.serve()
 	}
 	// shutdown
-	err := ns.clients.Close()
+	err := ns.listenCL.Close()
 	if err != nil {
 		fmt.Printf("error closing client listener : %s\n", err.Error())
 	}
@@ -59,7 +88,7 @@ func (ns *NameServer) acceptClients() {
 func (ns *NameServer) acceptDNs() {
 	for {
 		// select
-		d, err := acceptOrShutdown(ns.datanodes, ns.shutdownDN)
+		d, err := acceptOrShutdown(ns.listenDN, ns.shutdownDN)
 		if err != nil {
 			if err == e_shutdown {
 				break
@@ -69,13 +98,27 @@ func (ns *NameServer) acceptDNs() {
 			}
 		}
 		// add to replication pool
-    ns.rm.addDN(d)
+		ns.rm.addDN(d)
 	}
 	// shutdown
-	err := ns.datanodes.Close()
+	err := ns.listenDN.Close()
 	if err != nil {
 		fmt.Printf("error closing dn listener : %s\n", err.Error())
 	}
+}
+
+// shuts down the nameserver
+func (ns *NameServer) Close() error {
+	// stop listening
+  ns.shutdownCL <- true
+  ns.shutdownDN <- true
+	// stop serving connections
+  for _,c := range ns.conns {
+    if c != nil { c.cloose() }
+  }
+	// shutdown replication manager and leveldb
+
+	return nil
 }
 
 var e_shutdown error = errors.New("MFS_SHUTDOWN")
@@ -107,6 +150,10 @@ type conn struct {
 	ns *NameServer
 }
 
+func (c *conn) cloose() {
+	c.c.Close()
+}
+
 func (c *conn) serve() {
 	req := request{}
 	for {
@@ -119,21 +166,21 @@ func (c *conn) serve() {
 		switch req.Op {
 
 		case OP_GETINODE:
-		  // resp is encoded inode
+			// resp is encoded inode
 			resp.Body, err = c.ns.nd.GetInode(req.Inodeid)
 		case OP_SETINODE:
-		  // resp is empty
+			// resp is empty
 			var success bool
 			success, err = c.ns.nd.SetInode(req.Inodeid, req.Generation, req.Body)
 			if !success {
 				resp.Status = STAT_RETRY
 			}
-	  case OP_ADDINODE:
-	    // resp is uint64 id
-	    inode := maggiefs.ToInode(req.Body)
-	    inode.Inodeid,err = c.ns.nd.AddInode(inode)
-	    resp.Body = make([]byte,8)
-	    binary.LittleEndian.PutUint64(resp.Body,inode.Inodeid)
+		case OP_ADDINODE:
+			// resp is uint64 id
+			inode := maggiefs.ToInode(req.Body)
+			inode.Inodeid, err = c.ns.nd.AddInode(inode)
+			resp.Body = make([]byte, 8)
+			binary.LittleEndian.PutUint64(resp.Body, inode.Inodeid)
 		case OP_LINK:
 			// 2 scenarios here, forced and unforced
 			linkReq := toLinkReq(req.Body)
@@ -170,8 +217,8 @@ func (c *conn) serve() {
 			}
 			// we send no body
 		case OP_ADDBLOCK:
-		  // resp is new block
-		  
+			// resp is new block
+
 			// find block locations
 			// notify each to allocate
 
@@ -179,12 +226,12 @@ func (c *conn) serve() {
 
 			// return new block
 		case OP_EXTENDBLOCK:
-			// notify each DN location
-			// modify on inode, update inode size
-			// return
-	  default:
-	    err = fmt.Errorf("unrecognized op: %d",req.Op)
-		} 
+		// notify each DN location
+		// modify on inode, update inode size
+		// return
+		default:
+			err = fmt.Errorf("unrecognized op: %d", req.Op)
+		}
 
 		// send response
 		if err != nil {
@@ -286,7 +333,7 @@ func (ns *NameServer) doUnLink(parentId uint64, name string) error {
 		}
 	}
 	if childNeedsGC {
-		fmt.Println("child should be GC'd lol")
+		fmt.Println("child should be GC'd, should hint here")
 	}
 	return nil
 }
