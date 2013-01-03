@@ -148,7 +148,7 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
 		}
 	}
 	// update block with modified time
-	w.currBlock.Mtime = uint64(time.Now().Unix())
+	w.currBlock.Mtime = int64(time.Now().Unix())
 	return written, nil
 }
 

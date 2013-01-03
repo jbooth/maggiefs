@@ -8,6 +8,7 @@ import (
 const (
   OP_GETINODE int32 = iota
   OP_SETINODE int32 = iota
+  OP_ADDINODE int32 = iota
   OP_LINK int32 = iota
   OP_UNLINK int32 = iota
   OP_ADDBLOCK int32 = iota

@@ -1,7 +1,6 @@
 package nameserver
 
 import (
-	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"net"
 	"sort"
@@ -17,7 +16,7 @@ type datanodeStat struct {
 
 type dnHost struct {
 	id      uint32
-	addr    *net.TCPAddr
+	addr    net.Addr
 	stat maggiefs.DataNodeStat
 	conn    maggiefs.NameDataIface
 	l       *sync.Mutex
@@ -41,7 +40,12 @@ func (rm *replicationManager) formatVolume() error {
   return nil
 }
 
-func (rm *replicationManager) addDN() error {
+func (rm *replicationManager) addDN(c *net.TCPConn) error {
+  // heartbeat to get DN stat
+  
+  // check for valid volumes
+  
+  // format any new volumes on offer
   return nil
 }
 
@@ -71,7 +75,7 @@ func (rm *replicationManager) addBlock(inodeid uint64, blockid uint64, startPos 
       return maggiefs.Block{},err
     }
   }  
-    
+  
   
 	return ret, nil
 }
@@ -113,45 +117,3 @@ func (s volumeList) Less(i, j int) bool { return s[i].Free < s[j].Free }
 func (rm *replicationManager) cleanupDN(dnId uint32) error {
 	return nil
 }
-
-// returns a slice of hosts for a new block, should be ns.replicationFactor in length
-// finds N with most space
-// if suggested > 0, will include suggested
-func (ns *NameServer) hostsForNewBlock(suggested *uint32) ([]uint32, error) {
-	ns.dnLock.Lock()
-	defer ns.dnLock.Unlock()
-	if ns.replicationFactor > len(ns.dataNodes) {
-		return []uint32{}, fmt.Errorf("Replication factor %d greater than number of connected data nodes %d : %+v", ns.replicationFactor, len(ns.dataNodes), ns.dataNodes)
-	}
-	// build slice
-	var freeSizes dnFreeSlice = make([]dnFreeSize, len(ns.dataNodes))
-	i := 0
-	for id, dn := range ns.dataNodes {
-		freeSizes[i] = dnFreeSize{id, dn.stat.Size - dn.stat.Used}
-	}
-	// sort
-	sort.Sort(freeSizes)
-	// return first N
-	ret := make([]uint32, ns.replicationFactor)
-	i = 0
-	if suggested != nil {
-		ret[0] = *suggested
-		i++
-	}
-	for ; i < ns.replicationFactor; i++ {
-		ret[i] = freeSizes[i].dn
-	}
-	// todo should provisionally += the affected datanodes so we don't thundering-herd them
-	return ret, nil
-}
-
-type dnFreeSize struct {
-	dn        uint32
-	freeSpace uint64
-}
-
-type dnFreeSlice []dnFreeSize
-
-func (s dnFreeSlice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s dnFreeSlice) Len() int           { return len(s) }
-func (s dnFreeSlice) Less(i, j int) bool { return s[i].freeSpace < s[j].freeSpace }
