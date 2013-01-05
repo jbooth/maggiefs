@@ -2,11 +2,6 @@ package maggiefs
 
 import (
   "syscall"
-  "errors"
-)
-
-var (
-  E_EXISTS = errors.New("file exists!")
 )
 
 type LeaseService interface {
@@ -53,14 +48,16 @@ type NameService interface {
   AddInode(node Inode) (id uint64, err error)
   // atomically mutates an inode, optimization over WriteLock for small operations
   Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error)
-  // Links the given child to the given parent, with the given name
-  Link(parent uint64, child uint64, name string) (newNode *Inode, err error)
+  // Links the given child to the given parent, with the given name.  returns error E_EXISTS if force is false and parent already has a child of that name
+  Link(parent uint64, child uint64, name string, force bool) (newNode *Inode, err error)
   // Unlinks the child with the given name
   Unlink(parent uint64, name string) (newNode *Inode, err error)
   // add a block to the end of a file, returns new block
   AddBlock(nodeid uint64, length uint32) (newBlock Block, err error)
   // extend a block and the relevant inode
   ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (newBlock Block, err error)
+  // truncate a block, shrinking by the amount posited.  shrink to 0 deletes the block
+  TruncateBlock(blockId uint64, delta uint32) (err error)
 }
 
 

@@ -22,9 +22,7 @@ type NameData struct {
   blockIdCounter uint64
   inodeStripeLock map[uint64] *sync.RWMutex
   blkStripeLock map[uint64] *sync.RWMutex
-  
-  
-  
+  hintInodeGC chan uint64
   inodb *levigo.DB // inodeid -> inode
   allBlocks *levigo.DB // blockid -> block
   volBlocks *levigo.DB // volIdBlockId (12 byte key) -> block, we can scan this to find all blocks belonging to a given volume
@@ -98,6 +96,7 @@ func NewNameData(dataDir string) (*NameData, error) {
   }
   ret.inodeIdCounter = highestKey(ret.inodb)
   ret.blockIdCounter = highestKey(ret.allBlocks)
+  go ret.inodeGC()
   return ret,nil
 }
 
@@ -157,7 +156,8 @@ func (nd *NameData) SetInode(inodeid uint64, generationid uint64, body []byte) (
   return true,nil
 }
 
-// adds a new inode with an unused inodeid and returns that inodeid
+// adds an inode persistent store, setting its inode ID to the generated ID, and returning 
+// the generated id and error
 func (nd *NameData) AddInode(i *maggiefs.Inode) (uint64,error) {
   var success = false
   var err error
@@ -171,7 +171,18 @@ func (nd *NameData) AddInode(i *maggiefs.Inode) (uint64,error) {
   return id,nil
 }
 
-func (nd *NameData) AddBlock(b maggiefs.Block) {
+func (nd *NameData) SetBlock(b maggiefs.Block)
+// adds a block to persistent store, setting its blockid to the generated ID, and returning
+// the generated ID and error
+func (nd *NameData) AddBlock(b *maggiefs.Block) (uint64,error) {
+    b.Id = maggiefs.IncrementAndGet(&nd.blockIdCounter,1)
+    //blkBytes := maggiefs.FromBlock(b)
+    
+    //,err = nd.AddBlock(b)
+    return 0,nil
+}
 
+func (nd *NameData) inodeGC() {
+  
 }
 

@@ -333,7 +333,13 @@ func (ns *NameServer) doUnLink(parentId uint64, name string) error {
 		}
 	}
 	if childNeedsGC {
-		fmt.Println("child should be GC'd, should hint here")
+	  // hint to GC
+		fmt.Println("child should be GC'd, should hint to GC here")
 	}
 	return nil
 }
+
+//func (ns *NameServer) addBlock(inodeid uint64, ) *maggiefs.Block {
+//  
+//}
+

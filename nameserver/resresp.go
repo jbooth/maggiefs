@@ -12,7 +12,7 @@ const (
   OP_LINK int32 = iota
   OP_UNLINK int32 = iota
   OP_ADDBLOCK int32 = iota
-  OP_RMBLOCK int32 = iota
+  OP_TRUNCATE int32 = iota
   OP_EXTENDBLOCK int32 = iota
   
   STAT_OK byte = 0
@@ -32,6 +32,13 @@ type request struct {
   Body []byte // either an Inode or one of the request types below
 }
 
+
+type response struct {
+  Status byte
+  Body []byte // either an Inode or a Block
+}
+
+// used as body for a link request
 type linkReqBody struct {
   ChildId uint64
   Name string
@@ -50,13 +57,13 @@ func fromLinkReq(l linkReqBody) []byte {
   return ret
 } 
 
+// unlink request is just string([]byte) or []byte(string)
 
+// used as body for addBlock
 
-type unlinkReqBody struct {
-  name string
+type addBlkBody struct {
+  inodeId uint64
+  pos uint64 // sanity checked or we get an error
 }
 
-type response struct {
-  Status byte
-  Body []byte // either an Inode or a Block
-}
+

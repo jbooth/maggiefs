@@ -19,6 +19,7 @@ type Inode struct {
   Ftype int
   Length uint64
   Mode uint32
+  Atime int64
   Mtime int64 // changed on data - can be changed by user with touch
   Ctime int64 // changed on file attr change or date -- owned by kernel
   Nlink uint32 // number of paths linked to this inode
@@ -66,10 +67,15 @@ func (i *Inode) IsDir() bool {
 type Block struct {
   Id uint64 // globally unique block id
   Mtime int64 // last modified
-  Inodeid uint64
-  StartPos uint64
-  EndPos uint64
+  Generation uint64 // mod number
+  Inodeid uint64 // which inode we belong to
+  StartPos uint64 // alignment of this bytes first block in the file
+  EndPos uint64 // alignment of this bytes last block in the file 
   Volumes []int32 // IDs for the volumes we're replicated over
+}
+
+func (b *Block) Length() uint64 {
+  return b.EndPos - b.StartPos
 }
 
 type DataNodeStat struct {

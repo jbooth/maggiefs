@@ -26,6 +26,11 @@ func NewWriter(inodeid uint64, names maggiefs.NameService, datas maggiefs.DataSe
 	return &Writer{inode, maggiefs.Block{}, nil, names, datas, new(sync.Mutex)}, nil
 }
 
+func (w *Writer) Truncate(length uint64) error {
+  // calls out to name service to truncate this file by repeatedly shrinking blocks
+  return nil
+}
+
 //io.Writer
 func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, err error) {
 	w.l.Lock()

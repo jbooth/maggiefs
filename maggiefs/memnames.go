@@ -46,6 +46,7 @@ func emptyDir(id uint64) *Inode {
 		0777,
 		currTime,
 		currTime,
+		currTime,
 		1,
 		0,
 		0,
