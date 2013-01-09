@@ -21,17 +21,14 @@ type NameData struct {
   inodeIdCounter uint64
   blockIdCounter uint64
   inodeStripeLock map[uint64] *sync.RWMutex
-  blkStripeLock map[uint64] *sync.RWMutex
   hintInodeGC chan uint64
   inodb *levigo.DB // inodeid -> inode
-  allBlocks *levigo.DB // blockid -> block
-  volBlocks *levigo.DB // volIdBlockId (12 byte key) -> block, we can scan this to find all blocks belonging to a given volume
-  volumes *levigo.DB // maps dn uint32 volume id  -> volume and host info
+  volBlocks *levigo.DB // volIdBlockId (12 byte key) -> inodeid (8 byte value), we can scan this to find all blocks belonging to a given volume
+  volumes *levigo.DB // maps dn uint32 volume id  -> volume
 }
 const STRIPE_SIZE = 1024 // must be power of 2
 
 const dir_inodb = "inodes"
-const dir_allBlocks = "blocks"
 const dir_volBlocks = "volBlocks"
 const dir_volumes = "volumes"
 
@@ -39,8 +36,6 @@ const dir_volumes = "volumes"
 func Format(dataDir string) error {
   // wipe out previous
   err := os.RemoveAll(dataDir + "/" + dir_inodb)
-  if err != nil { return err }
-  err = os.RemoveAll(dataDir + "/" + dir_allBlocks)
   if err != nil { return err }
   err = os.RemoveAll(dataDir + "/" + dir_volBlocks)
   if err != nil { return err }
@@ -54,8 +49,6 @@ func Format(dataDir string) error {
   db,err := levigo.Open(dataDir + "/" + dir_inodb, opts)
   if err != nil { return err }
   db.Close()
-  db,err = levigo.Open(dataDir + "/" + dir_allBlocks, opts)
-  if err != nil { return err }
   db.Close()
   db,err = levigo.Open(dataDir + "/" + dir_volBlocks,opts)
   if err != nil { return err }
@@ -69,12 +62,10 @@ func Format(dataDir string) error {
 
 // initializes a namedata
 func NewNameData(dataDir string) (*NameData, error) {
-  opts := levigo.NewOptions()
+  opts := OpenOpts
   // todo configure caching
   // todo investigate turning off compression
   inodb, err := levigo.Open(dataDir + "/" + dir_inodb,opts)
-  if err != nil { return nil,err }
-  allBlocks, err := levigo.Open(dataDir + "/" + dir_allBlocks,opts)
   if err != nil { return nil,err }
   volBlocks, err := levigo.Open(dataDir + "/" + dir_volBlocks,opts)
   if err != nil { return nil,err }
@@ -83,26 +74,21 @@ func NewNameData(dataDir string) (*NameData, error) {
   
   ret := &NameData{}
   ret.inodb = inodb
-  ret.allBlocks = allBlocks
   ret.volBlocks = volBlocks
   ret.volumes = volumes
   ret.inodeStripeLock = make(map[uint64] *sync.RWMutex)
   for i := uint64(0) ; i < STRIPE_SIZE ; i++ {
     ret.inodeStripeLock[i] = &sync.RWMutex{}
   }
-  ret.blkStripeLock = make(map[uint64] *sync.RWMutex)
-  for i := uint64(0) ; i < STRIPE_SIZE ; i++ {
-    ret.blkStripeLock[i] = &sync.RWMutex{}
-  }
   ret.inodeIdCounter = highestKey(ret.inodb)
-  ret.blockIdCounter = highestKey(ret.allBlocks)
+  // gotta set up blockid counter
+  //ret.blockIdCounter = highestKey(ret.allBlocks)
   go ret.inodeGC()
   return ret,nil
 }
 
 func (nd *NameData) Close() {
   nd.inodb.Close()
-  nd.allBlocks.Close()
   nd.volBlocks.Close()
   nd.volumes.Close()
 }
@@ -171,12 +157,24 @@ func (nd *NameData) AddInode(i *maggiefs.Inode) (uint64,error) {
   return id,nil
 }
 
-func (nd *NameData) SetBlock(b maggiefs.Block)
+func (nd *NameData) GetBlock(inodeid uint64, blockid uint64) (*maggiefs.Block, error) {
+  
+  inodeBytes,err := nd.GetInode(inodeid)
+  if err != nil { return nil,err }
+  inode := maggiefs.ToInode(inodeBytes)
+  for _,b := range inode.Blocks {
+    if b.Id == blockid {
+      return &b,nil
+    }
+  }
+  return nil,fmt.Errorf("No block id %d attached to inode %d",blockid,inodeid)
+}
+
 // adds a block to persistent store, setting its blockid to the generated ID, and returning
 // the generated ID and error
-func (nd *NameData) AddBlock(b *maggiefs.Block) (uint64,error) {
-    b.Id = maggiefs.IncrementAndGet(&nd.blockIdCounter,1)
-    //blkBytes := maggiefs.FromBlock(b)
+func (nd *NameData) AddBlock(b *maggiefs.Block, inodeid uint64) (uint64,error) {
+//    b.Id = maggiefs.IncrementAndGet(&nd.blockIdCounter,1)
+//    blkBytes := maggiefs.FromBlock(b)
     
     //,err = nd.AddBlock(b)
     return 0,nil

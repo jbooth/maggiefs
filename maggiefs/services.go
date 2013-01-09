@@ -1,7 +1,7 @@
 package maggiefs
 
 import (
-  "syscall"
+
 )
 
 type LeaseService interface {
@@ -43,7 +43,7 @@ type ReadLease interface {
 
 type NameService interface {
   GetInode(nodeid uint64) (i *Inode, err error)
-  StatFs() (statfs syscall.Statfs_t, err error)
+  StatFs() (vols []VolumeStat, err error)
   // persists a new inode to backing store
   AddInode(node Inode) (id uint64, err error)
   // atomically mutates an inode, optimization over WriteLock for small operations

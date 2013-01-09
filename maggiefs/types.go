@@ -2,6 +2,7 @@ package maggiefs
 
 import (
   "fmt"
+  "net"
   "syscall"
 )
 
@@ -78,17 +79,25 @@ func (b *Block) Length() uint64 {
   return b.EndPos - b.StartPos
 }
 
+type VolDnMap map[int32]*net.Addr
+
+type DataNodeInfo struct {
+  DnId int32
+  Addr net.TCPAddr
+}
+
+type VolumeInfo struct {
+  VolId int32
+  DataNodeInfo
+}
+
 type DataNodeStat struct {
-  Dnid int32
-  Size uint64 // total bytes
-  Used uint64 // bytes used
-  Free uint64 // bytes free
+  DataNodeInfo
   Volumes []VolumeStat
 }
 
 type VolumeStat struct {
-  Id int32
-  DnId int32
+  VolumeInfo
   Size uint64 // total bytes
   Used uint64 // bytes used
   Free uint64 // bytes free

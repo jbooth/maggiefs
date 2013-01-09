@@ -12,7 +12,7 @@ const (
   OP_LINK int32 = iota
   OP_UNLINK int32 = iota
   OP_ADDBLOCK int32 = iota
-  OP_TRUNCATE int32 = iota
+  OP_TRUNCATEBLOCK int32 = iota
   OP_EXTENDBLOCK int32 = iota
   
   STAT_OK byte = 0

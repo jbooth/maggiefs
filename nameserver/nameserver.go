@@ -183,6 +183,7 @@ func (c *conn) serve() {
 			binary.LittleEndian.PutUint64(resp.Body, inode.Inodeid)
 		case OP_LINK:
 			// 2 scenarios here, forced and unforced
+			// todo fill in error einval
 			linkReq := toLinkReq(req.Body)
 			var success bool = false
 			for !success {
@@ -209,6 +210,7 @@ func (c *conn) serve() {
 
 		case OP_UNLINK:
 			// child name is sent as body
+			// todo fill in errors
 			err = c.ns.doUnLink(req.Inodeid, string(req.Body))
 			if err != nil {
 				resp.Status = STAT_ERR
@@ -339,7 +341,13 @@ func (ns *NameServer) doUnLink(parentId uint64, name string) error {
 	return nil
 }
 
-//func (ns *NameServer) addBlock(inodeid uint64, ) *maggiefs.Block {
-//  
-//}
+func (ns *NameServer) addBlock(i *maggiefs.Inode, size uint64) *maggiefs.Block {
+  return nil
+  
+  // check which hosts we want
+ 
+  // store block info in NameData
+  
+  // replicate block to datanodes
+}
 
