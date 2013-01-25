@@ -49,8 +49,8 @@ func (rm *replicationManager) addDN(c *net.TCPConn) error {
 }
 
 // ensures that all datanodes see the current version of the given block
+// expects block.Volumes to be filled out correctly, those are the DNs we notify
 func (rm *replicationManager) replicate(b *maggiefs.Block) (error) {
-//  volumes := rm.volumesForNewBlock(suggestedDN)
 //  ret := maggiefs.Block{}
 //  ret.Id = blockid
 //  ret.Inodeid = inodeid
@@ -61,7 +61,7 @@ func (rm *replicationManager) replicate(b *maggiefs.Block) (error) {
 //  ret.Mtime = time.Now().Unix()
 //  ret.StartPos = startPos
 //  ret.EndPos = startPos
-  
+//  
 //  rm.l.Lock()
 //  defer rm.l.Unlock()
 //  // allocate actual blocks on datanodes and update dn stats

@@ -70,20 +70,19 @@ func (m *MaggieFuse) StatFs(out *fuse.StatfsOut, h *raw.InHeader) fuse.Status {
 	if err != nil {
 		return fuse.EROFS
 	}
-	out.Blocks = stat.Blocks
-	out.Bfree = stat.Bfree
-	out.Bavail = stat.Bavail
-	out.Files = stat.Files
-	out.Ffree = stat.Ffree
-	out.Bsize = uint32(stat.Bsize)
-	out.NameLen = uint32(stat.Namelen)
-	out.Frsize = uint32(stat.Frsize)
+	// translate our number of bytes free to a number of 4k pages
+	out.Bsize = uint32(4096)
+	out.Frsize = uint32(4096)
+	freeBlocks := stat.Free / 4096
+	out.Bfree = freeBlocks
+	out.Bavail = freeBlocks
+	out.Blocks = stat.Size / 4096 // total size
 	//out.Padding = uint32(0)
 	out.Spare = [6]uint32{0, 0, 0, 0, 0, 0}
 	return fuse.OK
 }
 
-// all files are 0777 yaaaaaaay
+// all files are 0777 yay
 func mode(ftype int) uint32 {
 	switch {
 	case maggiefs.FTYPE_DIR == ftype:

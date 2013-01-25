@@ -157,6 +157,23 @@ func (nd *NameData) AddInode(i *maggiefs.Inode) (uint64,error) {
   return id,nil
 }
 
+func (nd *NameData) Mutate(inodeid uint64, f func(i *maggiefs.Inode) (*maggiefs.Inode,error)) (*maggiefs.Inode,error) {
+  var success = false
+  var err error = nil
+  var inode *maggiefs.Inode = nil
+  var bytes []byte = nil
+  for !success {
+    bytes,err = nd.GetInode(inodeid)
+    if err != nil { return nil,err }
+    inode = maggiefs.ToInode(bytes)
+    inode,err = f(inode)
+    if err != nil { return nil,err }
+    success,err = nd.SetInode(inode.Inodeid,inode.Generation,maggiefs.FromInode(inode))
+    if err != nil { return nil,err }
+  }
+  return inode,nil
+}
+
 func (nd *NameData) GetBlock(inodeid uint64, blockid uint64) (*maggiefs.Block, error) {
   
   inodeBytes,err := nd.GetInode(inodeid)
@@ -170,14 +187,16 @@ func (nd *NameData) GetBlock(inodeid uint64, blockid uint64) (*maggiefs.Block, e
   return nil,fmt.Errorf("No block id %d attached to inode %d",blockid,inodeid)
 }
 
-// adds a block to persistent store, setting its blockid to the generated ID, and returning
-// the generated ID and error
+// adds a block to persistent store as the last block of inodeid, 
+// setting its blockid to the generated ID, and returning the generated ID and error
 func (nd *NameData) AddBlock(b *maggiefs.Block, inodeid uint64) (uint64,error) {
-//    b.Id = maggiefs.IncrementAndGet(&nd.blockIdCounter,1)
-//    blkBytes := maggiefs.FromBlock(b)
-    
-    //,err = nd.AddBlock(b)
-    return 0,nil
+    b.Id = maggiefs.IncrementAndGet(&nd.blockIdCounter,1)
+    _,err := nd.Mutate(inodeid, func(i *maggiefs.Inode) (*maggiefs.Inode,error) {
+      i.Blocks = append(i.Blocks, *b)
+      return i,nil
+    })
+    if err != nil { return 0,err }
+    return b.Id,nil
 }
 
 func (nd *NameData) inodeGC() {

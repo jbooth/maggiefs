@@ -341,13 +341,42 @@ func (ns *NameServer) doUnLink(parentId uint64, name string) error {
 	return nil
 }
 
-func (ns *NameServer) addBlock(i *maggiefs.Inode, size uint64) *maggiefs.Block {
-  return nil
+func (ns *NameServer) addBlock(i *maggiefs.Inode, size uint64) (*maggiefs.Block,error) {
+  
   
   // check which hosts we want
- 
-  // store block info in NameData
+  vols := ns.rm.volumesForNewBlock(nil)
+  volIds := make([]int32, len(vols))
+  for idx,v := range vols {
+    volIds[idx] = v.VolId
+  }
+  
+  var startPos uint64 = 0
+  if len(i.Blocks) > 0 {
+    lastBlock := i.Blocks[len(i.Blocks) - 1]
+    startPos = lastBlock.EndPos + 1
+  } else {
+    startPos = 0
+  }
+  
+  endPos := startPos + size
+  // allocate block and id
+  b := &maggiefs.Block {
+    Id: 0,
+    Mtime: time.Now().Unix(),
+    Inodeid: i.Inodeid,
+    Generation: 0,
+    StartPos: startPos,
+    EndPos: endPos,
+    Volumes: volIds,
+  }
+  newId,err := ns.nd.AddBlock(b,i.Inodeid)
+  b.Id = newId
+  if err != nil { return nil,err }
+  
   
   // replicate block to datanodes
+  
+  return b,nil
 }
 
