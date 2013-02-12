@@ -10,20 +10,13 @@ type LocalBlockReader struct {
   file *os.File
   currPageNum int
 }
-
-func (f LocalBlockReader) ReadPage(p []byte) (err error) {
-  _,err = f.file.Read(p[0:int(PAGESIZE)])
+// reads some bytes
+func (f LocalBlockReader) Read(p []byte, pos uint64, length uint64) (err error) {
+  _,err = f.file.ReadAt(p[0:int(length)],int64(pos))
   return err
 }
+ 
 
-func (f LocalBlockReader) SeekPage(pageNum int) error {
-  _,err := f.file.Seek(int64(pageNum * int(PAGESIZE)), 0)
-  return err
-}
-
-func (f LocalBlockReader) CurrPageNum() int {
-  return f.currPageNum
-}
 
 func (f LocalBlockReader) Close() error {
   return f.file.Close()
@@ -34,19 +27,13 @@ type LocalBlockWriter struct {
   blockId uint64
 }
 
+func (f LocalBlockWriter) Write(p []byte, pos int64) error {
+  _,err := f.file.WriteAt(p, pos)
+  return err
+}
+
 func (f LocalBlockWriter) BlockId() uint64 {
   return f.blockId
-}
-
-func (f LocalBlockWriter) WritePage(p []byte, pageNum int) error {
-  _,err := f.file.WriteAt(p[0:4096], int64(pageNum * int(PAGESIZE)))
-  return err
-}
-
-func (f LocalBlockWriter) Write(p []byte, pageNum int, off int, length int) error {
-  fileOff := int64((pageNum * int(PAGESIZE)) + off)
-  _,err := f.file.WriteAt(p[0:length], fileOff)
-  return err
 }
 
 func (f LocalBlockWriter) Sync() error {

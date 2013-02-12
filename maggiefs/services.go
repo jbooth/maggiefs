@@ -77,15 +77,9 @@ type DataService interface {
 // reading or writing full pages of 4096 bytes
 type BlockReader interface {
 
-  // reads a page
-  ReadPage(p []byte) (err error)
-
-  // seeks to a page
-  SeekPage(pageNum int) error
-
-  // lists the current/next page number (page num * 4096 is position within block)
-  CurrPageNum() int
-
+  // reads some bytes
+  Read(p []byte, pos uint64, length uint64) (err error)
+  
   // closes or returns to pool
   Close() (err error)
 }
@@ -93,11 +87,8 @@ type BlockReader interface {
 type BlockWriter interface {
   // return which block id this writer is writing
   BlockId() uint64
-  // writes a whole page
-  // can expand block by one page or overwrite existing page
-  WritePage(p []byte, pageNum int) error
-  // writes a subpage
-  Write(p []byte, pageNum int, off int, length int) error
+  // writes some bytes, extending block if necessary
+  Write(p []byte, pos int64) error
   // flushes changes to system
   Sync() (err error)
   // flushes and closes this writer
