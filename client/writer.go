@@ -105,7 +105,8 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
 	if w.currWriter == nil || w.currWriter.BlockId() != w.currBlock.Id {
 		// force any pending changes
 		if w.currWriter != nil {
-			w.currWriter.Close()
+			err = w.currWriter.Close()
+			if err != nil { return 0,err }
 		}
 		fmt.Printf("allocating writer for block %d inode %d\n", w.currBlock.Id, w.inode.Inodeid)
 		w.currWriter, err = w.datas.Write(w.currBlock)
@@ -113,48 +114,11 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
 			return 0, err
 		}
 	}
-	// now write pages
-	written = uint32(0)
-	// write first page if fragment
-	pageNum := int(off / uint64(4096))
-	firstPageOff := off & (uint64(4095)) // fast modulo 4096
-	if firstPageOff != 0 {
-		firstPageLength := int(4096) - int(firstPageOff)
-		err = w.currWriter.Write(p, pageNum, 0, firstPageLength)
-		if err != nil {
-			return 0, err
-		}
-		written += uint32(firstPageLength)
-		pageNum++
-	}
-
-	// write whole pages into output buffer
-	numWholePagesToWrite := (length - written) / PAGESIZE
-	for ; numWholePagesToWrite > 0; numWholePagesToWrite-- {
-		fmt.Printf("writing page to block %+v\n", w.currBlock)
-		err = w.currWriter.WritePage(p[written:written+PAGESIZE], pageNum)
-		if err != nil {
-			return written, err
-		}
-		pageNum++
-		written += PAGESIZE
-	}
-
-	// write last page if fragment
-	if written < length {
-		lastPageLen := int(length - written)
-
-		fmt.Printf("writing last page len %d \n", lastPageLen)
-		fmt.Printf("writing from slice %v at offsets %d %d\n", p, written, written+uint32(lastPageLen)-1)
-		err = w.currWriter.Write(p[written:], pageNum, int(written), int(lastPageLen))
-		written += uint32(lastPageLen)
-		if err != nil {
-			return written, err
-		}
-	}
-	// update block with modified time
+	// now write bytes
+	err = w.currWriter.Write(p[0:length], off)
+	// update local copy of block with mtime
 	w.currBlock.Mtime = int64(time.Now().Unix())
-	return written, nil
+	return length,err
 }
 
 func (w *Writer) Fsync() (err error) {

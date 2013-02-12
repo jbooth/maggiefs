@@ -640,7 +640,7 @@ func (m *MaggieFuse) Read(header *raw.InHeader, input *raw.ReadIn, buf []byte) (
 	reader := m.openFiles.get(input.Fh).r
 	nRead := uint32(0)
 	for nRead < input.Size {
-		n, err := reader.ReadAt(buf, input.Offset+uint64(nRead), input.Size-nRead)
+		n, err := reader.ReadAt(buf, input.Offset+uint64(nRead), nRead, input.Size-nRead)
 		nRead += n
 		if err != nil {
 			if err == io.EOF {
