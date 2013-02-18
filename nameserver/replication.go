@@ -27,6 +27,7 @@ func (v *volume) withLock(f func (v *volume) error) error {
 type replicationManager struct {
   replicationFactor uint32
 	volumes map[int32]*volume // maps volumes to their host (host is immutable for a volume, new volumes always get new IDs)
+	conns map[int32] maggiefs.NameDataIface
 	hosts map[uint32]*maggiefs.DataNodeStat
 	l          *sync.RWMutex
 }
@@ -51,29 +52,26 @@ func (rm *replicationManager) addDN(c *net.TCPConn) error {
 // ensures that all datanodes see the current version of the given block
 // expects block.Volumes to be filled out correctly, those are the DNs we notify
 func (rm *replicationManager) replicate(b *maggiefs.Block) (error) {
-//  ret := maggiefs.Block{}
-//  ret.Id = blockid
-//  ret.Inodeid = inodeid
-//  ret.Volumes = make([]int32,rm.replicationFactor)
-//  for idx,v := range volumes {
-//    ret.Volumes[idx] = v.Id
-//  }
-//  ret.Mtime = time.Now().Unix()
-//  ret.StartPos = startPos
-//  ret.EndPos = startPos
-//  
-//  rm.l.Lock()
-//  defer rm.l.Unlock()
-//  // allocate actual blocks on datanodes and update dn stats
-//  for _,h := range  rm.volumeHost {
-//    err := h.withLock(
-//      func(d *dnHost) error {
-//        return h.conn.AddBlock(b.Id)
-//      })
-//    if err != nil {
-//      return err
-//    }
-//  }  
+  rm.l.Lock()
+  defer rm.l.Unlock()
+  
+  for _,volId := range b.Volumes {
+    vol := rm.volumes[volId]
+    
+  }
+  
+  
+  
+  // allocate actual blocks on datanodes and update dn stats
+  for _,h := range  rm.volumeHost {
+    err := h.withLock(
+      func(d *dnHost) error {
+        return h.conn.AddBlock(b.Id)
+      })
+    if err != nil {
+      return err
+    }
+  }  
 	return nil
 }
 

@@ -88,7 +88,7 @@ type BlockWriter interface {
   // return which block id this writer is writing
   BlockId() uint64
   // writes some bytes, extending block if necessary
-  Write(p []byte, pos int64) error
+  Write(p []byte, pos uint64) error
   // flushes changes to system
   Sync() (err error)
   // flushes and closes this writer
@@ -104,7 +104,8 @@ type NameDataIface interface {
   AddBlock(id uint64) error
   RmBlock(id uint64) error
   ExtendBlock() error  
-  BlockReport() <- chan Block
+  
+  BlockReport() ([]Block,error)
 }
 
 

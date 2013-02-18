@@ -13,8 +13,13 @@ type DSConfig struct {
   volumeRoots []string // list of paths to the roots of the volumes we're exposing 
 }
 
-func ReadConfig(file string) {
-  
+func ReadConfig(file string) (*DSConfig,error) {
+  f,err := os.Open(file)
+  if err != nil { return nil,err }
+  ret := &DSConfig{}
+  d := json.NewDecoder(f)
+  d.Decode(ret)  
+  return ret,nil
 }
 
 func (ds *DSConfig) Write(file string) error {

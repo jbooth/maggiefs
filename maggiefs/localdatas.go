@@ -27,8 +27,8 @@ type LocalBlockWriter struct {
   blockId uint64
 }
 
-func (f LocalBlockWriter) Write(p []byte, pos int64) error {
-  _,err := f.file.WriteAt(p, pos)
+func (f LocalBlockWriter) Write(p []byte, pos uint64) error {
+  _,err := f.file.WriteAt(p, int64(pos))
   return err
 }
 
