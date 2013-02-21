@@ -175,7 +175,7 @@ func (n *MemNames) AddBlock(nodeid uint64, length uint32) (newBlock Block, err e
 		return Block{}, err
 	}
 	// block added, now make sure datanode is cool
-	n.dataNode.AddBlock(node.Blocks[len(node.Blocks)-1].Id)
+//	n.dataNode.AddBlock(node.Blocks[len(node.Blocks)-1].Id)
 	return node.Blocks[len(node.Blocks)-1], nil
 }
 
@@ -196,7 +196,7 @@ func (n *MemNames) ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (new
 		return nil
 	})
 	// extend on data nodes
-	err = n.dataNode.ExtendBlock(blockId, delta)
+//	err = n.dataNode.ExtendBlock(0, blockId, delta)
 	if err != nil {
 		return Block{}, err
 	}

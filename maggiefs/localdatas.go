@@ -48,9 +48,12 @@ type LocalDatas struct {
   baseDir string
 }
 
-func (d LocalDatas) Read(blk Block) (conn BlockReader, err error) {
+func (d LocalDatas) Read(blk Block, p []byte, pos uint64, length uint64) (err error) {
   file,err := os.OpenFile(d.pathFor(blk.Id),syscall.O_RDONLY,0777)
-  return LocalBlockReader{file,0},err
+  defer file.Close()
+  if err != nil { return err } 
+  _,err = file.ReadAt(p[0:length],int64(pos))
+  return err
 }
 
 func (d LocalDatas) Write(blk Block) (conn BlockWriter, err error) {

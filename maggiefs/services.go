@@ -63,25 +63,11 @@ type NameService interface {
 
 
 type DataService interface {
-  Read(blk Block) (conn BlockReader, err error)
+  // read some bytes
+  Read(blk Block, p []byte, pos uint64, length uint64) (err error)
 
+  // start a stateful write
   Write(blk Block) (conn BlockWriter, err error)
-
-  AddBlock(id uint64) error
-  RmBlock(id uint64) error
-  ExtendBlock(id uint64, delta uint32) error
-}
-
-// represents a session of interacting with a block of a file
-// sessions are navigated by seeking to a page number and then 
-// reading or writing full pages of 4096 bytes
-type BlockReader interface {
-
-  // reads some bytes
-  Read(p []byte, pos uint64, length uint64) (err error)
-  
-  // closes or returns to pool
-  Close() (err error)
 }
 
 type BlockWriter interface {
@@ -98,14 +84,18 @@ type BlockWriter interface {
 // interface exposed from datanodes to namenode
 // this is typically over a single socket which 
 type NameDataIface interface {
+  // periodic heartbeat with datanode stats so namenode can keep total stats and re-replicate
   HeartBeat() (DataNodeStat, error)
-  
-  Format(volId int32) (VolumeStat, error)
-  AddBlock(id uint64) error
-  RmBlock(id uint64) error
-  ExtendBlock() error  
-  
-  BlockReport() ([]Block,error)
+  // assigns a volume id to a volume
+  Format(volLoc string, volId int32) (VolumeStat, error)
+  // add a block to this datanode/volume
+  AddBlock(blk Block, volId int32) error
+  // rm block from this datanode/volume
+  RmBlock(id uint64, volId int32) error
+  // truncate a block
+  TruncBlock(blk Block, volId int32, newSize uint32) error
+  // get the list of all blocks for a volume
+  BlockReport(volId int32) ([]Block,error)
 }
 
 

@@ -102,6 +102,7 @@ type FsStat struct {
 type DataNodeStat struct {
   DataNodeInfo
   Volumes []VolumeStat
+  UnformattedVolumes []string // list of volume locations that are unformatted
 }
 
 func (dn DataNodeStat) Size() uint64 {

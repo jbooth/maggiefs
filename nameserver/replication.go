@@ -63,15 +63,15 @@ func (rm *replicationManager) replicate(b *maggiefs.Block) (error) {
   
   
   // allocate actual blocks on datanodes and update dn stats
-  for _,h := range  rm.volumeHost {
-    err := h.withLock(
-      func(d *dnHost) error {
-        return h.conn.AddBlock(b.Id)
-      })
-    if err != nil {
-      return err
-    }
-  }  
+//  for _,h := range  rm.volumeHost {
+//    err := h.withLock(
+//      func(d *dnHost) error {
+//        return h.conn.AddBlock(b.Id)
+//      })
+//    if err != nil {
+//      return err
+//    }
+//  }  
 	return nil
 }
 
