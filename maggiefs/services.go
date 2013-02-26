@@ -4,6 +4,8 @@ import (
 
 )
 
+// the lease service provides leases (duh), and streams of notifications about file state change
+// it's incumbent on client to Acknowledge() each notification in a timely manner or lose leases
 type LeaseService interface {
   
   // acquires the write lease for the given inode
@@ -23,10 +25,14 @@ type LeaseService interface {
   // returns a chan which will contain an event every time any inode in the system is changed
   // used for cache coherency
   // the fuse client runs a goroutine reading all changes from this chan
-  GetNotifier() chan uint64
-  
+  // multiple invocations of this method will return multiple channels
+  GetNotifier() (chan NotifyEvent, error)
+  // sends acknowledgement that we received a notify event
+  Acknowledge(NotifyEvent) error
   // blocks until all leases are released for the given node
   WaitAllReleased(nodeid uint64) error
+  // re-sets all leases, closes all issued Notifier chans
+  RenewLease() error
 }
 
 type WriteLease interface {
@@ -58,6 +64,8 @@ type NameService interface {
   ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (newBlock Block, err error)
   // truncate a block, shrinking by the amount posited.  shrink to 0 deletes the block
   TruncateBlock(blockId uint64, delta uint32) (err error)
+  // called by datanodes to join the cluster, dnId can be negative
+  Join(dnId int32, stat DataNodeStat) error
 }
 
 
@@ -85,9 +93,9 @@ type BlockWriter interface {
 // this is typically over a single socket which 
 type NameDataIface interface {
   // periodic heartbeat with datanode stats so namenode can keep total stats and re-replicate
-  HeartBeat() (DataNodeStat, error)
+  HeartBeat() (*DataNodeStat, error)
   // assigns a volume id to a volume
-  Format(volLoc string, volId int32) (VolumeStat, error)
+  Format(volLoc string, volId int32) (*VolumeStat, error)
   // add a block to this datanode/volume
   AddBlock(blk Block, volId int32) error
   // rm block from this datanode/volume

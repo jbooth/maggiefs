@@ -2,61 +2,92 @@ package dataserver
 
 import (
 	"fmt"
+	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jmhodges/levigo"
-	"os"
 	"io/ioutil"
+	"os"
 	"strconv"
 )
 
 var (
-  readOpts = levigo.NewReadOptions()
-  writeOpts = levigo.NewWriteOptions()
-  openOpts = levigo.NewOptions()
+	readOpts  = levigo.NewReadOptions()
+	writeOpts = levigo.NewWriteOptions()
+	openOpts  = levigo.NewOptions()
 )
 
 func init() {
-  writeOpts.SetSync(true)
+	openOpts.SetCreateIfMissing(true)
+	writeOpts.SetSync(true)
 }
 
 func validVolume(volRoot string) bool {
-  // check valid volid
-  volid,err := getVolId(volRoot)
-  if err != nil || volid < 1 { 
-    return false
-  }
-  // check valid metadb
-  db,err := levigo.Open(volRoot + "/meta",openOpts)
-  defer db.Close()
-  if err != nil {
-    return false
-  } 
-  return true
+	// check valid volid
+	volid, err := getVolId(volRoot)
+	if err != nil || volid < 1 {
+		return false
+	}
+	// check valid metadb
+	db, err := levigo.Open(volRoot+"/meta", openOpts)
+	defer db.Close()
+	if err != nil {
+		return false
+	}
+	return true
 }
 
-func loadVolume(volRoot string) (*volume, error) {
-  id,err := getVolId(volRoot)
-  if err != nil { return nil,err }
-  db,err := levigo.Open(volRoot + "/meta",openOpts)
-  if err != nil {
-    db.Close()
-    return nil,err
-  } 
-  return &volume{id,volRoot,db},nil
+func loadVolume(volRoot string, host maggiefs.DataNodeInfo) (*volume, error) {
+	id, err := getVolId(volRoot)
+	if err != nil {
+		return nil, err
+	}
+	db, err := levigo.Open(volRoot+"/meta", openOpts)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return &volume{id, volRoot, maggiefs.VolumeInfo{id,host}, db}, nil
 }
 
-func formatVolume(volRoot string, volId int32) (*volume, error) {
-  // write vol id
-  
-  // initialize db
-  
-  // create block dir and subdirs
+func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
+	// write vol id
+	volIdFile, err := os.Create(volRoot + "/VOLID")
+	if err != nil {
+		return nil, err
+	}
+	idBytes := []byte(strconv.Itoa(int(vol.VolId)))
+	_, err = volIdFile.Write(idBytes)
+	if err != nil {
+		return nil, err
+	}
+	volIdFile.Close()
+	// initialize db
+	err = os.RemoveAll(volRoot + "/meta")
+	if err != nil {
+		return nil, err
+	}
+	db, err := levigo.Open(volRoot+"/meta", openOpts)
+	if err != nil {
+		return nil, err
+	}
+	// create block dir and subdirs
+	err = os.RemoveAll(volRoot + "/blocks")
+	if err != nil {
+		return nil, err
+	}
+	err = os.Mkdir(volRoot+"/blocks", 0755)
+	if err != nil {
+		return nil, err
+	}
+	return &volume{vol.VolId, volRoot, vol, db}, nil
 }
 
-func getVolId(volRoot string) (int32,error) {
-  bytes,err := ioutil.ReadFile(volRoot + "/VOLID")
-  if err != nil { return -1,err }
-  ret,err := strconv.Atoi(string(bytes))
-  return int32(ret),err
+func getVolId(volRoot string) (int32, error) {
+	bytes, err := ioutil.ReadFile(volRoot + "/VOLID")
+	if err != nil {
+		return -1, err
+	}
+	ret, err := strconv.Atoi(string(bytes))
+	return int32(ret), err
 }
 
 // represents a volume
@@ -66,6 +97,7 @@ func getVolId(volRoot string) (int32,error) {
 type volume struct {
 	id        int32
 	rootPath  string
+	info      maggiefs.VolumeInfo
 	blockData *levigo.DB
 }
 

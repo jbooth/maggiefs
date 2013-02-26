@@ -32,16 +32,13 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
   // confirm currBlock and currReader correct
   block,err := blockForPos(position, inode)
   if (err != nil) { return 0,err }
-  // get our blockreader  
-  blockReader,err := r.datas.Read(block)
-  defer blockReader.Close()
   // read at most the bytes remaining in this block
   // if we're being asked to read past end of block, we just return early
   numBytesFromBlock := block.EndPos - position
   if (uint32(numBytesFromBlock) > length) { length = uint32(numBytesFromBlock) }
   // read bytes
   posInBlock := uint64(offset) - block.StartPos
-  err = blockReader.Read(p[offset:],posInBlock,numBytesFromBlock)
+  err = r.datas.Read(block, p[offset:],posInBlock,numBytesFromBlock)
   return uint32(numBytesFromBlock),err
 }
 

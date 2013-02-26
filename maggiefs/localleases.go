@@ -102,7 +102,7 @@ type submap struct {
 	m map[uint64]*inodeLeaseState
 }
 
-func NewLocalLeases() LeaseService {
+func NewLocalLeases() LocalLeases {
 	numBuckets := 10
 	ret := LocalLeases{uint64(numBuckets), make(map[uint64]submap),make(chan uint64,100)}
 	for i := 0; i < numBuckets; i++ {
