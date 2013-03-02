@@ -6,12 +6,13 @@ import (
 )
 
 type DSConfig struct {
-	nameHost           string   // host of namenode
-	namePort           int      // main service port on namenode
-	dataClientBindAddr string   // addr we expose for data clients in "0.0.0.0:8080" syntax
-	nameDataBindAddr   string   // addr we expose for nameDataIface, in "0.0.0.0:8080" syntax
-	volumeRoots        []string // list of paths to the roots of the volumes we're exposing 
-	datanodeId         int32    // previously configured datanodeID, or null if we're unformatted
+	NameHost           string   // host of namenode
+	NamePort           int      // main service port on namenode
+	DataClientBindAddr string   // addr we expose for data clients in "0.0.0.0:8080" syntax
+	NameDataBindAddr   string   // addr we expose for nameDataIface, in "0.0.0.0:8080" syntax
+	VolumeRoots        []string // list of paths to the roots of the volumes we're exposing 
+	DatanodeId         int32    // previously configured datanodeID, or null if we're unformatted
+	DnHome             string   // DN homedir on a locally mounted disk
 }
 
 func ReadConfig(file string) (*DSConfig, error) {

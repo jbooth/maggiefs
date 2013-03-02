@@ -1,6 +1,7 @@
 package dataserver
 
 import (
+  "encoding/json"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jmhodges/levigo"
@@ -35,22 +36,34 @@ func validVolume(volRoot string) bool {
 	return true
 }
 
-func loadVolume(volRoot string, host maggiefs.DataNodeInfo) (*volume, error) {
+func loadVolume(volRoot string) (*volume, error) {
 	id, err := getVolId(volRoot)
 	if err != nil {
 		return nil, err
 	}
+	dnInfoFile,err := os.Open(volRoot + "/DNINFO")
+  defer dnInfoFile.Close()
+  if err != nil {
+    return nil,err
+  }
+  d := json.NewDecoder(dnInfoFile)
+  dnInfo := maggiefs.DataNodeInfo{}
+  d.Decode(dnInfo)
+  
+  
 	db, err := levigo.Open(volRoot+"/meta", openOpts)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-	return &volume{id, volRoot, maggiefs.VolumeInfo{id,host}, db}, nil
+	
+	return &volume{id, volRoot, maggiefs.VolumeInfo{id, dnInfo}, db}, nil
 }
 
 func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
 	// write vol id
 	volIdFile, err := os.Create(volRoot + "/VOLID")
+	defer volIdFile.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -59,13 +72,20 @@ func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	volIdFile.Close()
-	// initialize db
-	err = os.RemoveAll(volRoot + "/meta")
+	dnInfoFile, err := os.Create(volRoot + "/DNINFO")
+	defer dnInfoFile.Close()
 	if err != nil {
 		return nil, err
 	}
-	db, err := levigo.Open(volRoot+"/meta", openOpts)
+  e := json.NewEncoder(dnInfoFile)
+  e.Encode(vol.DnInfo)
+  
+	// initialize db
+	err = os.RemoveAll(volRoot + "/meta.ldb")
+	if err != nil {
+		return nil, err
+	}
+	db, err := levigo.Open(volRoot+"/meta.ldb", openOpts)
 	if err != nil {
 		return nil, err
 	}
