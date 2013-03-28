@@ -2,11 +2,13 @@ package dataserver
 
 import (
   "encoding/json"
+  "encoding/binary"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jmhodges/levigo"
 	"io/ioutil"
 	"os"
+	"syscall"
 	"strconv"
 )
 
@@ -57,7 +59,9 @@ func loadVolume(volRoot string) (*volume, error) {
 		return nil, err
 	}
 	
-	return &volume{id, volRoot, maggiefs.VolumeInfo{id, dnInfo}, db}, nil
+  rootFile,err := os.Open(volRoot)
+  if err != nil { return nil,err }
+	return &volume{id, volRoot, rootFile, maggiefs.VolumeInfo{id, dnInfo}, db}, nil
 }
 
 func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
@@ -98,7 +102,9 @@ func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &volume{vol.VolId, volRoot, vol, db}, nil
+	rootFile,err := os.Open(volRoot)
+	if err != nil { return nil,err }
+	return &volume{vol.VolId, volRoot, rootFile, vol, db}, nil
 }
 
 func getVolId(volRoot string) (int32, error) {
@@ -117,13 +123,83 @@ func getVolId(volRoot string) (int32, error) {
 type volume struct {
 	id        int32
 	rootPath  string
+	rootFile *os.File
 	info      maggiefs.VolumeInfo
 	blockData *levigo.DB
 }
 
-func (v *volume) withFile(id uint64, op func(*os.File)) error {
+func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
+  sysstat := syscall.Statfs_t{}
+  err = syscall.Fstatfs(int(v.rootFile.Fd()),&sysstat)
+  if err != nil { return stat,err }
+  stat.VolumeInfo = v.info
+  // these sizes are in blocks of 512
+  stat.Size = sysstat.Blocks * uint64(sysstat.Bsize)
+  stat.Used = (uint64(sysstat.Blocks - sysstat.Bfree) * uint64(sysstat.Bsize))
+  stat.Free = sysstat.Bfree * uint64(sysstat.Bsize)
+  return stat,nil
+}
 
-	return nil
+func (v *volume) AddBlock(blk maggiefs.Block) error {
+  // TODO should blow up here if blk already exists
+  // create file representing block
+  f,err := os.Create(v.resolvePath(blk.Id))
+  if err != nil { return err }
+  defer f.Close()
+  // add to blockmeta db
+  key := make([]byte,8)
+  binary.LittleEndian.PutUint64(key,blk.Id)
+  val := maggiefs.FromBlock(&blk)
+  err = v.blockData.Put(writeOpts,key,val)
+  return err
+}
+
+func (v *volume) RmBlock(id uint64) error {
+  // kill file
+  err := os.Remove(v.resolvePath(id))
+  if err != nil { return err }
+  // kill meta entry
+  
+  key := make([]byte,8)
+  binary.LittleEndian.PutUint64(key,id)
+  err = v.blockData.Delete(writeOpts,key)
+  return err
+}
+
+func (v *volume) TruncBlock(blk maggiefs.Block, newSize uint32) error {
+  return v.withFile(blk.Id, func(f *os.File) error {
+    return f.Truncate(int64(newSize))
+  })
+}
+
+func (v *volume) BlockReport() ([]maggiefs.Block, error) {
+  ret := make([]maggiefs.Block,0,0)
+  it := v.blockData.NewIterator(readOpts)
+  defer it.Close()
+  it.SeekToFirst()
+  for it = it ; it.Valid() ; it.Next() {
+    ret = append(ret,*maggiefs.ToBlock(it.Value()))
+  }
+  return ret,it.GetError()
+}
+
+// NameDataIFace methods
+//  // periodic heartbeat with datanode stats so namenode can keep total stats and re-replicate
+//  HeartBeat() (stat *DataNodeStat, err error)
+//  // add a block to this datanode/volume
+//  AddBlock(blk Block, volId int32) (err error)
+//  // rm block from this datanode/volume
+//  RmBlock(id uint64, volId int32) (err error)
+//  // truncate a block
+//  TruncBlock(blk Block, volId int32, newSize uint32) (err error)
+//  // get the list of all blocks for a volume
+//  BlockReport(volId int32) (blocks []Block, err error)
+
+func (v *volume) withFile(id uint64, op func(*os.File) error) error {
+	f,err := os.Open(v.resolvePath(id))
+	defer f.Close()
+	if err != nil { return err }
+	return op(f)
 }
 
 // paths are resolved using an intermediate hash so that we don't blow up the data dir with millions of entries

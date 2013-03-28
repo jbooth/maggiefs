@@ -146,5 +146,4 @@ type VolumeStat struct {
 	Size      uint64 // total bytes
 	Used      uint64 // bytes used
 	Free      uint64 // bytes free
-	NumBlocks uint64
 }

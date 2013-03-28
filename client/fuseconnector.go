@@ -26,19 +26,21 @@ type MaggieFuse struct {
 	datas          maggiefs.DataService
 	openFiles      openFileMap                                // maps FD numbers to open files
 	fdCounter      uint64                                     // used to get unique FD numbers
-	changeNotifier chan uint64                                // remote changes to inodes are notified through this chan
+	changeNotifier chan maggiefs.NotifyEvent                           // remote changes to inodes are notified through this chan
 	inodeNotify    func(*raw.NotifyInvalInodeOut) fuse.Status // used to signal to OS that a remote inode changed
 	log            *log.Logger
 }
 
-func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService) *MaggieFuse {
+func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService) (*MaggieFuse,error) {
+	notifier,err := leases.GetNotifier()
+	if err != nil { return nil,err }
 	m := &MaggieFuse{
 		leases,
 		names,
 		datas,
 		newOpenFileMap(10),
 		uint64(0),
-		leases.GetNotifier(),
+		notifier  ,
 		nil,
 		log.New(os.Stderr, "maggie-fuse", 0),
 	}
@@ -46,12 +48,12 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 	go func() {
 		notify := &raw.NotifyInvalInodeOut{}
 		for inodeid := range m.changeNotifier {
-			notify.Ino = inodeid
+			notify.Ino = inodeid.Inodeid
 			stat := m.inodeNotify(notify)
 			fmt.Printf("notified for inode %d, got value %+v", notify.Ino, stat)
 		}
 	}()
-	return m
+	return m,nil
 }
 
 // hint to namenode for incremental GC

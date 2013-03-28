@@ -2,24 +2,33 @@ package dataserver
 
 import (
   "net"
+  "net/rpc"
   "github.com/jbooth/maggiefs/maggiefs"
   "errors"
+  "fmt"
 )
 
 type DataServer struct {
+  ns maggiefs.NameService
   info maggiefs.DataNodeInfo
   // live and unformatted volumes
   volumes map[int32] *volume
-  unformatted []string
   // accepts data conns for read/write requests
   dataIface *net.TCPListener
   // accepts conn from namenode 
   nameDataIface *net.TCPListener
 }
 
+// create a new dataserver connected to the nameserver specified in config
 func NewDataServer(config *DSConfig) (*DataServer,error) {
-  // get id or format new id
+  client,err := rpc.DialHTTP("tcp",fmt.Sprintf("%s:%d",config.NameHost, config.NamePort))
   
+  if err != nil { return nil,err }
+  return NewDataServer2(config,maggiefs.NewNameServiceClient(client))
+}
+
+// create a new dataserver by joining the specified nameservice
+func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (*DataServer,error) {
   // scan volumes
   volumes := make(map[int32] *volume)
   unformatted := make([]string, 0)
@@ -46,7 +55,14 @@ func NewDataServer(config *DSConfig) (*DataServer,error) {
       }
     }
   }
-  
+  // format unformatted volumes
+  for _,path := range unformatted {
+      volId,err := ns.NewVolId()
+      if err != nil { return nil,err }
+      vol,err := formatVolume(path,maggiefs.VolumeInfo{volId,dnInfo})
+      if err != nil { return nil,err }
+      volumes[volId] = vol
+  }
   
   // start up listeners
   dataClientBindAddr,err := net.ResolveTCPAddr("tcp", config.DataClientBindAddr) 
@@ -60,14 +76,14 @@ func NewDataServer(config *DSConfig) (*DataServer,error) {
   if err != nil { return nil,err }
   
   // start servicing
-  ds := &DataServer{dnInfo, volumes,unformatted,dataClientListen,nameDataListen}
+  ds := &DataServer{ns, dnInfo, volumes,dataClientListen,nameDataListen}
   go ds.serveNameData()
   go ds.serveClientData() 
   return ds,nil
 }
 
 func (ds *DataServer) serveNameData() {
-
+ 
 }
 
 func (ds *DataServer) serveClientData() {
@@ -75,22 +91,21 @@ func (ds *DataServer) serveClientData() {
 
 
 func (ds *DataServer) HeartBeat() (*maggiefs.DataNodeStat,error) {
-  return nil,nil
-}
-
-func (ds *DataServer) Format(volName string, volId int32) (*maggiefs.VolumeStat,error) {
+  
   return nil,nil
 }
 
 // NameDataIFace methods
-//  HeartBeat() (DataNodeStat, error)
-//  
-//  Format(volId int32) (VolumeStat, error)
-//  AddBlock(blk Block, volId int32) error
-//  RmBlock(id uint64, volId int32) error
-//  ExtendBlock(blk Block, volId int32) error  
-//  
-//  BlockReport(volId int32) ([]Block,error)
+//  // periodic heartbeat with datanode stats so namenode can keep total stats and re-replicate
+//  HeartBeat() (stat *DataNodeStat, err error)
+//  // add a block to this datanode/volume
+//  AddBlock(blk Block, volId int32) (err error)
+//  // rm block from this datanode/volume
+//  RmBlock(id uint64, volId int32) (err error)
+//  // truncate a block
+//  TruncBlock(blk Block, volId int32, newSize uint32) (err error)
+//  // get the list of all blocks for a volume
+//  BlockReport(volId int32) (blocks []Block, err error)
 
 // read/write methods
 

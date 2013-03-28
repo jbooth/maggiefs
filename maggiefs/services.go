@@ -64,8 +64,14 @@ type NameService interface {
   ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (newBlock Block, err error)
   // truncate a block, shrinking by the amount posited.  shrink to 0 deletes the block
   TruncateBlock(blockId uint64, delta uint32) (err error)
-  // called by datanodes to join the cluster, dnId can be negative
-  Join(dnId int32, stat DataNodeStat) error
+  // called by datanodes to register the datanode with the cluster
+  // dnId can be null, in which case we return a newly allocated dnId
+  // DN subsequently calls RegisterVol for each volume
+  Join(dnId int32) (id int32, err error)
+  // called by DNs to obtain a new unique volume id
+  NewVolId() (id int32, err error)
+  // called by datanodes to add a volume to the cluster
+  RegisterVol(dnId int32, stat VolumeStat) (err error)
 }
 
 
@@ -93,17 +99,15 @@ type BlockWriter interface {
 // this is typically over a single socket which 
 type NameDataIface interface {
   // periodic heartbeat with datanode stats so namenode can keep total stats and re-replicate
-  HeartBeat() (*DataNodeStat, error)
-  // assigns a volume id to a volume
-  Format(volLoc string, volId int32) (*VolumeStat, error)
+  HeartBeat() (stat *DataNodeStat, err error)
   // add a block to this datanode/volume
-  AddBlock(blk Block, volId int32) error
+  AddBlock(blk Block, volId int32) (err error)
   // rm block from this datanode/volume
-  RmBlock(id uint64, volId int32) error
+  RmBlock(id uint64, volId int32) (err error)
   // truncate a block
-  TruncBlock(blk Block, volId int32, newSize uint32) error
+  TruncBlock(blk Block, volId int32, newSize uint32) (err error)
   // get the list of all blocks for a volume
-  BlockReport(volId int32) ([]Block,error)
+  BlockReport(volId int32) (blocks []Block, err error)
 }
 
 
