@@ -26,21 +26,23 @@ type MaggieFuse struct {
 	datas          maggiefs.DataService
 	openFiles      openFileMap                                // maps FD numbers to open files
 	fdCounter      uint64                                     // used to get unique FD numbers
-	changeNotifier chan maggiefs.NotifyEvent                           // remote changes to inodes are notified through this chan
+	changeNotifier chan maggiefs.NotifyEvent                  // remote changes to inodes are notified through this chan
 	inodeNotify    func(*raw.NotifyInvalInodeOut) fuse.Status // used to signal to OS that a remote inode changed
 	log            *log.Logger
 }
 
-func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService) (*MaggieFuse,error) {
-	notifier,err := leases.GetNotifier()
-	if err != nil { return nil,err }
+func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService) (*MaggieFuse, error) {
+	notifier, err := leases.GetNotifier()
+	if err != nil {
+		return nil, err
+	}
 	m := &MaggieFuse{
 		leases,
 		names,
 		datas,
 		newOpenFileMap(10),
 		uint64(0),
-		notifier  ,
+		notifier,
 		nil,
 		log.New(os.Stderr, "maggie-fuse", 0),
 	}
@@ -48,12 +50,12 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 	go func() {
 		notify := &raw.NotifyInvalInodeOut{}
 		for inodeid := range m.changeNotifier {
-			notify.Ino = inodeid.Inodeid
+			notify.Ino = inodeid.NodeId
 			stat := m.inodeNotify(notify)
 			fmt.Printf("notified for inode %d, got value %+v", notify.Ino, stat)
 		}
 	}()
-	return m,nil
+	return m, nil
 }
 
 // hint to namenode for incremental GC
@@ -226,7 +228,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 		}
 	}
 	if writable {
-		f.w, err = NewWriter(inode.Inodeid, m.names, m.datas)
+		f.w, err = NewWriter(inode.Inodeid, m.leases, m.names, m.datas)
 		if err != nil {
 			return fuse.EROFS
 		}
@@ -281,49 +283,51 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
 			return fuse.EROFS
 		}
 	}
-	// other mutations, if applicable
-	var newNode *maggiefs.Inode = nil
-	if input.Valid&(raw.FATTR_MODE|raw.FATTR_UID|raw.FATTR_GID|raw.FATTR_MTIME|raw.FATTR_MTIME_NOW|raw.FATTR_MTIME|raw.FATTR_MTIME_NOW) != 0 {
-		newNode, err := m.names.Mutate(header.NodeId, func(inode *maggiefs.Inode) error {
-			if input.Valid&raw.FATTR_MODE != 0 {
-				// chmod
-				inode.Mode = uint32(07777) & input.Mode
-			}
-			if input.Valid&(raw.FATTR_UID|raw.FATTR_GID) != 0 {
-				// chown
-				inode.Uid = input.Uid
-				inode.Gid = input.Gid
-			}
-			if input.Valid&(raw.FATTR_MTIME|raw.FATTR_MTIME_NOW) != 0 {
-				// MTIME, not supporting ATIME
-				if input.Valid&raw.FATTR_MTIME_NOW != 0 {
-					inode.Mtime = time.Now().UnixNano()
-				} else {
-					inode.Mtime = int64(input.Mtime*1e9) + int64(input.Mtimensec)
-				}
-			}
-			if input.Valid&(raw.FATTR_ATIME|raw.FATTR_ATIME_NOW) != 0 {
-				// MTIME, not supporting ATIME
-				if input.Valid&raw.FATTR_ATIME_NOW != 0 {
-					inode.Atime = time.Now().UnixNano()
-				} else {
-					inode.Atime = int64(input.Atime*1e9) + int64(input.Atimensec)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return fuse.EROFS
-		}
-		if f != nil && f.w != nil && newNode != nil {
-			// update local copy held by writer if appropriate
-			f.w.l.Lock()
-			defer f.w.l.Unlock()
-			f.w.inode = newNode
-		}
+	wl, err := m.leases.WriteLease(header.NodeId)
+	defer wl.Release()
+	if err != nil {
+		return fuse.EROFS
 	}
 
-	fillAttrOut(out, newNode)
+	// other mutations, if applicable
+	if input.Valid&(raw.FATTR_MODE|raw.FATTR_UID|raw.FATTR_GID|raw.FATTR_MTIME|raw.FATTR_MTIME_NOW|raw.FATTR_MTIME|raw.FATTR_MTIME_NOW) != 0 {
+    inode,err := m.names.GetInode(header.NodeId)
+    if err != nil {
+      return fuse.EROFS
+    }
+		if input.Valid&raw.FATTR_MODE != 0 {
+			// chmod
+			inode.Mode = uint32(07777) & input.Mode
+		}
+		if input.Valid&(raw.FATTR_UID|raw.FATTR_GID) != 0 {
+			// chown
+			inode.Uid = input.Uid
+			inode.Gid = input.Gid
+		}
+		if input.Valid&(raw.FATTR_MTIME|raw.FATTR_MTIME_NOW) != 0 {
+			// MTIME, not supporting ATIME
+			if input.Valid&raw.FATTR_MTIME_NOW != 0 {
+				inode.Mtime = time.Now().UnixNano()
+			} else {
+				inode.Mtime = int64(input.Mtime*1e9) + int64(input.Mtimensec)
+			}
+		}
+		if input.Valid&(raw.FATTR_ATIME|raw.FATTR_ATIME_NOW) != 0 {
+			// MTIME, not supporting ATIME
+			if input.Valid&raw.FATTR_ATIME_NOW != 0 {
+				inode.Atime = time.Now().UnixNano()
+			} else {
+				inode.Atime = int64(input.Atime*1e9) + int64(input.Atimensec)
+			}
+		}
+		// set on nameserver and on argument back out to fuse
+		err = m.names.SetInode(inode)
+		if err != nil {
+		  return fuse.EROFS
+		}
+		fillAttrOut(out, inode)
+	}
+
 	return fuse.OK
 }
 
@@ -366,13 +370,13 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 	i.Inodeid = id
 
 	// link parent
-	_,err = m.names.Link(header.NodeId, i.Inodeid, name, false)
+	_, err = m.names.Link(header.NodeId, i.Inodeid, name, false)
 	if err != nil {
-	  if err == maggiefs.E_EXISTS {
-	    return fuse.Status(syscall.EEXIST)
-	  } else {
-  		return fuse.EROFS
-	  }
+		if err == maggiefs.E_EXISTS {
+			return fuse.Status(syscall.EEXIST)
+		} else {
+			return fuse.EROFS
+		}
 	}
 	// output
 	fillEntryOut(out, &i)
@@ -389,7 +393,7 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 		0,
 		maggiefs.FTYPE_DIR,
 		0,
-		07777&input.Mode,
+		07777 & input.Mode,
 		currTime,
 		currTime,
 		currTime,
@@ -409,15 +413,15 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 	}
 	i.Inodeid = id
 	// link parent
-	_, err = m.names.Link(header.NodeId,id,name,false)
+	_, err = m.names.Link(header.NodeId, id, name, false)
 	if err != nil {
-	  // garbage collector will clean up our 0 reference node
-	  if err == maggiefs.E_EXISTS {
-	    return fuse.Status(syscall.EEXIST)
-	  } 
-	  if err == maggiefs.E_NOTDIR {
-	    return fuse.ENOTDIR
-	  }
+		// garbage collector will clean up our 0 reference node
+		if err == maggiefs.E_EXISTS {
+			return fuse.Status(syscall.EEXIST)
+		}
+		if err == maggiefs.E_NOTDIR {
+			return fuse.ENOTDIR
+		}
 		return fuse.EROFS
 	}
 	// send entry back to child
@@ -427,21 +431,21 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 
 func (m *MaggieFuse) Unlink(header *raw.InHeader, name string) (code fuse.Status) {
 
-  // finally unlink
-  _,err := m.names.Unlink(header.NodeId,name)
-  if err != nil {
-    if err == maggiefs.E_NOENT {
-      return fuse.ENOENT
-    } else if err == maggiefs.E_ISDIR {
-      return fuse.Status(syscall.EISDIR)
-    }
-    return fuse.EROFS
-  }
+	// finally unlink
+	_, err := m.names.Unlink(header.NodeId, name)
+	if err != nil {
+		if err == maggiefs.E_NOENT {
+			return fuse.ENOENT
+		} else if err == maggiefs.E_ISDIR {
+			return fuse.Status(syscall.EISDIR)
+		}
+		return fuse.EROFS
+	}
 	return fuse.OK
 }
 
 func (m *MaggieFuse) Rmdir(header *raw.InHeader, name string) (code fuse.Status) {
-  // sanity checks on parent, child
+	// sanity checks on parent, child
 	// pull parent
 	parent, err := m.names.GetInode(header.NodeId)
 	if err != nil {
@@ -468,8 +472,8 @@ func (m *MaggieFuse) Rmdir(header *raw.InHeader, name string) (code fuse.Status)
 		return fuse.Status(syscall.ENOTEMPTY)
 	}
 
-  // actually unlink
-  _,err = m.names.Unlink(parent.Inodeid, name)
+	// actually unlink
+	_, err = m.names.Unlink(parent.Inodeid, name)
 	if err != nil {
 		return fuse.EROFS
 	}
@@ -503,13 +507,13 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
 	}
 	i.Inodeid = id
 	// link parent
-	_,err = m.names.Link(header.NodeId,i.Inodeid,linkName,false)
+	_, err = m.names.Link(header.NodeId, i.Inodeid, linkName, false)
 	if err != nil {
-	  if err == maggiefs.E_EXISTS {
-	   return fuse.Status(syscall.EEXIST)
-	  } else if err == maggiefs.E_NOTDIR {
-	   return fuse.ENOTDIR
-	  }
+		if err == maggiefs.E_EXISTS {
+			return fuse.Status(syscall.EEXIST)
+		} else if err == maggiefs.E_NOTDIR {
+			return fuse.ENOTDIR
+		}
 		return fuse.EROFS
 	}
 	// send entry back to child
@@ -519,21 +523,21 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
 
 func (m *MaggieFuse) Rename(header *raw.InHeader, input *raw.RenameIn, oldName string, newName string) (code fuse.Status) {
 	// look up old parent and get our inode
-	oldParent,err := m.names.GetInode(header.NodeId)
-	childDentry,exists := oldParent.Children[oldName]
+	oldParent, err := m.names.GetInode(header.NodeId)
+	childDentry, exists := oldParent.Children[oldName]
 	if !exists {
-	 return fuse.EINVAL
+		return fuse.EINVAL
 	}
 	// link to new parent (force)
-	_,err = m.names.Link(input.Newdir,childDentry.Inodeid,newName,true)
+	_, err = m.names.Link(input.Newdir, childDentry.Inodeid, newName, true)
 	if err != nil {
-	  if err == maggiefs.E_NOENT {
-	    return fuse.ENOENT
-	  }
-	  return fuse.EROFS
+		if err == maggiefs.E_NOENT {
+			return fuse.ENOENT
+		}
+		return fuse.EROFS
 	}
 	// unlink from old
-	_, err = m.names.Unlink(oldParent.Inodeid,oldName)
+	_, err = m.names.Unlink(oldParent.Inodeid, oldName)
 	if err != nil {
 		return fuse.EROFS
 	}
@@ -545,11 +549,11 @@ func (m *MaggieFuse) Link(out *raw.EntryOut, header *raw.InHeader, input *raw.Li
 	// existing node is input.Oldnodeid
 
 	// add link to new parent
-	_,err := m.names.Link(header.NodeId,input.Oldnodeid, name,false)
+	_, err := m.names.Link(header.NodeId, input.Oldnodeid, name, false)
 	if err == maggiefs.E_EXISTS {
-	 return fuse.Status(syscall.EEXIST)
+		return fuse.Status(syscall.EEXIST)
 	} else if err != nil {
-	 return fuse.EROFS
+		return fuse.EROFS
 	}
 
 	return fuse.OK

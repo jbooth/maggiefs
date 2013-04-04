@@ -5,6 +5,7 @@ import (
   "bytes"
 )
 
+// TODO make these receiver methods on Inode/Block
 
 func FromInode(i *Inode) []byte {
   if i == nil {

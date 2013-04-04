@@ -3,6 +3,7 @@ package dataserver
 import (
   "net"
   "net/rpc"
+  "net/http"
   "github.com/jbooth/maggiefs/maggiefs"
   "errors"
   "fmt"
@@ -28,7 +29,7 @@ func NewDataServer(config *DSConfig) (*DataServer,error) {
 }
 
 // create a new dataserver by joining the specified nameservice
-func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (*DataServer,error) {
+func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (ds *DataServer,err error) {
   // scan volumes
   volumes := make(map[int32] *volume)
   unformatted := make([]string, 0)
@@ -55,9 +56,14 @@ func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (*DataServer,erro
       }
     }
   }
+  if dnInfo.DnId == 0 {
+    dnInfo.DnId,err = ns.NextDnId()
+  }
+  dnInfo.Addr = config.DataClientBindAddr
+  
   // format unformatted volumes
   for _,path := range unformatted {
-      volId,err := ns.NewVolId()
+      volId,err := ns.NextVolId()
       if err != nil { return nil,err }
       vol,err := formatVolume(path,maggiefs.VolumeInfo{volId,dnInfo})
       if err != nil { return nil,err }
@@ -75,37 +81,68 @@ func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (*DataServer,erro
   nameDataListen,err := net.ListenTCP("tcp",nameDataBindAddr)
   if err != nil { return nil,err }
   
-  // start servicing
-  ds := &DataServer{ns, dnInfo, volumes,dataClientListen,nameDataListen}
-  go ds.serveNameData()
+  ds = &DataServer{ns, dnInfo, volumes,dataClientListen,nameDataListen}
+  // start servicing namedata
+  nameData := maggiefs.NewNameDataIfaceService(ds)
+  rpc.Register(nameData)
+  rpc.HandleHTTP()
+  go http.Serve(nameDataListen,nil)
+  // start servicing client data
   go ds.serveClientData() 
+  // register ourselves with namenode
+  err = ns.Join(dnInfo.DnId, config.NameDataBindAddr)
+  if err != nil { return nil,err }
+  for volId,vol := range volumes {
+    stat,err := vol.HeartBeat()
+    if err != nil { return err }
+    err = ns.RegisterVol(dnInfo.DnId,stat)
+    if err != nil { return err }
+  }
   return ds,nil
 }
 
 func (ds *DataServer) serveNameData() {
- 
+  
 }
 
 func (ds *DataServer) serveClientData() {
 }
 
 
-func (ds *DataServer) HeartBeat() (*maggiefs.DataNodeStat,error) {
-  
-  return nil,nil
+func (ds *DataServer) HeartBeat() (stat *maggiefs.DataNodeStat, err error) {
+  ret := maggiefs.DataNodeStat { ds.info, make([]maggiefs.VolumeStat, len(ds.volumes), len(ds.volumes)) }
+  idx := 0
+  for _,vol := range ds.volumes {
+    ret.Volumes[idx],err = vol.HeartBeat()
+    if err != nil { return nil,err }
+    idx++
+  }
+  return &ret,nil
 }
 
-// NameDataIFace methods
-//  // periodic heartbeat with datanode stats so namenode can keep total stats and re-replicate
-//  HeartBeat() (stat *DataNodeStat, err error)
-//  // add a block to this datanode/volume
-//  AddBlock(blk Block, volId int32) (err error)
-//  // rm block from this datanode/volume
-//  RmBlock(id uint64, volId int32) (err error)
-//  // truncate a block
-//  TruncBlock(blk Block, volId int32, newSize uint32) (err error)
-//  // get the list of all blocks for a volume
-//  BlockReport(volId int32) (blocks []Block, err error)
+func (ds *DataServer) AddBlock(blk maggiefs.Block, volId int32) (err error) {
+  vol,exists := ds.volumes[volId]
+  if ! exists { return fmt.Errorf("No volume for volID %d",volId) }
+  return vol.AddBlock(blk)
+}
+
+func (ds *DataServer) RmBlock(id uint64, volId int32) (err error) {
+  vol,exists := ds.volumes[volId]
+  if ! exists { return fmt.Errorf("No volume for volID %d",volId) }
+  return vol.RmBlock(id)
+}
+
+func (ds *DataServer) TruncBlock(blk maggiefs.Block, volId int32, newSize uint32) ( err error ) {
+  vol,exists := ds.volumes[volId]
+  if ! exists { return fmt.Errorf("No volume for volID %d",volId) }
+  return vol.TruncBlock(blk,newSize)
+}
+
+func (ds *DataServer) BlockReport(volId int32) (blocks []maggiefs.Block, err error) {
+  vol,exists := ds.volumes[volId]
+  if ! exists { return nil,fmt.Errorf("No volume for volID %d",volId) }
+  return vol.BlockReport()
+}
 
 // read/write methods
 

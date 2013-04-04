@@ -56,17 +56,16 @@ func (s *NameServiceService) AddInode(request *NameServiceAddInodeRequest, respo
 	return
 }
 
-type NameServiceMutateRequest struct {
-	Nodeid  uint64
-	Mutator func(inode *Inode) error
+type NameServiceSetInodeRequest struct {
+	Node Inode
 }
 
-type NameServiceMutateResponse struct {
+type NameServiceSetInodeResponse struct {
 	NewNode *Inode
 }
 
-func (s *NameServiceService) Mutate(request *NameServiceMutateRequest, response *NameServiceMutateResponse) (err error) {
-	response.NewNode, err = s.impl.Mutate(request.Nodeid, request.Mutator)
+func (s *NameServiceService) SetInode(request *NameServiceSetInodeRequest, response *NameServiceSetInodeResponse) (err error) {
+	response.NewNode, err = s.impl.SetInode(request.Node)
 	return
 }
 
@@ -143,27 +142,39 @@ func (s *NameServiceService) TruncateBlock(request *NameServiceTruncateBlockRequ
 }
 
 type NameServiceJoinRequest struct {
-	DnId int32
+	DnId         int32
+	NameDataAddr string
 }
 
 type NameServiceJoinResponse struct {
-	Id int32
 }
 
 func (s *NameServiceService) Join(request *NameServiceJoinRequest, response *NameServiceJoinResponse) (err error) {
-	response.Id, err = s.impl.Join(request.DnId)
+	err = s.impl.Join(request.DnId, request.NameDataAddr)
 	return
 }
 
-type NameServiceNewVolIdRequest struct {
+type NameServiceNextVolIdRequest struct {
 }
 
-type NameServiceNewVolIdResponse struct {
+type NameServiceNextVolIdResponse struct {
 	Id int32
 }
 
-func (s *NameServiceService) NewVolId(request *NameServiceNewVolIdRequest, response *NameServiceNewVolIdResponse) (err error) {
-	response.Id, err = s.impl.NewVolId()
+func (s *NameServiceService) NextVolId(request *NameServiceNextVolIdRequest, response *NameServiceNextVolIdResponse) (err error) {
+	response.Id, err = s.impl.NextVolId()
+	return
+}
+
+type NameServiceNextDnIdRequest struct {
+}
+
+type NameServiceNextDnIdResponse struct {
+	Id int32
+}
+
+func (s *NameServiceService) NextDnId(request *NameServiceNextDnIdRequest, response *NameServiceNextDnIdResponse) (err error) {
+	response.Id, err = s.impl.NextDnId()
 	return
 }
 
@@ -210,10 +221,10 @@ func (_c *NameServiceClient) AddInode(node Inode) (id uint64, err error) {
 	return _response.Id, err
 }
 
-func (_c *NameServiceClient) Mutate(nodeid uint64, mutator func(inode *Inode) error) (newNode *Inode, err error) {
-	_request := &NameServiceMutateRequest{nodeid, mutator}
-	_response := &NameServiceMutateResponse{}
-	err = _c.client.Call(_c.service+".Mutate", _request, _response)
+func (_c *NameServiceClient) SetInode(node Inode) (newNode *Inode, err error) {
+	_request := &NameServiceSetInodeRequest{node}
+	_response := &NameServiceSetInodeResponse{}
+	err = _c.client.Call(_c.service+".SetInode", _request, _response)
 	return _response.NewNode, err
 }
 
@@ -252,17 +263,24 @@ func (_c *NameServiceClient) TruncateBlock(blockId uint64, delta uint32) (err er
 	return err
 }
 
-func (_c *NameServiceClient) Join(dnId int32) (id int32, err error) {
-	_request := &NameServiceJoinRequest{dnId}
+func (_c *NameServiceClient) Join(dnId int32, nameDataAddr string) (err error) {
+	_request := &NameServiceJoinRequest{dnId, nameDataAddr}
 	_response := &NameServiceJoinResponse{}
 	err = _c.client.Call(_c.service+".Join", _request, _response)
+	return err
+}
+
+func (_c *NameServiceClient) NextVolId() (id int32, err error) {
+	_request := &NameServiceNextVolIdRequest{}
+	_response := &NameServiceNextVolIdResponse{}
+	err = _c.client.Call(_c.service+".NextVolId", _request, _response)
 	return _response.Id, err
 }
 
-func (_c *NameServiceClient) NewVolId() (id int32, err error) {
-	_request := &NameServiceNewVolIdRequest{}
-	_response := &NameServiceNewVolIdResponse{}
-	err = _c.client.Call(_c.service+".NewVolId", _request, _response)
+func (_c *NameServiceClient) NextDnId() (id int32, err error) {
+	_request := &NameServiceNextDnIdRequest{}
+	_response := &NameServiceNextDnIdResponse{}
+	err = _c.client.Call(_c.service+".NextDnId", _request, _response)
 	return _response.Id, err
 }
 
