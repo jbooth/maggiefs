@@ -1,4 +1,4 @@
- package nameserver
+package nameserver
 
 import (
 	"github.com/jbooth/maggiefs/maggiefs"
