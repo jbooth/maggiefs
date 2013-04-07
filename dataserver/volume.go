@@ -149,7 +149,7 @@ func (v *volume) AddBlock(blk maggiefs.Block) error {
   // add to blockmeta db
   key := make([]byte,8)
   binary.LittleEndian.PutUint64(key,blk.Id)
-  val := maggiefs.FromBlock(&blk)
+  val := blk.ToBytes()
   err = v.blockData.Put(writeOpts,key,val)
   return err
 }
@@ -178,7 +178,9 @@ func (v *volume) BlockReport() ([]maggiefs.Block, error) {
   defer it.Close()
   it.SeekToFirst()
   for it = it ; it.Valid() ; it.Next() {
-    ret = append(ret,*maggiefs.ToBlock(it.Value()))
+    blk := maggiefs.Block{}
+    blk.FromBytes(it.Value())
+    ret = append(ret,blk)
   }
   return ret,it.GetError()
 }

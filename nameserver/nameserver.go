@@ -1,382 +1,215 @@
 package nameserver
 
 import (
-	"encoding/binary"
-	"encoding/gob"
-	"errors"
-	"fmt"
+	"github.com/jbooth/maggiefs/leaseserver"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"net"
+	"net/rpc"
+	"sync"
 	"time"
 )
 
-// we need to keep
-//  leveldb of inodes
-//  leveldb of blocks
-//  global system statsfs
-
-// additionally
-//   connections to data servers
-//   poll them to update stats
-
-func NewNameServer(clPort int, dnPort int, dataDir string, format bool) (*NameServer, error) {
+// new nameserver and lease server listening on the given addresses, serving data from dataDir
+// addresses should be a 0.0.0.0:9999 type address
+func NewNameServer(leaseServerAddr string, nameAddr string, dataDir string, format bool) (*NameServer, error) {
 	ret := &NameServer{}
-	clientListenAddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("0.0.0.0:%d", clPort))
+	leaseServer, err := leaseserver.NewLeaseServer(leaseServerAddr)
 	if err != nil {
-		ret.Close()
 		return nil, err
 	}
-	ret.listenCL, err = net.ListenTCP("tcp", clientListenAddr)
-	if err != nil {
-		ret.Close()
-		return nil, err
-	}
-	dnListenAddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("0.0.0.0:%d", dnPort))
-	if err != nil {
-		ret.Close()
-		return nil, err
-	}
-	ret.listenDN, err = net.ListenTCP("tcp", dnListenAddr)
-	if err != nil {
-		ret.Close()
-		return nil, err
-	}
-	ret.shutdownCL = make(chan bool, 1)
-	ret.shutdownDN = make(chan bool, 1)
+	go leaseServer.Serve()
+
 	ret.nd, err = NewNameData(dataDir)
 	if err != nil {
-		ret.Close()
 		return nil, err
 	}
+
 	ret.rm = newReplicationManager()
+	clientListenAddr, err := net.ResolveTCPAddr("tcp", nameAddr)
+	if err != nil {
+		return nil, err
+	}
+	clientListen,err := net.ListenTCP("tcp",clientListenAddr)
+	if err != nil { return nil, err }
+	nameServerServer := maggiefs.NewNameServiceService(ret)
+	server := rpc.NewServer()
+	server.Register(nameServerServer)
+	go server.Accept(clientListen)
 	return ret, nil
 }
 
 type NameServer struct {
-	rm         *replicationManager
-	nd         *NameData
-	listenCL   *net.TCPListener
-	listenDN   *net.TCPListener
-	conns      []*conn
-	shutdownCL chan bool // these chans are triggered to stop accepting conns
-	shutdownDN chan bool
+	ls          maggiefs.LeaseService
+	rm          *replicationManager
+	nd          *NameData
+	listen      *net.TCPListener
+	dirTreeLock *sync.Mutex // used so all dir tree operations (link/unlink) are atomic
 }
 
-func (ns *NameServer) acceptClients() {
-	for {
-		// accept (and listen for shutdown while accepting)
-		cli, err := acceptOrShutdown(ns.listenCL, ns.shutdownCL)
-		if err != nil {
-			if err == e_shutdown {
-				break
-			} else {
-				fmt.Printf("error accepting client : %s\n", err.Error())
-				continue
-			}
-		}
-		// serve
-		c := conn{cli, gob.NewDecoder(cli), gob.NewEncoder(cli), ns}
-		go c.serve()
-	}
-	// shutdown
-	err := ns.listenCL.Close()
-	if err != nil {
-		fmt.Printf("error closing client listener : %s\n", err.Error())
-	}
+func (ns *NameServer) GetInode(nodeid uint64) (node *maggiefs.Inode, err error) {
+	return ns.nd.GetInode(nodeid)
 }
 
-func (ns *NameServer) acceptDNs() {
-	for {
-		// select
-		d, err := acceptOrShutdown(ns.listenDN, ns.shutdownDN)
-		if err != nil {
-			if err == e_shutdown {
-				break
-			} else {
-				fmt.Printf("error accepting dn : %s\n", err.Error())
-				continue
-			}
-		}
-		// add to replication pool
-		ns.rm.addDN(d)
-	}
-	// shutdown
-	err := ns.listenDN.Close()
-	if err != nil {
-		fmt.Printf("error closing dn listener : %s\n", err.Error())
-	}
+func (ns *NameServer) AddInode(node *maggiefs.Inode) (id uint64, err error) {
+	return ns.nd.AddInode(node)
 }
 
-// shuts down the nameserver
-func (ns *NameServer) Close() error {
-	// stop listening
-  ns.shutdownCL <- true
-  ns.shutdownDN <- true
-	// stop serving connections
-  for _,c := range ns.conns {
-    if c != nil { c.cloose() }
-  }
-	// shutdown replication manager and leveldb
-
-	return nil
+func (ns *NameServer) SetInode(node *maggiefs.Inode) (err error) {
+	return ns.nd.SetInode(node)
 }
 
-var e_shutdown error = errors.New("MFS_SHUTDOWN")
-
-const DEADLINE = 10 // 10 seconds
-// attempts to accept from l and to receive from shutdown.  either returns new TCPConn connection or nil and E_SHUTDOWN
-func acceptOrShutdown(l *net.TCPListener, shutdown chan bool) (*net.TCPConn, error) {
-	timeout := make(chan bool, 1)
-	go func() {
-		time.Sleep(20 * 1e6 * time.Nanosecond) // 20 ms
-		timeout <- true
-	}()
-	select {
-	case <-shutdown:
-		return nil, e_shutdown
-	case <-timeout:
-		break
-	}
-	// now try to accept
-	l.SetDeadline(time.Now().Add(DEADLINE * time.Second))
-	ret, err := l.AcceptTCP()
-	return ret, err
-}
-
-type conn struct {
-	c  *net.TCPConn
-	d  *gob.Decoder
-	e  *gob.Encoder
-	ns *NameServer
-}
-
-func (c *conn) cloose() {
-	c.c.Close()
-}
-
-func (c *conn) serve() {
-	req := request{}
-	for {
-		// read request
-		c.d.Decode(&req)
-		var err error = nil
-		resp := response{STAT_OK, []byte{}}
-		// handle
-
-		switch req.Op {
-
-		case OP_GETINODE:
-			// resp is encoded inode
-			resp.Body, err = c.ns.nd.GetInode(req.Inodeid)
-		case OP_SETINODE:
-			// resp is empty
-			var success bool
-			success, err = c.ns.nd.SetInode(req.Inodeid, req.Generation, req.Body)
-			if !success {
-				resp.Status = STAT_RETRY
-			}
-		case OP_ADDINODE:
-			// resp is uint64 id
-			inode := maggiefs.ToInode(req.Body)
-			inode.Inodeid, err = c.ns.nd.AddInode(inode)
-			resp.Body = make([]byte, 8)
-			binary.LittleEndian.PutUint64(resp.Body, inode.Inodeid)
-		case OP_LINK:
-			// 2 scenarios here, forced and unforced
-			// todo fill in error einval
-			linkReq := toLinkReq(req.Body)
-			var success bool = false
-			for !success {
-				resp.Status, err = c.ns.doLink(req.Inodeid, linkReq)
-				if err != nil {
-					resp.Status = STAT_ERR
-					break
-				}
-
-				if resp.Status == STAT_E_EXISTS {
-					if linkReq.Force {
-						// unlink and loop around again
-						err = c.ns.doUnLink(req.Inodeid, linkReq.Name)
-					} else {
-						// bail and return E_EXISTS
-						break
-					}
-				} else {
-					// done!
-					resp.Status = STAT_OK
-					success = true
-				}
-			}
-
-		case OP_UNLINK:
-			// child name is sent as body
-			// todo fill in errors
-			err = c.ns.doUnLink(req.Inodeid, string(req.Body))
-			if err != nil {
-				resp.Status = STAT_ERR
-			} else {
-				resp.Status = STAT_OK
-			}
-			// we send no body
-		case OP_ADDBLOCK:
-			// resp is new block
-
-			// find block locations
-			// notify each to allocate
-
-			// add to inode
-
-			// return new block
-		case OP_EXTENDBLOCK:
-		// notify each DN location
-		// modify on inode, update inode size
-		// return
-		default:
-			err = fmt.Errorf("unrecognized op: %d", req.Op)
-		}
-
-		// send response
-		if err != nil {
-			resp.Status = STAT_ERR
-			resp.Body = []byte(err.Error())
-			fmt.Printf("error handling req %+v : %s", req, err.Error())
-		}
-		err = c.e.Encode(resp)
-		if err != nil {
-			fmt.Printf("Error sending response %+v : %s", resp, err)
-		}
-	}
-}
-
-// mutate an inode -- encoded as in binary.Read, binary.Write
-func (ns *NameServer) mutate(inode uint64, mutator func(*maggiefs.Inode) (i *maggiefs.Inode, stat byte, e error)) (*maggiefs.Inode, byte, error) {
-	success := false
-	var i *maggiefs.Inode
-	for !success {
-		bytes, err := ns.nd.GetInode(inode)
-		if err != nil {
-			return nil, STAT_ERR, err
-		}
-		i = maggiefs.ToInode(bytes)
-		lastGen := i.Generation
-		i, stat, err := mutator(i)
-		if err != nil || stat != STAT_OK {
-			return i, stat, err
-		}
-		success, err = ns.nd.SetInode(inode, lastGen, maggiefs.FromInode(i))
-		if err != nil {
-			return nil, STAT_ERR, err
-		}
-	}
-	return i, STAT_OK, nil
-}
-
-func (ns *NameServer) doLink(parentId uint64, linkReq linkReqBody) (status byte, err error) {
-	// add link to parent, returning STAT_E_EXISTS if necessary
-	_, status, err = ns.mutate(parentId,
-		func(parent *maggiefs.Inode) (*maggiefs.Inode, byte, error) {
-
-			_, childExists := parent.Children[linkReq.Name]
+func (ns *NameServer) Link(parent uint64, child uint64, name string, force bool) (err error) {
+	ns.dirTreeLock.Lock()
+	defer ns.dirTreeLock.Unlock()
+	var parentSuccess = false
+	var prevChildId = uint64(0)
+	for !parentSuccess {
+		// try to link to parent
+		_, err := ns.nd.Mutate(parent, func(i *maggiefs.Inode) error {
+			dentry, childExists := i.Children[name]
 			if childExists {
-				return nil, STAT_E_EXISTS, nil
+				prevChildId = dentry.Inodeid
+				return nil
+			} else {
+				now := time.Now().Unix()
+				i.Children[name] = maggiefs.Dentry{child, now}
+				i.Ctime = now
+				parentSuccess = true
+				prevChildId = 0
 			}
-			parent.Children[linkReq.Name] = maggiefs.Dentry{linkReq.ChildId, time.Now().Unix()}
-			return parent, STAT_OK, nil
+			return nil
 		})
-	if status != STAT_OK || err != nil {
-		return status, err
+		if err != nil {
+			return err
+		}
+		// if name already exists, handle
+		if prevChildId > 0 {
+			if force {
+				err = ns.doUnlink(parent, name)
+				if err != nil {
+					return err
+				}
+			} else {
+				return maggiefs.E_EXISTS
+			}
+		}
 	}
-
-	// add Nlink to child
-	_, status, err = ns.mutate(linkReq.ChildId, func(child *maggiefs.Inode) (*maggiefs.Inode, byte, error) {
-		child.Nlink++
-		return child, STAT_OK, nil
+	// now increment numLinks on child
+	_, err = ns.nd.Mutate(child, func(i *maggiefs.Inode) error {
+		i.Nlink++
+		i.Ctime = time.Now().Unix()
+		return nil
 	})
-	return status, err
+	return err
 }
 
-func (ns *NameServer) doUnLink(parentId uint64, name string) error {
-	// loop until parent updated
-	success := false
-	var childId uint64
-	for !success {
-		parentBytes, err := ns.nd.GetInode(parentId)
-		if err != nil {
-			return err
-		}
-		parent := maggiefs.ToInode(parentBytes)
-		child, exists := parent.Children[name]
+func (ns *NameServer) Unlink(parent uint64, name string) (err error) {
+	ns.dirTreeLock.Lock()
+	defer ns.dirTreeLock.Unlock()
+	return ns.doUnlink(parent, name)
+}
+
+// separate so we can call from Link with force
+func (ns *NameServer) doUnlink(parent uint64, name string) (err error) {
+	var childId = uint64(0)
+	// unlink from parent
+	_, err = ns.nd.Mutate(parent, func(i *maggiefs.Inode) error {
+		dentry, exists := i.Children[name]
 		if !exists {
-			return fmt.Errorf("no child for inode %d with name %s", parentId, name)
+			return maggiefs.E_NOENT
 		}
-		childId = child.Inodeid
-		delete(parent.Children, name)
-		success, err = ns.nd.SetInode(parentId, parent.Generation, maggiefs.FromInode(parent))
-		if err != nil {
-			return err
-		}
+		childId = dentry.Inodeid
+		delete(i.Children, name)
+		i.Ctime = time.Now().Unix()
+		return nil
+	})
+	if err != nil {
+		return nil
 	}
-	// loop until child nlinks updated
-	success = false
-	childNeedsGC := false
-	for !success {
-		childBytes, err := ns.nd.GetInode(childId)
-		if err != nil {
-			return err
-		}
-		child := maggiefs.ToInode(childBytes)
-		child.Nlink--
-		success, err = ns.nd.SetInode(childId, child.Generation, maggiefs.FromInode(child))
-		if err != nil {
-			return err
-		}
-		if success && child.Nlink == 0 {
-			childNeedsGC = true
-		}
+	// decrement numlinks on child
+	child, err := ns.nd.Mutate(childId, func(i *maggiefs.Inode) error {
+		i.Nlink--
+		i.Ctime = time.Now().Unix()
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-	if childNeedsGC {
-	  // hint to GC
-		fmt.Println("child should be GC'd, should hint to GC here")
+	// garbage collect if necessary
+	if child.Nlink <= 0 {
+		err = ns.del(child.Inodeid)
+		return err
 	}
 	return nil
 }
 
-func (ns *NameServer) addBlock(i *maggiefs.Inode, size uint64) (*maggiefs.Block,error) {
-  
-  
-  // check which hosts we want
-  vols := ns.rm.volumesForNewBlock(nil)
-  volIds := make([]int32, len(vols))
-  for idx,v := range vols {
-    volIds[idx] = v.VolId
-  }
-  
-  var startPos uint64 = 0
-  if len(i.Blocks) > 0 {
-    lastBlock := i.Blocks[len(i.Blocks) - 1]
-    startPos = lastBlock.EndPos + 1
-  } else {
-    startPos = 0
-  }
-  
-  endPos := startPos + size
-  // allocate block and id
-  b := &maggiefs.Block {
-    Id: 0,
-    Mtime: time.Now().Unix(),
-    Inodeid: i.Inodeid,
-    Generation: 0,
-    StartPos: startPos,
-    EndPos: endPos,
-    Volumes: volIds,
-  }
-  newId,err := ns.nd.AddBlock(b,i.Inodeid)
-  b.Id = newId
-  if err != nil { return nil,err }
-  
-  
-  // replicate block to datanodes
-  
-  return b,nil
+// called to clean up an inode
+func (ns *NameServer) del(inodeid uint64) error {
+	return nil
 }
 
+func (ns *NameServer) StatFs() (stat maggiefs.FsStat, err error) {
+	return maggiefs.FsStat{}, nil
+}
+
+func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.Block, err error) {
+	i, err := ns.nd.GetInode(nodeid)
+	if err != nil {
+		return maggiefs.Block{}, nil
+	}
+	// check which hosts we want
+	vols := ns.rm.volumesForNewBlock(nil)
+	volIds := make([]int32, len(vols))
+	for idx, v := range vols {
+		volIds[idx] = v.VolId
+	}
+
+	var startPos uint64 = 0
+	if len(i.Blocks) > 0 {
+		lastBlock := i.Blocks[len(i.Blocks)-1]
+		startPos = lastBlock.EndPos + 1
+	} else {
+		startPos = 0
+	}
+
+	endPos := startPos + uint64(length)
+	// allocate block and id
+	b := maggiefs.Block{
+		Id:         0,
+		Mtime:      time.Now().Unix(),
+		Inodeid:    i.Inodeid,
+		Generation: 0,
+		StartPos:   startPos,
+		EndPos:     endPos,
+		Volumes:    volIds,
+	}
+	newId, err := ns.nd.AddBlock(b, i.Inodeid)
+	b.Id = newId
+	if err != nil {
+		return maggiefs.Block{}, err
+	}
+
+	// replicate block to datanodes
+
+	return b, nil
+}
+
+func (ns *NameServer) ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (newBlock maggiefs.Block, err error) {
+	return maggiefs.Block{}, nil
+}
+
+func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
+	return nil
+}
+
+func (ns *NameServer) Join(dnId int32, nameDataAddr string) (err error) {
+	return nil
+}
+
+func (ns *NameServer) NextVolId() (id int32, err error) {
+	return 0, nil
+}
+
+func (ns *NameServer) NextDnId() (id int32, err error) {
+	return 0, nil
+}

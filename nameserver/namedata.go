@@ -20,7 +20,7 @@ var (
 type NameData struct {
   inodeIdCounter uint64
   blockIdCounter uint64
-  inodeStripeLock map[uint64] *sync.RWMutex
+  inodeStripeLock map[uint64] *sync.Mutex
   hintInodeGC chan uint64
   inodb *levigo.DB // inodeid -> inode
   volBlocks *levigo.DB // volIdBlockId (12 byte key) -> inodeid (8 byte value), we can scan this to find all blocks belonging to a given volume
@@ -76,14 +76,13 @@ func NewNameData(dataDir string) (*NameData, error) {
   ret.inodb = inodb
   ret.volBlocks = volBlocks
   ret.volumes = volumes
-  ret.inodeStripeLock = make(map[uint64] *sync.RWMutex)
+  ret.inodeStripeLock = make(map[uint64] *sync.Mutex)
   for i := uint64(0) ; i < STRIPE_SIZE ; i++ {
-    ret.inodeStripeLock[i] = &sync.RWMutex{}
+    ret.inodeStripeLock[i] = &sync.Mutex{}
   }
   ret.inodeIdCounter = highestKey(ret.inodb)
   // gotta set up blockid counter
   //ret.blockIdCounter = highestKey(ret.allBlocks)
-  go ret.inodeGC()
   return ret,nil
 }
 
@@ -108,77 +107,50 @@ func highestKey(db *levigo.DB) uint64 {
   return highest
 }
 
-// gets an inode in binary representation (call maggiefs.ToInode to turn into object)
-func (nd *NameData) GetInode(inodeid uint64) ([]byte,error) {
-  nd.inodeStripeLock[inodeid & STRIPE_SIZE].RLock()
-  defer nd.inodeStripeLock[inodeid & STRIPE_SIZE].RUnlock()
+func (nd *NameData) GetInode(inodeid uint64) (*maggiefs.Inode,error) {
   key := make([]byte,8)
   binary.LittleEndian.PutUint64(key,inodeid)
-  ret,err := nd.inodb.Get(ReadOpts,key)
-  if len(ret) == 0 { return nil,fmt.Errorf("No inode for id %d",inodeid) }
+  bytes,err := nd.inodb.Get(ReadOpts,key)
+  if len(bytes) == 0 { return nil,fmt.Errorf("No inode for id %d",inodeid) }
+  ret := &maggiefs.Inode{}
+  ret.FromBytes(bytes)
   return ret,err
 }
 
-// attempts to set an inode with the given inodeid, generationid to the value encoded in body -- returns true on success, false if generationid is too old
-// this function is also used to add a new inode, just add it with generationid > 0
-func (nd *NameData) SetInode(inodeid uint64, generationid uint64, body []byte) (bool,error) {
+// seta an inode
+func (nd *NameData) SetInode(i *maggiefs.Inode) (err error) {
+  nd.inodeStripeLock[i.Inodeid & STRIPE_SIZE].Lock()
+  defer nd.inodeStripeLock[i.Inodeid & STRIPE_SIZE].Unlock()
   key := make([]byte,8)
-  binary.LittleEndian.PutUint64(key,inodeid)
-  // lock for duration of our read/write
-  nd.inodeStripeLock[inodeid & STRIPE_SIZE].Lock()
-  defer nd.inodeStripeLock[inodeid & STRIPE_SIZE].Unlock()
-  
-  // now read to confirm correct generation id
-  inodeBytes,err := nd.inodb.Get(ReadOpts,key)
-  if err != nil { return false,err }
-  if len(inodeBytes) > 0 {
-    inode := maggiefs.ToInode(inodeBytes)
-    // if generation id is too old, send retry
-    if inode.Generation > generationid { return false,nil }
-  } 
-  // else do the write and send OK
-  err = nd.inodb.Put(WriteOpts,key,body)
-  if err != nil { return false,err }
-  return true,nil
+  binary.LittleEndian.PutUint64(key,i.Inodeid)
+  // do the write and send OK
+  err = nd.inodb.Put(WriteOpts,key,i.ToBytes())
+  return err
 }
 
 // adds an inode persistent store, setting its inode ID to the generated ID, and returning 
 // the generated id and error
 func (nd *NameData) AddInode(i *maggiefs.Inode) (uint64,error) {
-  var success = false
-  var err error
-  var id uint64
-  for !success {
-    i.Inodeid = maggiefs.IncrementAndGet(&nd.inodeIdCounter,1)
-    inoBytes := maggiefs.FromInode(i)
-    success,err = nd.SetInode(i.Inodeid,1,inoBytes)
-    if err != nil { return 0,err }
-  }
-  return id,nil
+  i.Inodeid = maggiefs.IncrementAndGet(&nd.inodeIdCounter,1)
+  err := nd.SetInode(i)
+  return i.Inodeid,err
 }
 
-func (nd *NameData) Mutate(inodeid uint64, f func(i *maggiefs.Inode) (*maggiefs.Inode,error)) (*maggiefs.Inode,error) {
-  var success = false
-  var err error = nil
-  var inode *maggiefs.Inode = nil
-  var bytes []byte = nil
-  for !success {
-    bytes,err = nd.GetInode(inodeid)
-    if err != nil { return nil,err }
-    inode = maggiefs.ToInode(bytes)
-    inode,err = f(inode)
-    if err != nil { return nil,err }
-    success,err = nd.SetInode(inode.Inodeid,inode.Generation,maggiefs.FromInode(inode))
-    if err != nil { return nil,err }
-  }
-  return inode,nil
+func (nd *NameData) Mutate(inodeid uint64, f func(i *maggiefs.Inode) (error)) (*maggiefs.Inode,error) {
+  nd.inodeStripeLock[inodeid & STRIPE_SIZE].Lock()
+  defer nd.inodeStripeLock[inodeid & STRIPE_SIZE].Unlock()
+  i,err := nd.GetInode(inodeid)
+  if err != nil { return nil,err }
+  err = f(i)
+  if err != nil { return nil,err }
+  err = nd.SetInode(i)
+  return i,err
 }
 
 func (nd *NameData) GetBlock(inodeid uint64, blockid uint64) (*maggiefs.Block, error) {
   
-  inodeBytes,err := nd.GetInode(inodeid)
+  inode,err := nd.GetInode(inodeid)
   if err != nil { return nil,err }
-  inode := maggiefs.ToInode(inodeBytes)
   for _,b := range inode.Blocks {
     if b.Id == blockid {
       return &b,nil
@@ -189,17 +161,12 @@ func (nd *NameData) GetBlock(inodeid uint64, blockid uint64) (*maggiefs.Block, e
 
 // adds a block to persistent store as the last block of inodeid, 
 // setting its blockid to the generated ID, and returning the generated ID and error
-func (nd *NameData) AddBlock(b *maggiefs.Block, inodeid uint64) (uint64,error) {
+func (nd *NameData) AddBlock(b maggiefs.Block, inodeid uint64) (uint64,error) {
     b.Id = maggiefs.IncrementAndGet(&nd.blockIdCounter,1)
-    _,err := nd.Mutate(inodeid, func(i *maggiefs.Inode) (*maggiefs.Inode,error) {
-      i.Blocks = append(i.Blocks, *b)
-      return i,nil
+    _,err := nd.Mutate(inodeid, func(i *maggiefs.Inode) (error) {
+      i.Blocks = append(i.Blocks, b)
+      return nil
     })
     if err != nil { return 0,err }
     return b.Id,nil
 }
-
-func (nd *NameData) inodeGC() {
-  
-}
-

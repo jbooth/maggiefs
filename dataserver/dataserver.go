@@ -3,7 +3,6 @@ package dataserver
 import (
   "net"
   "net/rpc"
-  "net/http"
   "github.com/jbooth/maggiefs/maggiefs"
   "errors"
   "fmt"
@@ -22,7 +21,7 @@ type DataServer struct {
 
 // create a new dataserver connected to the nameserver specified in config
 func NewDataServer(config *DSConfig) (*DataServer,error) {
-  client,err := rpc.DialHTTP("tcp",fmt.Sprintf("%s:%d",config.NameHost, config.NamePort))
+  client,err := rpc.Dial("tcp",fmt.Sprintf("%s:%d",config.NameHost, config.NamePort))
   
   if err != nil { return nil,err }
   return NewDataServer2(config,maggiefs.NewNameServiceClient(client))
@@ -84,20 +83,13 @@ func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (ds *DataServer,e
   ds = &DataServer{ns, dnInfo, volumes,dataClientListen,nameDataListen}
   // start servicing namedata
   nameData := maggiefs.NewNameDataIfaceService(ds)
-  rpc.Register(nameData)
-  rpc.HandleHTTP()
-  go http.Serve(nameDataListen,nil)
+  server := rpc.NewServer()
+  server.Register(nameData)
+  go server.Accept(nameDataListen)
   // start servicing client data
   go ds.serveClientData() 
-  // register ourselves with namenode
+  // register ourselves with namenode, namenode will query us for volumes
   err = ns.Join(dnInfo.DnId, config.NameDataBindAddr)
-  if err != nil { return nil,err }
-  for volId,vol := range volumes {
-    stat,err := vol.HeartBeat()
-    if err != nil { return err }
-    err = ns.RegisterVol(dnInfo.DnId,stat)
-    if err != nil { return err }
-  }
   return ds,nil
 }
 

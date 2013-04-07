@@ -14,9 +14,9 @@ var (
   ls maggiefs.LeaseService
 )
 
-func startDoozer() {
+func startServer() {
   fmt.Println("starting lease server")
-  server,err := NewLeaseServer(LEASESERVER_PORT)
+  server,err := NewLeaseServer(fmt.Sprintf("0:0:0:0:%d",LEASESERVER_PORT)
   if (err != nil) { panic(err) }
   go func() {
     server.Serve()
@@ -27,7 +27,7 @@ func startDoozer() {
 }
 
 func TestReadLease(t *testing.T) {
-  o.Do(startDoozer)
+  o.Do(startServer)
   fmt.Println("getting read lease")
   rl,_ := ls.ReadLease(uint64(5))
   fmt.Println("releasing")

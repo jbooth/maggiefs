@@ -96,9 +96,11 @@ type LeaseServer struct {
 	leaseIdCounter uint64
 }
 
-func NewLeaseServer(port int) (*LeaseServer, error) {
+// new lease server listening on bindAddr
+// bindAddr should be like 0.0.0.0:9999
+func NewLeaseServer(bindAddr string) (*LeaseServer, error) {
 
-	laddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("0.0.0.0:%d", port))
+	laddr, err := net.ResolveTCPAddr("tcp", bindAddr)
 	if err != nil {
 		return nil, err
 	}
