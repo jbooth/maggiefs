@@ -3,6 +3,8 @@ package maggiefs
 import (
   "syscall"
   "fmt"
+  "encoding/binary"
+  "bytes"
 )
 
 
@@ -26,7 +28,7 @@ type Inode struct {
   Nlink       uint32 // number of paths linked to this inode
   Uid         uint32
   Gid         uint32
-  Symlinkdest string            // only populated for symlinks, "" otherwise
+  Symlinkdest string            // only populated for symlinks, nil or "" otherwise
   Blocks      []Block           // can be 0 blocks in case of directory,symlink or empty file
   Children    map[string]Dentry // empty unless we are a dir, maps name to inode id 
   Xattr       map[string][]byte
@@ -57,6 +59,21 @@ func (i *Inode) FullMode() uint32 {
   return syscall.S_IFREG | 0777
 }
 
+func (i *Inode) ToBytes() []byte {
+  if i == nil {
+    return []byte{}
+  }
+  ret := make([]byte, binary.Size(*i))
+  binary.Write(bytes.NewBuffer(ret), binary.LittleEndian, i)
+  return ret
+}
+
+func (i *Inode) FromBytes(b []byte) {
+  binary.Read(bytes.NewBuffer(b), binary.LittleEndian, i)
+}
+
+
+
 type Dentry struct {
   Inodeid     uint64
   CreatedTime int64 // time this link was created.  used to return consistent ordering in ReadDir.
@@ -78,4 +95,14 @@ type Block struct {
 
 func (b *Block) Length() uint64 {
   return b.EndPos - b.StartPos
+}
+
+func(b *Block) ToBytes() []byte {
+  ret := make([]byte, binary.Size(b))
+  binary.Write(bytes.NewBuffer(ret), binary.LittleEndian, b)
+  return ret
+}
+
+func (b *Block) FromBytes(bin []byte) {
+  binary.Read(bytes.NewBuffer(bin), binary.LittleEndian,b)
 }
