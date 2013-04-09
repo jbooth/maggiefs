@@ -67,8 +67,6 @@ type NameService interface {
   Unlink(parent uint64, name string) (err error)
   // add a block to the end of a file, returns new block
   AddBlock(nodeid uint64, length uint32) (newBlock Block, err error)
-  // extend a block and the relevant inode
-  ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (newBlock Block, err error)
   // called by datanodes to register the datanode with the cluster
   // nameDataAddr is the address:port that the NN will connect to to administer the DN
   Join(dnId int32, nameDataAddr string) (err error)

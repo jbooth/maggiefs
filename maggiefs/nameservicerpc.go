@@ -123,21 +123,6 @@ func (s *NameServiceService) AddBlock(request *NameServiceAddBlockRequest, respo
 	return
 }
 
-type NameServiceExtendBlockRequest struct {
-	Nodeid  uint64
-	BlockId uint64
-	Delta   uint32
-}
-
-type NameServiceExtendBlockResponse struct {
-	NewBlock Block
-}
-
-func (s *NameServiceService) ExtendBlock(request *NameServiceExtendBlockRequest, response *NameServiceExtendBlockResponse) (err error) {
-	response.NewBlock, err = s.impl.ExtendBlock(request.Nodeid, request.BlockId, request.Delta)
-	return
-}
-
 type NameServiceJoinRequest struct {
 	DnId         int32
 	NameDataAddr string
@@ -237,13 +222,6 @@ func (_c *NameServiceClient) AddBlock(nodeid uint64, length uint32) (newBlock Bl
 	_request := &NameServiceAddBlockRequest{nodeid, length}
 	_response := &NameServiceAddBlockResponse{}
 	err = _c.client.Call(_c.service+".AddBlock", _request, _response)
-	return _response.NewBlock, err
-}
-
-func (_c *NameServiceClient) ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (newBlock Block, err error) {
-	_request := &NameServiceExtendBlockRequest{nodeid, blockId, delta}
-	_response := &NameServiceExtendBlockResponse{}
-	err = _c.client.Call(_c.service+".ExtendBlock", _request, _response)
 	return _response.NewBlock, err
 }
 

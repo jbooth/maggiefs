@@ -56,13 +56,15 @@ func (d LocalDatas) Read(blk Block, p []byte, pos uint64, length uint64) (err er
   return err
 }
 
-func (d LocalDatas) Write(blk Block) (conn BlockWriter, err error) {
+func (d LocalDatas) Write(blk Block, p []byte, pos uint64) (err error) {
   if (blk.Id == 0) { 
-    return nil,fmt.Errorf("Bad blk descriptor %d in block %+v\n",blk.Id,blk)
+    return fmt.Errorf("Bad blk descriptor %d in block %+v\n",blk.Id,blk)
   }
   fmt.Printf("opening file %s for block %d",d.pathFor(blk.Id),blk.Id)
   file,err := os.OpenFile(d.pathFor(blk.Id),syscall.O_RDWR,0777)
-  return LocalBlockWriter{file,blk.Id},err
+  defer file.Close()
+  file.WriteAt(p, int64(pos))
+  return nil
 }
 
 func (d LocalDatas) AddBlock(id uint64) error {

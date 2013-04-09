@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"time"
 )
 
 type Writer struct {
@@ -38,7 +39,8 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
 	if err != nil {
 		return 0, err
 	}
-
+	// this func encapsulates the change in the inode we'll be persisting to nameserver at end of call
+	var inoUpdate = func(i *maggiefs.Inode) {}
 	// first figure which block we're supposed to be at
 	// if offset is greater than length, we can't write (must append from eof)
 	if off > inode.Length {
@@ -48,7 +50,7 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
 	if err != nil {
 		return 0, err
 	}
-	if off == inode.Length {	 
+	if off == inode.Length {
 		// we are appending,
 		// need to either extend current block or add a new one if we're just starting a file or at the end of current block
 		currLen := currBlock.EndPos - currBlock.StartPos
@@ -63,14 +65,23 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
 			if err != nil {
 				return 0, err
 			}
+			inoUpdate = func(i *maggiefs.Inode) {
+				i.Length += uint64(blockLength)
+				// block length and positions were already set by addblock
+			}
 		} else if currLen == inode.Length {
 			fmt.Printf("adding to end of current block\n")
-  		// extend currBlock to min(currLen + len, BLOCKLENGTH)
+			// extend currBlock to min(currLen + len, BLOCKLENGTH)
 			maxAddedByte := BLOCKLENGTH - (currLen)
 			if uint64(length) > maxAddedByte {
 				length = uint32(maxAddedByte)
 			}
-			currBlock, err = w.names.ExtendBlock(inode.Inodeid, currBlock.Id, length)
+			inoUpdate = func(i *maggiefs.Inode) {
+				// update inode length and block length
+				i.Length += uint64(length)
+				i.Blocks[len(i.Blocks)].EndPos += uint64(length)
+			}
+			//currBlock, err = w.names.ExtendBlock(inode.Inodeid, currBlock.Id, length)
 			if err != nil {
 				return 0, err
 			}
@@ -91,7 +102,11 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
 			if uint64(length) > maxAddedByte {
 				length = uint32(maxAddedByte)
 			}
-			currBlock, err = w.names.ExtendBlock(inode.Inodeid, currBlock.Id, length)
+			inoUpdate = func(i *maggiefs.Inode) {
+				// update inode length and block length
+				i.Length += uint64(length)
+				i.Blocks[len(i.Blocks)].EndPos += uint64(length)
+			}
 			if err != nil {
 				return 0, err
 			}
@@ -99,14 +114,27 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
 	}
 	// now write bytes
 	err = w.datas.Write(currBlock, p[0:length], off)
-	// TODO should update Mtime
-	//w.currBlock.Mtime = int64(time.Now().Unix())
+	if err != nil {
+		return 0, err
+	}
+	// update inode
+	inoUpdate(inode)
+	inode.Mtime = time.Now().Unix()
+	// update block version number
+	for _, blk := range inode.Blocks {
+		if blk.Id == currBlock.Id {
+			blk.Version++
+		}
+	}
+	err = w.names.SetInode(inode)
 	return length, err
 }
 
 func (w *Writer) Fsync() (err error) {
-	l,err := w.leases.WriteLease(w.inodeid)
-	if err != nil { return err }
+	l, err := w.leases.WriteLease(w.inodeid)
+	if err != nil {
+		return err
+	}
 	l.Release()
 	return nil
 }

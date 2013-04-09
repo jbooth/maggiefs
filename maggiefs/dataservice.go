@@ -10,19 +10,10 @@ type DataService interface {
   // read some bytes
   Read(blk Block, p []byte, pos uint64, length uint64) (err error)
 
-  // write some bytes
+  // write some bytes, extending block if necessary
+  // updates generation ID on datanodes before returning
+  // if generation id doesn't match prev generation id, we have an error
   Write(blk Block, p []byte, pos uint64) (err error)
-}
-
-type BlockWriter interface {
-  // return which block id this writer is writing
-  BlockId() uint64
-  // writes some bytes, extending block if necessary
-  Write(p []byte, pos uint64) error
-  // flushes changes to system
-  Sync() (err error)
-  // flushes and closes this writer
-  Close() (err error)
 }
 
 // interface exposed from datanodes to namenode (and tests)

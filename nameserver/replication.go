@@ -4,19 +4,17 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"sort"
 	"sync"
+	"fmt"
 	//"time"
 )
 
 type replicationManager struct {
   replicationFactor uint32
   volumes map[int32]*volume // maps volumes to their host (host is immutable for a volume, new volumes always get new IDs)
-  conns map[int32] maggiefs.NameDataIface
-  hosts map[uint32]*maggiefs.DataNodeStat
   l          *sync.RWMutex
 }
 // internal object representing live connection to DN
 type volume struct {
-  volid   uint32
 	stat    maggiefs.VolumeStat
 	conn    maggiefs.NameDataIface
 	l       *sync.Mutex
@@ -30,53 +28,33 @@ func (v *volume) withLock(f func (v *volume) error) error {
   return f(v)
 }
 
+func (rm *replicationManager) addDn(dn maggiefs.NameDataIface) error {
+	stat,err := dn.HeartBeat()
+	if err != nil { return err }
+	for _,volStat := range stat.Volumes {
+		vol := volume{}
+		vol.stat = volStat
+		vol.conn = dn
+		rm.volumes[vol.stat.VolId] = &vol
+	}
+	return nil
+}
 
 
 func newReplicationManager() *replicationManager {
   return nil
 }
 
-func (rm *replicationManager) formatVolume() error {
-  return nil
-}
-
-
-// ensures that all datanodes see the current version of the given block
-// expects block.Volumes to be filled out correctly, those are the DNs we notify
-func (rm *replicationManager) replicate(b *maggiefs.Block) (error) {
-  rm.l.Lock()
-  defer rm.l.Unlock()
-  
-//  for _,volId := range b.Volumes {
-//    vol := rm.volumes[volId]
-//    
-//  }
-  
-  
-  
-  // allocate actual blocks on datanodes and update dn stats
-//  for _,h := range  rm.volumeHost {
-//    err := h.withLock(
-//      func(d *dnHost) error {
-//        return h.conn.AddBlock(b.Id)
-//      })
-//    if err != nil {
-//      return err
-//    }
-//  }  
-	return nil
-}
-
 // note, doesn't actually use suggestedDN just yet
-func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []maggiefs.VolumeStat) {
+func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []maggiefs.VolumeStat, err error) {
 	rm.l.RLock()
 	defer rm.l.RUnlock()
 	
 	
 	var sortedVolumes volumeList = make([]maggiefs.VolumeStat, 0)
 
-	for _,h := range rm.hosts {
-		sortedVolumes = append(sortedVolumes, h.Volumes...)
+	for _,v := range rm.volumes {
+		sortedVolumes = append(sortedVolumes, v.stat)
 	}
 	sort.Sort(sortedVolumes)
 	added := uint32(0)
@@ -86,16 +64,31 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []
 		// check if this DN is in our added list
 		v := sortedVolumes[i]
 		if _, alreadyAdded := addedDNs[v.DnInfo.DnId]; alreadyAdded {
+			// continue
 		} else {
 			// if not, add and increment added count
 			ret[int(added)] = v
-
+			added++
+			addedDNs[v.DnInfo.DnId] = true
 		}
 		if added == rm.replicationFactor {
 			break
 		}
 	}
-	return ret
+	if added < rm.replicationFactor {
+		return nil,fmt.Errorf("Not enough datanodes available for replication factor %d -- only nodes available were %+s",rm.replicationFactor,ret)
+	}
+	return ret,nil
+}
+
+func (rm *replicationManager) AddBlock(blk maggiefs.Block) error {
+	for _,volId := range blk.Volumes {
+		err := rm.volumes[volId].conn.AddBlock(blk,volId)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type volumeList []maggiefs.VolumeStat

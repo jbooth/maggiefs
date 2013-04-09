@@ -149,6 +149,7 @@ func (ns *NameServer) del(inodeid uint64) error {
 }
 
 func (ns *NameServer) StatFs() (stat maggiefs.FsStat, err error) {
+	
 	return maggiefs.FsStat{}, nil
 }
 
@@ -158,7 +159,10 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 		return maggiefs.Block{}, nil
 	}
 	// check which hosts we want
-	vols := ns.rm.volumesForNewBlock(nil)
+	vols,err := ns.rm.volumesForNewBlock(nil)
+	if err != nil {
+		return maggiefs.Block{},err
+	}
 	volIds := make([]int32, len(vols))
 	for idx, v := range vols {
 		volIds[idx] = v.VolId
@@ -178,7 +182,7 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 		Id:         0,
 		Mtime:      time.Now().Unix(),
 		Inodeid:    i.Inodeid,
-		Generation: 0,
+		Version: 0,
 		StartPos:   startPos,
 		EndPos:     endPos,
 		Volumes:    volIds,
@@ -194,16 +198,15 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 	return b, nil
 }
 
-func (ns *NameServer) ExtendBlock(nodeid uint64, blockId uint64, delta uint32) (newBlock maggiefs.Block, err error) {
-	return maggiefs.Block{}, nil
-}
-
 func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 	return nil
 }
 
 func (ns *NameServer) Join(dnId int32, nameDataAddr string) (err error) {
-	return nil
+	// TODO confirm not duplicate datanode
+	client,err := rpc.Dial("tcp",nameDataAddr)
+	nameData := maggiefs.NewNameDataIfaceClient(client)
+	return ns.rm.addDn(nameData)
 }
 
 func (ns *NameServer) NextVolId() (id int32, err error) {
