@@ -29,8 +29,10 @@ func NewNameServer(leaseServerAddr string, nameAddr string, dataDir string, form
 	if err != nil {
 		return nil, err
 	}
-	clientListen,err := net.ListenTCP("tcp",clientListenAddr)
-	if err != nil { return nil, err }
+	clientListen, err := net.ListenTCP("tcp", clientListenAddr)
+	if err != nil {
+		return nil, err
+	}
 	nameServerServer := maggiefs.NewNameServiceService(ret)
 	server := rpc.NewServer()
 	server.Register(nameServerServer)
@@ -149,7 +151,7 @@ func (ns *NameServer) del(inodeid uint64) error {
 }
 
 func (ns *NameServer) StatFs() (stat maggiefs.FsStat, err error) {
-	
+
 	return maggiefs.FsStat{}, nil
 }
 
@@ -159,9 +161,9 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 		return maggiefs.Block{}, nil
 	}
 	// check which hosts we want
-	vols,err := ns.rm.volumesForNewBlock(nil)
+	vols, err := ns.rm.volumesForNewBlock(nil)
 	if err != nil {
-		return maggiefs.Block{},err
+		return maggiefs.Block{}, err
 	}
 	volIds := make([]int32, len(vols))
 	for idx, v := range vols {
@@ -179,13 +181,13 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 	endPos := startPos + uint64(length)
 	// allocate block and id
 	b := maggiefs.Block{
-		Id:         0,
-		Mtime:      time.Now().Unix(),
-		Inodeid:    i.Inodeid,
-		Version: 0,
-		StartPos:   startPos,
-		EndPos:     endPos,
-		Volumes:    volIds,
+		Id:       0,
+		Mtime:    time.Now().Unix(),
+		Inodeid:  i.Inodeid,
+		Version:  0,
+		StartPos: startPos,
+		EndPos:   endPos,
+		Volumes:  volIds,
 	}
 	newId, err := ns.nd.AddBlock(b, i.Inodeid)
 	b.Id = newId
@@ -199,12 +201,42 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 }
 
 func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
+
+	inode, err := ns.nd.GetInode(nodeid)
+	if len(inode.Blocks) > 0 {
+		delset := make([]maggiefs.Block, 0, 0)
+		var truncBlock *maggiefs.Block = nil
+		var truncLength uint32 = 0
+		for idx := len(inode.Blocks); idx >= 0; idx-- {
+			blk := inode.Blocks[idx]
+			if blk.EndPos > newSize {
+				// either delete or truncate
+				if blk.StartPos > newSize {
+					// delete
+					delset = append(delset, blk)
+					inode.Blocks = inode.Blocks[:len(inode.Blocks) - 1]
+				} else {
+					// truncate
+					truncLength = uint32(newSize - blk.StartPos)
+					truncBlock = &blk
+				}
+			}
+		}
+		for _,rmblk := range delset {
+			err = ns.rm.RmBlock(rmblk)
+			if err != nil { return err }
+		}
+		if truncBlock != nil {
+			err = ns.rm.TruncBlock(*truncBlock,truncLength)
+		}
+		
+	}
 	return nil
 }
 
 func (ns *NameServer) Join(dnId int32, nameDataAddr string) (err error) {
 	// TODO confirm not duplicate datanode
-	client,err := rpc.Dial("tcp",nameDataAddr)
+	client, err := rpc.Dial("tcp", nameDataAddr)
 	nameData := maggiefs.NewNameDataIfaceClient(client)
 	return ns.rm.addDn(nameData)
 }

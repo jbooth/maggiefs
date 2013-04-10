@@ -59,7 +59,7 @@ type NameService interface {
   AddInode(node *Inode) (id uint64, err error)
   // sets an existing inode, write lease should be held for this
   SetInode(node *Inode) (err error)
-  // truncate an inode to the given length, deleting blocks if necessary
+  // truncate an inode to the given length, deleting blocks if necessary, write lease should be held for this
   Truncate(nodeid uint64, newSize uint64) (err error)
   // Links the given child to the given parent, with the given name.  returns error E_EXISTS if force is false and parent already has a child of that name
   Link(parent uint64, child uint64, name string, force bool) (err error)

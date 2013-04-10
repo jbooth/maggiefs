@@ -91,6 +91,26 @@ func (rm *replicationManager) AddBlock(blk maggiefs.Block) error {
 	return nil
 }
 
+func (rm *replicationManager) RmBlock(blk maggiefs.Block) error {
+	for _,volId := range blk.Volumes {
+		err := rm.volumes[volId].conn.RmBlock(blk.Id,volId)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (rm *replicationManager) TruncBlock(blk maggiefs.Block, newLength uint32) error {
+		for _,volId := range blk.Volumes {
+		err := rm.volumes[volId].conn.TruncBlock(blk,volId,newLength)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type volumeList []maggiefs.VolumeStat
 
 func (s volumeList) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
