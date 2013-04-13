@@ -25,21 +25,14 @@ type LeaseService interface {
   // returns a chan which will contain an event every time any inode in the system is changed
   // used for cache coherency
   // the fuse client runs a goroutine reading all changes from this chan
-  // multiple invocations of this method will return multiple channels
-  GetNotifier() (chan NotifyEvent, error)
-  // sends acknowledgement that we received a notify event
-  Acknowledge(NotifyEvent) error
+  GetNotifier() chan uint64
   // blocks until all leases are released for the given node
   WaitAllReleased(nodeid uint64) error
-  // re-sets all leases, closes all issued Notifier chans
-  RenewLease() error
 }
 
 type WriteLease interface {
-  // lets go of lock
+  // lets go of lock, commits changes, sending uint64(now()) to all readers registered for this inode id
   Release() error
-  // commits changes, sending uint64(now()) to all readers registered for this inode id.  May yield and reacquire lock.
-  Commit() error
 }
 
 type ReadLease interface {

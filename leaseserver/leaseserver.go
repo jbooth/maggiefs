@@ -1,9 +1,11 @@
 package leaseserver
 
 import (
+	"github.com/jbooth/maggiefs/maggiefs"
 	"encoding/gob"
 	"fmt"
 	"net"
+	"encoding/binary"
 )
 
 // maps
@@ -33,6 +35,7 @@ type lease struct {
 }
 
 type clientConn struct {
+	id 		 uint64                   // unique id for this client
 	c      *net.TCPConn
 	d      *gob.Decoder
 	e      *gob.Encoder
@@ -41,12 +44,14 @@ type clientConn struct {
 	closed chan bool
 }
 
+func (c *clientConn) String() string {
+	return fmt.Sprintf("%+v",c)
+}
+
 func (c *clientConn) readRequests() {
 	for {
 		req := request{}
-		fmt.Println("decoding req")
 		err := c.d.Decode(&req)
-		fmt.Printf("server got req %+v\n", req)
 		if err != nil {
 			// we should probably close here
 			fmt.Printf("error reading from conn %s\n", err)
@@ -59,7 +64,6 @@ func (c *clientConn) readRequests() {
 func (c *clientConn) sendResponses() {
 	for {
 		resp := <-c.resp
-		fmt.Printf("server sending client response %+v\n", resp)
 		err := c.e.Encode(resp)
 		if err != nil {
 			// should prob signal close here
@@ -78,22 +82,26 @@ func newClientConn(ls *LeaseServer, raw *net.TCPConn) (*clientConn, error) {
 		return nil, err
 	}
 	ret := &clientConn{
+	  id: maggiefs.IncrementAndGet(&ls.clientIdCounter,1),
 		c:    raw,
 		d:    gob.NewDecoder(raw),
 		e:    gob.NewEncoder(raw),
 		req:  ls.req,
 		resp: make(chan response, 10)}
-	go ret.sendResponses()
+	// send client id
+	idBuff := make([]byte,8,8)
+	binary.LittleEndian.PutUint64(idBuff,ret.id)
+	ret.c.Write(idBuff)
 	return ret, nil
 }
 
 type LeaseServer struct {
 	sock           *net.TCPListener
-	newConns       chan *clientConn
 	req            chan queuedServerRequest
 	leasesByInode  map[uint64][]lease
 	leasesById     map[uint64]lease
 	leaseIdCounter uint64
+	clientIdCounter uint64
 }
 
 // new lease server listening on bindAddr
@@ -110,9 +118,8 @@ func NewLeaseServer(bindAddr string) (*LeaseServer, error) {
 		return nil, err
 	}
 
-	ret := &LeaseServer{listener,
-		make(chan *clientConn), make(chan queuedServerRequest), make(map[uint64][]lease),
-		make(map[uint64]lease), 0}
+	ret := &LeaseServer{listener, make(chan queuedServerRequest), make(map[uint64][]lease),
+		make(map[uint64]lease), 0,0}
 
 	go ret.process()
 	return ret, nil
@@ -154,16 +161,15 @@ func (ls *LeaseServer) process() {
 		// execute
 		switch qr.req.Op {
 		case OP_READLEASE:
-			fmt.Println("got readlease")
 			resp, err = ls.createLease(qr.req, qr.conn, false)
 		case OP_WRITELEASE:
 			resp, err = ls.createLease(qr.req, qr.conn, true)
 		case OP_READLEASE_RELEASE:
 			resp, err = ls.releaseLease(qr.req, qr.conn)
 		case OP_WRITELEASE_RELEASE:
+			_,err = ls.commitWriteLease(qr.req,qr.conn)
+			if err != nil { break }
 			resp, err = ls.releaseLease(qr.req, qr.conn)
-		case OP_WRITELEASE_COMMIT:
-			resp, err = ls.commitWriteLease(qr.req, qr.conn)
 		case OP_CHECKLEASES:
 			resp, err = ls.checkLeases(qr.req, qr.conn)
 		default:
@@ -174,7 +180,6 @@ func (ls *LeaseServer) process() {
 			fmt.Printf("error processing request %+v, error: %s", qr.req, err)
 			qr.resp <- response{0, 0, 0, STATUS_ERR}
 		} else {
-			fmt.Printf("server sending response %+v\n", resp)
 			qr.resp <- resp
 		}
 	}
@@ -186,7 +191,6 @@ func (ls *LeaseServer) createLease(r request, c *clientConn, isWriteLease bool) 
 	if isWriteLease {
 		writeLeaseAlreadyTaken := false
 		leases := ls.leasesByInode[r.Inodeid]
-		fmt.Println("trying for writelease, existing leases %+v\n",leases)
 		if leases != nil {
 			for _, l := range ls.leasesByInode[r.Inodeid] {
 				if l.writeLease {
@@ -210,7 +214,6 @@ func (ls *LeaseServer) createLease(r request, c *clientConn, isWriteLease bool) 
 	if !exists {
 		leasesForInode = make([]lease, 0, 0)
 	}
-	fmt.Printf("server adding new lease %+v\n", l)
 	leasesForInode = append(leasesForInode, l)
 	ls.leasesByInode[r.Inodeid] = leasesForInode
 	// record in ls.leases under lease Id
@@ -244,10 +247,15 @@ func (ls *LeaseServer) releaseLease(r request, c *clientConn) (response, error) 
 func (ls *LeaseServer) commitWriteLease(r request, c *clientConn) (response, error) {
 	// find all readleases attached to this inode id
 	readLeases := ls.leasesByInode[r.Inodeid]
-	fmt.Printf("all readleases %+v\n", readLeases)
+	readLeasesWithoutCommitter := make([]lease,0,len(readLeases))
+	// omit the connection that sent the commit request -- we don't want to blow our own cache while writing
+	for _,rl := range readLeases {
+		if rl.client.id != c.id && !rl.writeLease {
+			readLeasesWithoutCommitter = append(readLeasesWithoutCommitter,rl)
+		}
+	}
 	// notify them all
-	for _, rl := range readLeases {
-		fmt.Printf("sending commit to lease %+v for inode %d\n", rl, r.Inodeid)
+	for _, rl := range readLeasesWithoutCommitter {
 		rl.client.resp <- response{0, rl.leaseid, r.Inodeid, STATUS_NOTIFY}
 	}
 	return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_OK}, nil

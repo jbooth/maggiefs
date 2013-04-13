@@ -3,6 +3,7 @@ package leaseserver
 import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"time"
+	"fmt"
 )
 
 type LeaseClient struct {
@@ -26,7 +27,7 @@ func (lc LeaseClient) WriteLease(nodeid uint64) (l maggiefs.WriteLease, err erro
   resp,err := lc.c.doRequest(req)
   if err != nil { return nil,err }
   for resp.Status == STATUS_WAIT {
-    time.Sleep(100 * time.Millisecond)
+    time.Sleep(1000 * time.Millisecond)
     resp,err = lc.c.doRequest(req)
     if err != nil { return nil,err }
   }
@@ -55,7 +56,15 @@ func (lc LeaseClient) GetNotifier() chan uint64 {
 
 // blocks until all leases are released for the given node
 func (lc LeaseClient) WaitAllReleased(nodeid uint64) error {
-	return nil
+  req := request{OP_CHECKLEASES,0,nodeid,0}
+  resp,err := lc.c.doRequest(req)
+  if err != nil { return err }
+  for resp.Status == STATUS_WAIT {
+    time.Sleep(1000 * time.Millisecond)
+    resp,err = lc.c.doRequest(req)
+    if err != nil { return err }
+  }
+  return nil
 }
 
 type Lease struct {
@@ -65,13 +74,14 @@ type Lease struct {
   c *rawclient
 }
 
-// lets go of lock
+// lets go of lock, committing our changes to all open readleases
 func (l *Lease) Release() error {
+  fmt.Printf("Releasing lease for client id %d\n",l.c.id)
   var op byte
   if l.writeLease {
-    op = OP_READLEASE_RELEASE
-  } else {
     op = OP_WRITELEASE_RELEASE
+  } else {
+    op = OP_READLEASE_RELEASE
   }
   req := request{op,l.leaseid,l.inodeid,0}
   _,err := l.c.doRequest(req)
@@ -82,9 +92,3 @@ type WriteLease struct {
   Lease
 }
 
-// commits changes, sending uint64(now()) to all readers registered for this inode id.  May yield and reacquire lock.
-func (l *WriteLease) Commit() error {
-  req := request{OP_WRITELEASE_COMMIT,l.leaseid,l.inodeid,0}
-  _,err := l.c.doRequest(req)
-  return err
-}

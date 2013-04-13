@@ -2,11 +2,13 @@ package leaseserver
 
 import (
 	"encoding/gob"
+	"encoding/binary"
 	"fmt"
 	"net"
 )
 
 type rawclient struct {
+	id 				 uint64
 	c          *net.TCPConn
 	reqcounter uint32
 	notifier   chan uint64
@@ -32,7 +34,14 @@ func newRawClient(addr string) (*rawclient, error) {
 	}
 	c.SetNoDelay(true)
 	c.SetKeepAlive(true)
-	ret := &rawclient{c, 0, make(chan uint64, 100), make(chan queuedRequest), make(chan response), make(chan bool)}
+	idBuff := make([]byte,8,8)
+	_,err = c.Read(idBuff)
+	if err != nil {
+		return nil,err
+	}
+	ret := &rawclient{binary.LittleEndian.Uint64(idBuff),c, 0, make(chan uint64, 100), make(chan queuedRequest), make(chan response), make(chan bool)}
+	// read client id
+	
 	go ret.mux()
 	go ret.readResponses()
 	return ret, nil
@@ -43,9 +52,7 @@ func newRawClient(addr string) (*rawclient, error) {
 func (c *rawclient) doRequest(r request) (response, error) {
 	respChan := make(chan response)
 	q := queuedRequest{r, respChan}
-	fmt.Println("queueing req")
 	c.requests <- q
-	fmt.Printf("queued, awaiting resp on %+v\n",respChan)
 	resp := <-respChan
 	return resp, nil
 }
@@ -56,30 +63,26 @@ func (c *rawclient) mux() {
 	for {
 		select {
 		case req := <-c.requests:
-		  fmt.Printf("client got req %+v, sending\n",req)
 			// register response channel
 			c.reqcounter++
 			req.r.Reqno = c.reqcounter
-			fmt.Printf("storing respChan %+v under reqno %d\n",req.whenDone,req.r.Reqno)
+			//fmt.Printf("storing respChan %+v under reqno %d\n",req.whenDone,req.r.Reqno)
 			responseChans[req.r.Reqno] = req.whenDone
 			// write the req to socket
 			err := reqEncoder.Encode(req.r)
 			if err != nil {
-				fmt.Println("error encoding req %+v : %s", req, err.Error())
+				fmt.Printf("error encoding req %+v : %s\n", req, err.Error())
 				continue
 			}
 		case resp := <-c.responses:
-		  fmt.Printf("client got resp %+v\n",resp)
 			if resp.Status == STATUS_NOTIFY {
 			  // this is a notification so forward to the notification chan
-			  fmt.Printf("Got commit notification for inode %d",resp.Inodeid)
 			  c.notifier <- resp.Inodeid  
 			} else {
 				// response to a request, forward to it's response chan
 				k := resp.Reqno
 				respChan := responseChans[k]
 				delete(responseChans, k)
-				fmt.Printf("sending response %+v to %+v\n",resp,respChan)
 				respChan <- resp
 				close(respChan)
 			}  
@@ -95,7 +98,6 @@ func (c *rawclient) readResponses() {
 	for {
     resp := response{}
     respDecoder.Decode(&resp)
-    fmt.Printf("client read response %+v from sock \n",resp)
     c.responses <- resp  
 	}
 }
