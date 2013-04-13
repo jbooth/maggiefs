@@ -3,7 +3,6 @@ package leaseserver
 import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"time"
-	"fmt"
 )
 
 type LeaseClient struct {
@@ -76,7 +75,6 @@ type Lease struct {
 
 // lets go of lock, committing our changes to all open readleases
 func (l *Lease) Release() error {
-  fmt.Printf("Releasing lease for client id %d\n",l.c.id)
   var op byte
   if l.writeLease {
     op = OP_WRITELEASE_RELEASE
