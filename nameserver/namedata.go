@@ -136,6 +136,12 @@ func (nd *NameData) AddInode(i *maggiefs.Inode) (uint64,error) {
   return i.Inodeid,err
 }
 
+func (nd *NameData) DelInode(nodeid uint64) error {
+	key := make([]byte,8)
+  binary.LittleEndian.PutUint64(key,nodeid)
+  return nd.inodb.Delete(WriteOpts,key)
+}
+
 func (nd *NameData) Mutate(inodeid uint64, f func(i *maggiefs.Inode) (error)) (*maggiefs.Inode,error) {
   nd.inodeStripeLock[inodeid & STRIPE_SIZE].Lock()
   defer nd.inodeStripeLock[inodeid & STRIPE_SIZE].Unlock()

@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"sync"
 	"time"
+	"fmt"
 )
 
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
@@ -139,15 +140,29 @@ func (ns *NameServer) doUnlink(parent uint64, name string) (err error) {
 	}
 	// garbage collect if necessary
 	if child.Nlink <= 0 {
-		err = ns.del(child.Inodeid)
-		return err
+		go ns.del(child.Inodeid) 
 	}
 	return nil
 }
 
-// called to clean up an inode
-func (ns *NameServer) del(inodeid uint64) error {
-	return nil
+// called to clean up an inode after it's been unlinked all the way
+// invoked as a goroutine typically, 
+func (ns *NameServer) del(inodeid uint64) {
+	// wait until no clients have this file open (posix convention)
+	err := ns.ls.WaitAllReleased(inodeid)
+	if err != nil {
+		fmt.Printf("error waiting all released for node %d : %s\n",inodeid,err.Error())
+	}
+	// truncating to 0 bytes will remove all blocks
+	err = ns.Truncate(inodeid,0)
+	if err != nil {
+		fmt.Printf("error truncating node %d : %s\n",inodeid,err.Error())
+	}
+	// now clean up the inode itself
+	err = ns.nd.DelInode(inodeid)
+	if err != nil {
+		fmt.Printf("error deleting node %d from node store : %s\n",inodeid,err.Error())
+	}
 }
 
 func (ns *NameServer) StatFs() (stat maggiefs.FsStat, err error) {
@@ -196,8 +211,8 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 	}
 
 	// replicate block to datanodes
-
-	return b, nil
+	err = ns.rm.AddBlock(b)
+	return b, err
 }
 
 func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
@@ -211,7 +226,7 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 			blk := inode.Blocks[idx]
 			if blk.EndPos > newSize {
 				// either delete or truncate
-				if blk.StartPos > newSize {
+				if blk.StartPos >= newSize {
 					// delete
 					delset = append(delset, blk)
 					inode.Blocks = inode.Blocks[:len(inode.Blocks) - 1]
