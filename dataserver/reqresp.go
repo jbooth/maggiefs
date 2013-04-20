@@ -1,5 +1,9 @@
 package dataserver
 
+import (
+	"github.com/jbooth/maggiefs/maggiefs"
+)
+
 const (
 	OP_READ = uint8(0)
 	OP_WRITE = uint8(1)
@@ -9,8 +13,7 @@ const (
 
 type RequestHeader struct {
 	Op uint8
-	BlockId uint64
-	BlockVersion uint64
+	Blk maggiefs.Block
 	Pos uint64
 	Length uint32
 }

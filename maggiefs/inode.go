@@ -85,7 +85,6 @@ func (i *Inode) IsDir() bool {
 
 type Block struct {
   Id         uint64  // globally unique block id
-  Mtime      int64   // last modified
   Version		 uint64  // revision number
   Inodeid    uint64  // which inode we belong to
   StartPos   uint64  // alignment of this bytes first block in the file

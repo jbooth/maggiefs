@@ -61,7 +61,9 @@ func loadVolume(volRoot string) (*volume, error) {
 	
   rootFile,err := os.Open(volRoot)
   if err != nil { return nil,err }
-	return &volume{id, volRoot, rootFile, maggiefs.VolumeInfo{id, dnInfo}, db}, nil
+  pipes,err := initPipes()
+  if err != nil { return nil,err }
+	return &volume{id, volRoot, rootFile, maggiefs.VolumeInfo{id, dnInfo}, db,pipes}, nil
 }
 
 func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
@@ -104,7 +106,9 @@ func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
 	}
 	rootFile,err := os.Open(volRoot)
 	if err != nil { return nil,err }
-	return &volume{vol.VolId, volRoot, rootFile, vol, db}, nil
+  pipes,err := initPipes()
+  if err != nil { return nil,err }
+	return &volume{vol.VolId, volRoot, rootFile, vol, db,pipes}, nil
 }
 
 func getVolId(volRoot string) (int32, error) {
@@ -126,6 +130,24 @@ type volume struct {
 	rootFile *os.File
 	info      maggiefs.VolumeInfo
 	blockData *levigo.DB
+	bufferPool chan pipe
+}
+
+type pipe struct {
+	r *os.File
+	w *os.File
+}
+
+func initPipes() (chan pipe, error) {
+	ret := make(chan pipe, 16)
+	// hardcoded to 16
+	// this means we take up 1MB of kernel memory and 32 FHs per volume, with room for 16 concurrent iops
+	for i := 0 ; i < 16 ; i++ {
+		r,w,err := os.Pipe()
+		if err != nil { return nil,err }
+		ret <- pipe{r,w}
+	}
+	return ret,nil
 }
 
 func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
