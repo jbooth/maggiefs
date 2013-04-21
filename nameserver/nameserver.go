@@ -180,7 +180,7 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 	if err != nil {
 		return maggiefs.Block{}, err
 	}
-	volIds := make([]int32, len(vols))
+	volIds := make([]uint32, len(vols))
 	for idx, v := range vols {
 		volIds[idx] = v.VolId
 	}
@@ -197,7 +197,6 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 	// allocate block and id
 	b := maggiefs.Block{
 		Id:       0,
-		Mtime:    time.Now().Unix(),
 		Inodeid:  i.Inodeid,
 		Version:  0,
 		StartPos: startPos,
@@ -256,10 +255,12 @@ func (ns *NameServer) Join(dnId int32, nameDataAddr string) (err error) {
 	return ns.rm.addDn(nameData)
 }
 
-func (ns *NameServer) NextVolId() (id int32, err error) {
+func (ns *NameServer) NextVolId() (id uint32, err error) {
+	panic("unimplemented!")
 	return 0, nil
 }
 
-func (ns *NameServer) NextDnId() (id int32, err error) {
+func (ns *NameServer) NextDnId() (id uint32, err error) {
+	panic("unimplemented!")
 	return 0, nil
 }

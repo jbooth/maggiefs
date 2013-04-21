@@ -10,7 +10,7 @@ import (
 
 type replicationManager struct {
   replicationFactor uint32
-  volumes map[int32]*volume // maps volumes to their host (host is immutable for a volume, new volumes always get new IDs)
+  volumes map[uint32]*volume // maps volumes to their host (host is immutable for a volume, new volumes always get new IDs)
   l          *sync.RWMutex
 }
 // internal object representing live connection to DN
@@ -58,7 +58,7 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []
 	}
 	sort.Sort(sortedVolumes)
 	added := uint32(0)
-	addedDNs := make(map[int32]bool)
+	addedDNs := make(map[uint32]bool)
 	ret := make([]maggiefs.VolumeStat, rm.replicationFactor)
 	for i := 0; i < len(sortedVolumes); i++ {
 		// check if this DN is in our added list

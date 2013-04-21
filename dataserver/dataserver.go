@@ -12,7 +12,7 @@ type DataServer struct {
   ns maggiefs.NameService
   info maggiefs.DataNodeInfo
   // live and unformatted volumes
-  volumes map[int32] *volume
+  volumes map[uint32] *volume
   // accepts data conns for read/write requests
   dataIface *net.TCPListener
   // accepts conn from namenode 
@@ -30,7 +30,7 @@ func NewDataServer(config *DSConfig) (*DataServer,error) {
 // create a new dataserver by joining the specified nameservice
 func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (ds *DataServer,err error) {
   // scan volumes
-  volumes := make(map[int32] *volume)
+  volumes := make(map[uint32] *volume)
   unformatted := make([]string, 0)
   for _,volRoot := range config.VolumeRoots {
     if validVolume(volRoot) {
@@ -112,25 +112,25 @@ func (ds *DataServer) HeartBeat() (stat *maggiefs.DataNodeStat, err error) {
   return &ret,nil
 }
 
-func (ds *DataServer) AddBlock(blk maggiefs.Block, volId int32) (err error) {
+func (ds *DataServer) AddBlock(blk maggiefs.Block, volId uint32) (err error) {
   vol,exists := ds.volumes[volId]
   if ! exists { return fmt.Errorf("No volume for volID %d",volId) }
   return vol.AddBlock(blk)
 }
 
-func (ds *DataServer) RmBlock(id uint64, volId int32) (err error) {
+func (ds *DataServer) RmBlock(id uint64, volId uint32) (err error) {
   vol,exists := ds.volumes[volId]
   if ! exists { return fmt.Errorf("No volume for volID %d",volId) }
   return vol.RmBlock(id)
 }
 
-func (ds *DataServer) TruncBlock(blk maggiefs.Block, volId int32, newSize uint32) ( err error ) {
+func (ds *DataServer) TruncBlock(blk maggiefs.Block, volId uint32, newSize uint32) ( err error ) {
   vol,exists := ds.volumes[volId]
   if ! exists { return fmt.Errorf("No volume for volID %d",volId) }
   return vol.TruncBlock(blk,newSize)
 }
 
-func (ds *DataServer) BlockReport(volId int32) (blocks []maggiefs.Block, err error) {
+func (ds *DataServer) BlockReport(volId uint32) (blocks []maggiefs.Block, err error) {
   vol,exists := ds.volumes[volId]
   if ! exists { return nil,fmt.Errorf("No volume for volID %d",volId) }
   return vol.BlockReport()

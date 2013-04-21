@@ -32,7 +32,7 @@ func (s *NameDataIfaceService) HeartBeat(request *NameDataIfaceHeartBeatRequest,
 
 type NameDataIfaceAddBlockRequest struct {
 	Blk   Block
-	VolId int32
+	VolId uint32
 }
 
 type NameDataIfaceAddBlockResponse struct {
@@ -45,7 +45,7 @@ func (s *NameDataIfaceService) AddBlock(request *NameDataIfaceAddBlockRequest, r
 
 type NameDataIfaceRmBlockRequest struct {
 	Id    uint64
-	VolId int32
+	VolId uint32
 }
 
 type NameDataIfaceRmBlockResponse struct {
@@ -58,7 +58,7 @@ func (s *NameDataIfaceService) RmBlock(request *NameDataIfaceRmBlockRequest, res
 
 type NameDataIfaceTruncBlockRequest struct {
 	Blk     Block
-	VolId   int32
+	VolId   uint32
 	NewSize uint32
 }
 
@@ -99,21 +99,21 @@ func (_c *NameDataIfaceClient) HeartBeat() (stat *DataNodeStat, err error) {
 	return _response.Stat, err
 }
 
-func (_c *NameDataIfaceClient) AddBlock(blk Block, volId int32) (err error) {
+func (_c *NameDataIfaceClient) AddBlock(blk Block, volId uint32) (err error) {
 	_request := &NameDataIfaceAddBlockRequest{blk, volId}
 	_response := &NameDataIfaceAddBlockResponse{}
 	err = _c.client.Call(_c.service+".AddBlock", _request, _response)
 	return err
 }
 
-func (_c *NameDataIfaceClient) RmBlock(id uint64, volId int32) (err error) {
+func (_c *NameDataIfaceClient) RmBlock(id uint64, volId uint32) (err error) {
 	_request := &NameDataIfaceRmBlockRequest{id, volId}
 	_response := &NameDataIfaceRmBlockResponse{}
 	err = _c.client.Call(_c.service+".RmBlock", _request, _response)
 	return err
 }
 
-func (_c *NameDataIfaceClient) TruncBlock(blk Block, volId int32, newSize uint32) (err error) {
+func (_c *NameDataIfaceClient) TruncBlock(blk Block, volId uint32, newSize uint32) (err error) {
 	_request := &NameDataIfaceTruncBlockRequest{blk, volId, newSize}
 	_response := &NameDataIfaceTruncBlockResponse{}
 	err = _c.client.Call(_c.service+".TruncBlock", _request, _response)

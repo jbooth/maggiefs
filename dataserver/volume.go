@@ -111,13 +111,13 @@ func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
 	return &volume{vol.VolId, volRoot, rootFile, vol, db,pipes}, nil
 }
 
-func getVolId(volRoot string) (int32, error) {
+func getVolId(volRoot string) (uint32, error) {
 	bytes, err := ioutil.ReadFile(volRoot + "/VOLID")
 	if err != nil {
-		return -1, err
+		return 0, err
 	}
 	ret, err := strconv.Atoi(string(bytes))
-	return int32(ret), err
+	return uint32(ret), err
 }
 
 // represents a volume
@@ -125,7 +125,7 @@ func getVolId(volRoot string) (int32, error) {
 // and then the directories 'meta' and 'blocks' which contain, respectively, a levelDB of block metadata 
 // and the physical blocks
 type volume struct {
-	id        int32
+	id        uint32
 	rootPath  string
 	rootFile *os.File
 	info      maggiefs.VolumeInfo

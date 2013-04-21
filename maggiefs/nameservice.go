@@ -64,7 +64,7 @@ type NameService interface {
   // nameDataAddr is the address:port that the NN will connect to to administer the DN
   Join(dnId int32, nameDataAddr string) (err error)
   // called by DNs to obtain a new unique volume id
-  NextVolId() (id int32, err error)
+  NextVolId() (id uint32, err error)
   // called by DNs to obtain a new unique DN id
-  NextDnId() (id int32, err error)
+  NextDnId() (id uint32, err error)
 }

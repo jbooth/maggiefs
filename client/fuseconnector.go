@@ -99,7 +99,7 @@ func (m *MaggieFuse) StatFs(out *fuse.StatfsOut, h *raw.InHeader) fuse.Status {
 }
 
 // all files are 0777 yay
-func mode(ftype int) uint32 {
+func mode(ftype uint32) uint32 {
 	switch {
 	case maggiefs.FTYPE_DIR == ftype:
 		return syscall.S_IFDIR | 0777

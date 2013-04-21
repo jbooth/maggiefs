@@ -9,7 +9,7 @@ import (
 type VolDnMap map[int32]*net.Addr
 
 type DataNodeInfo struct {
-	DnId int32
+	DnId uint32
 	Addr string // includes port in colon format
 }
 
@@ -18,7 +18,7 @@ func (dni DataNodeInfo) Equals(other DataNodeInfo) bool {
 }
 
 type VolumeInfo struct {
-	VolId  int32
+	VolId  uint32
 	DnInfo DataNodeInfo
 }
 

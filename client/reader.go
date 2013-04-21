@@ -34,8 +34,8 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
   if (err != nil) { return 0,err }
   // read at most the bytes remaining in this block
   // if we're being asked to read past end of block, we just return early
-  numBytesFromBlock := block.EndPos - position
-  if (uint32(numBytesFromBlock) > length) { length = uint32(numBytesFromBlock) }
+  numBytesFromBlock := uint32(block.EndPos - position)
+  if (numBytesFromBlock > length) { length = numBytesFromBlock }
   // read bytes
   posInBlock := uint64(offset) - block.StartPos
   err = r.datas.Read(block, p[offset:],posInBlock,numBytesFromBlock)

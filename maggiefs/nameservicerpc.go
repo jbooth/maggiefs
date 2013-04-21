@@ -140,7 +140,7 @@ type NameServiceNextVolIdRequest struct {
 }
 
 type NameServiceNextVolIdResponse struct {
-	Id int32
+	Id uint32
 }
 
 func (s *NameServiceService) NextVolId(request *NameServiceNextVolIdRequest, response *NameServiceNextVolIdResponse) (err error) {
@@ -152,7 +152,7 @@ type NameServiceNextDnIdRequest struct {
 }
 
 type NameServiceNextDnIdResponse struct {
-	Id int32
+	Id uint32
 }
 
 func (s *NameServiceService) NextDnId(request *NameServiceNextDnIdRequest, response *NameServiceNextDnIdResponse) (err error) {
@@ -232,14 +232,14 @@ func (_c *NameServiceClient) Join(dnId int32, nameDataAddr string) (err error) {
 	return err
 }
 
-func (_c *NameServiceClient) NextVolId() (id int32, err error) {
+func (_c *NameServiceClient) NextVolId() (id uint32, err error) {
 	_request := &NameServiceNextVolIdRequest{}
 	_response := &NameServiceNextVolIdResponse{}
 	err = _c.client.Call(_c.service+".NextVolId", _request, _response)
 	return _response.Id, err
 }
 
-func (_c *NameServiceClient) NextDnId() (id int32, err error) {
+func (_c *NameServiceClient) NextDnId() (id uint32, err error) {
 	_request := &NameServiceNextDnIdRequest{}
 	_response := &NameServiceNextDnIdResponse{}
 	err = _c.client.Call(_c.service+".NextDnId", _request, _response)
