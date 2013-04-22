@@ -71,7 +71,7 @@ func (s *NameDataIfaceService) TruncBlock(request *NameDataIfaceTruncBlockReques
 }
 
 type NameDataIfaceBlockReportRequest struct {
-	VolId int32
+	VolId uint32
 }
 
 type NameDataIfaceBlockReportResponse struct {
@@ -120,7 +120,7 @@ func (_c *NameDataIfaceClient) TruncBlock(blk Block, volId uint32, newSize uint3
 	return err
 }
 
-func (_c *NameDataIfaceClient) BlockReport(volId int32) (blocks []Block, err error) {
+func (_c *NameDataIfaceClient) BlockReport(volId uint32) (blocks []Block, err error) {
 	_request := &NameDataIfaceBlockReportRequest{volId}
 	_response := &NameDataIfaceBlockReportResponse{}
 	err = _c.client.Call(_c.service+".BlockReport", _request, _response)

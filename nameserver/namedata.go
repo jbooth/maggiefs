@@ -124,7 +124,8 @@ func (nd *NameData) SetInode(i *maggiefs.Inode) (err error) {
   key := make([]byte,8)
   binary.LittleEndian.PutUint64(key,i.Inodeid)
   // do the write and send OK
-  err = nd.inodb.Put(WriteOpts,key,i.ToBytes())
+  b,err := i.GobEncode()
+  err = nd.inodb.Put(WriteOpts,key,b)
   return err
 }
 

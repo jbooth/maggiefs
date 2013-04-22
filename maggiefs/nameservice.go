@@ -62,7 +62,7 @@ type NameService interface {
   AddBlock(nodeid uint64, length uint32) (newBlock Block, err error)
   // called by datanodes to register the datanode with the cluster
   // nameDataAddr is the address:port that the NN will connect to to administer the DN
-  Join(dnId int32, nameDataAddr string) (err error)
+  Join(dnId uint32, nameDataAddr string) (err error)
   // called by DNs to obtain a new unique volume id
   NextVolId() (id uint32, err error)
   // called by DNs to obtain a new unique DN id

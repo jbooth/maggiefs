@@ -138,17 +138,6 @@ type pipe struct {
 	w *os.File
 }
 
-func initPipes() (chan pipe, error) {
-	ret := make(chan pipe, 16)
-	// hardcoded to 16
-	// this means we take up 1MB of kernel memory and 32 FHs per volume, with room for 16 concurrent iops
-	for i := 0 ; i < 16 ; i++ {
-		r,w,err := os.Pipe()
-		if err != nil { return nil,err }
-		ret <- pipe{r,w}
-	}
-	return ret,nil
-}
 
 func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
   sysstat := syscall.Statfs_t{}
@@ -171,7 +160,7 @@ func (v *volume) AddBlock(blk maggiefs.Block) error {
   // add to blockmeta db
   key := make([]byte,8)
   binary.LittleEndian.PutUint64(key,blk.Id)
-  val := blk.ToBytes()
+  val,_ := blk.GobEncode()
   err = v.blockData.Put(writeOpts,key,val)
   return err
 }
@@ -224,6 +213,36 @@ func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 	defer f.Close()
 	if err != nil { return err }
 	return op(f)
+}
+
+func initPipes() (chan pipe, error) {
+	ret := make(chan pipe, 16)
+	// hardcoded to 16
+	// this means we take up 1MB of kernel memory and 32 FHs per volume, with room for 16 concurrent iops
+	for i := 0 ; i < 16 ; i++ {
+		r,w,err := os.Pipe()
+		if err != nil { return nil,err }
+		ret <- pipe{r,w}
+	}
+	return ret,nil
+}
+
+func (v *volume) withPipe(id, uint64, op func(pipe) error) error {
+	p := <- v.bufferPool
+	err := op(p)
+	if err != nil {
+		v.bufferPool <- p
+		return nil
+	} 
+	// else add new entry to pipe pool
+	p.r.Close()
+	p.w.Close()
+	r,w,err2 := os.Pipe()
+	if err2 == nil {
+		p := pipe{r,w}
+		v.bufferPool <- p
+	}
+	return err
 }
 
 // paths are resolved using an intermediate hash so that we don't blow up the data dir with millions of entries

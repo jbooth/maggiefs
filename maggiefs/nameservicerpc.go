@@ -124,7 +124,7 @@ func (s *NameServiceService) AddBlock(request *NameServiceAddBlockRequest, respo
 }
 
 type NameServiceJoinRequest struct {
-	DnId         int32
+	DnId         uint32
 	NameDataAddr string
 }
 
@@ -225,7 +225,7 @@ func (_c *NameServiceClient) AddBlock(nodeid uint64, length uint32) (newBlock Bl
 	return _response.NewBlock, err
 }
 
-func (_c *NameServiceClient) Join(dnId int32, nameDataAddr string) (err error) {
+func (_c *NameServiceClient) Join(dnId uint32, nameDataAddr string) (err error) {
 	_request := &NameServiceJoinRequest{dnId, nameDataAddr}
 	_response := &NameServiceJoinResponse{}
 	err = _c.client.Call(_c.service+".Join", _request, _response)

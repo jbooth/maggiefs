@@ -27,5 +27,5 @@ type NameDataIface interface {
   // truncate a block
   TruncBlock(blk Block, volId uint32, newSize uint32) (err error)
   // get the list of all blocks for a volume
-  BlockReport(volId int32) (blocks []Block, err error)
+  BlockReport(volId uint32) (blocks []Block, err error)
 }

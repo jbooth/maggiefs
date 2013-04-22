@@ -248,7 +248,7 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 	return nil
 }
 
-func (ns *NameServer) Join(dnId int32, nameDataAddr string) (err error) {
+func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
 	// TODO confirm not duplicate datanode
 	client, err := rpc.Dial("tcp", nameDataAddr)
 	nameData := maggiefs.NewNameDataIfaceClient(client)
