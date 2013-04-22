@@ -325,14 +325,6 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
 				inode.Mtime = int64(input.Mtime*1e9) + int64(input.Mtimensec)
 			}
 		}
-		if input.Valid&(raw.FATTR_ATIME|raw.FATTR_ATIME_NOW) != 0 {
-			// MTIME, not supporting ATIME
-			if input.Valid&raw.FATTR_ATIME_NOW != 0 {
-				inode.Atime = time.Now().UnixNano()
-			} else {
-				inode.Atime = int64(input.Atime*1e9) + int64(input.Atimensec)
-			}
-		}
 		// set on nameserver and on argument back out to fuse
 		err = m.names.SetInode(inode)
 		if err != nil {
@@ -363,7 +355,6 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 		maggiefs.FTYPE_REG,
 		0,
 		input.Mode & 07777,
-		currTime,
 		currTime,
 		currTime,
 		1,
@@ -407,7 +398,6 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 		maggiefs.FTYPE_DIR,
 		0,
 		07777 & input.Mode,
-		currTime,
 		currTime,
 		currTime,
 		0,
@@ -502,7 +492,6 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
 		maggiefs.FTYPE_LNK,
 		0,
 		0777,
-		currTime,
 		currTime,
 		currTime,
 		0,
