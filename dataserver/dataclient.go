@@ -67,7 +67,7 @@ func (dc *DataClient)  Write(blk maggiefs.Block, p []byte, pos uint64) (err erro
 		if resp.Stat != STAT_OK {
 			return fmt.Errorf("Error code %d from DN",resp.Stat)
 		}
-		return nil
+		return err
 		
 	})
 	return nil

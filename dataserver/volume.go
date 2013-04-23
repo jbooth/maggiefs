@@ -1,21 +1,23 @@
 package dataserver
 
 import (
-  "encoding/json"
-  "encoding/binary"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jmhodges/levigo"
 	"io/ioutil"
+	"net"
 	"os"
-	"syscall"
 	"strconv"
+	"syscall"
 )
 
 var (
 	readOpts  = levigo.NewReadOptions()
 	writeOpts = levigo.NewWriteOptions()
 	openOpts  = levigo.NewOptions()
+	ZERO_64KB = [65536]byte{}
 )
 
 func init() {
@@ -43,27 +45,30 @@ func loadVolume(volRoot string) (*volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	dnInfoFile,err := os.Open(volRoot + "/DNINFO")
-  defer dnInfoFile.Close()
-  if err != nil {
-    return nil,err
-  }
-  d := json.NewDecoder(dnInfoFile)
-  dnInfo := maggiefs.DataNodeInfo{}
-  d.Decode(dnInfo)
-  
-  
+	dnInfoFile, err := os.Open(volRoot + "/DNINFO")
+	defer dnInfoFile.Close()
+	if err != nil {
+		return nil, err
+	}
+	d := json.NewDecoder(dnInfoFile)
+	dnInfo := maggiefs.DataNodeInfo{}
+	d.Decode(dnInfo)
+
 	db, err := levigo.Open(volRoot+"/meta", openOpts)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-	
-  rootFile,err := os.Open(volRoot)
-  if err != nil { return nil,err }
-  pipes,err := initPipes()
-  if err != nil { return nil,err }
-	return &volume{id, volRoot, rootFile, maggiefs.VolumeInfo{id, dnInfo}, db,pipes}, nil
+
+	rootFile, err := os.Open(volRoot)
+	if err != nil {
+		return nil, err
+	}
+	pipes, err := initPipes()
+	if err != nil {
+		return nil, err
+	}
+	return &volume{id, volRoot, rootFile, maggiefs.VolumeInfo{id, dnInfo}, db, pipes}, nil
 }
 
 func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
@@ -83,9 +88,9 @@ func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
 	if err != nil {
 		return nil, err
 	}
-  e := json.NewEncoder(dnInfoFile)
-  e.Encode(vol.DnInfo)
-  
+	e := json.NewEncoder(dnInfoFile)
+	e.Encode(vol.DnInfo)
+
 	// initialize db
 	err = os.RemoveAll(volRoot + "/meta.ldb")
 	if err != nil {
@@ -104,11 +109,15 @@ func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	rootFile,err := os.Open(volRoot)
-	if err != nil { return nil,err }
-  pipes,err := initPipes()
-  if err != nil { return nil,err }
-	return &volume{vol.VolId, volRoot, rootFile, vol, db,pipes}, nil
+	rootFile, err := os.Open(volRoot)
+	if err != nil {
+		return nil, err
+	}
+	pipes, err := initPipes()
+	if err != nil {
+		return nil, err
+	}
+	return &volume{vol.VolId, volRoot, rootFile, vol, db, pipes}, nil
 }
 
 func getVolId(volRoot string) (uint32, error) {
@@ -125,11 +134,11 @@ func getVolId(volRoot string) (uint32, error) {
 // and then the directories 'meta' and 'blocks' which contain, respectively, a levelDB of block metadata 
 // and the physical blocks
 type volume struct {
-	id        uint32
-	rootPath  string
-	rootFile *os.File
-	info      maggiefs.VolumeInfo
-	blockData *levigo.DB
+	id         uint32
+	rootPath   string
+	rootFile   *os.File
+	info       maggiefs.VolumeInfo
+	blockData  *levigo.DB
 	bufferPool chan pipe
 }
 
@@ -138,62 +147,77 @@ type pipe struct {
 	w *os.File
 }
 
-
 func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
-  sysstat := syscall.Statfs_t{}
-  err = syscall.Fstatfs(int(v.rootFile.Fd()),&sysstat)
-  if err != nil { return stat,err }
-  stat.VolumeInfo = v.info
-  // these sizes are in blocks of 512
-  stat.Size = sysstat.Blocks * uint64(sysstat.Bsize)
-  stat.Used = (uint64(sysstat.Blocks - sysstat.Bfree) * uint64(sysstat.Bsize))
-  stat.Free = sysstat.Bfree * uint64(sysstat.Bsize)
-  return stat,nil
+	sysstat := syscall.Statfs_t{}
+	err = syscall.Fstatfs(int(v.rootFile.Fd()), &sysstat)
+	if err != nil {
+		return stat, err
+	}
+	stat.VolumeInfo = v.info
+	// these sizes are in blocks of 512
+	stat.Size = sysstat.Blocks * uint64(sysstat.Bsize)
+	stat.Used = (uint64(sysstat.Blocks-sysstat.Bfree) * uint64(sysstat.Bsize))
+	stat.Free = sysstat.Bfree * uint64(sysstat.Bsize)
+	return stat, nil
 }
 
 func (v *volume) AddBlock(blk maggiefs.Block) error {
-  // TODO should blow up here if blk already exists
-  // create file representing block
-  f,err := os.Create(v.resolvePath(blk.Id))
-  if err != nil { return err }
-  defer f.Close()
-  // add to blockmeta db
-  key := make([]byte,8)
-  binary.LittleEndian.PutUint64(key,blk.Id)
-  val,_ := blk.GobEncode()
-  err = v.blockData.Put(writeOpts,key,val)
-  return err
+	// TODO should blow up here if blk already exists
+	// create file representing block
+	f, err := os.Create(v.resolvePath(blk.Id))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	// add to blockmeta db
+	key := make([]byte, 8)
+	binary.LittleEndian.PutUint64(key, blk.Id)
+	val, _ := blk.GobEncode()
+	err = v.blockData.Put(writeOpts, key, val)
+	return err
+}
+
+func (v *volume) getBlock(id uint64) (blk maggiefs.Block, err error) {
+	key := make([]byte, 8)
+	binary.LittleEndian.PutUint64(key, id)
+	val, err := v.blockData.Get(readOpts, key)
+	if err != nil {
+		blk.FromBytes(val)
+	}
+	return
 }
 
 func (v *volume) RmBlock(id uint64) error {
-  // kill file
-  err := os.Remove(v.resolvePath(id))
-  if err != nil { return err }
-  // kill meta entry
-  
-  key := make([]byte,8)
-  binary.LittleEndian.PutUint64(key,id)
-  err = v.blockData.Delete(writeOpts,key)
-  return err
+	// kill file
+	err := os.Remove(v.resolvePath(id))
+	if err != nil {
+		return err
+	}
+	// kill meta entry
+
+	key := make([]byte, 8)
+	binary.LittleEndian.PutUint64(key, id)
+	err = v.blockData.Delete(writeOpts, key)
+	return err
 }
 
 func (v *volume) TruncBlock(blk maggiefs.Block, newSize uint32) error {
-  return v.withFile(blk.Id, func(f *os.File) error {
-    return f.Truncate(int64(newSize))
-  })
+	return v.withFile(blk.Id, func(f *os.File) error {
+		return f.Truncate(int64(newSize))
+	})
 }
 
 func (v *volume) BlockReport() ([]maggiefs.Block, error) {
-  ret := make([]maggiefs.Block,0,0)
-  it := v.blockData.NewIterator(readOpts)
-  defer it.Close()
-  it.SeekToFirst()
-  for it = it ; it.Valid() ; it.Next() {
-    blk := maggiefs.Block{}
-    blk.FromBytes(it.Value())
-    ret = append(ret,blk)
-  }
-  return ret,it.GetError()
+	ret := make([]maggiefs.Block, 0, 0)
+	it := v.blockData.NewIterator(readOpts)
+	defer it.Close()
+	it.SeekToFirst()
+	for it = it; it.Valid(); it.Next() {
+		blk := maggiefs.Block{}
+		blk.FromBytes(it.Value())
+		ret = append(ret, blk)
+	}
+	return ret, it.GetError()
 }
 
 // NameDataIFace methods
@@ -209,9 +233,11 @@ func (v *volume) BlockReport() ([]maggiefs.Block, error) {
 //  BlockReport(volId int32) (blocks []Block, err error)
 
 func (v *volume) withFile(id uint64, op func(*os.File) error) error {
-	f,err := os.Open(v.resolvePath(id))
+	f, err := os.Open(v.resolvePath(id))
 	defer f.Close()
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return op(f)
 }
 
@@ -219,30 +245,126 @@ func initPipes() (chan pipe, error) {
 	ret := make(chan pipe, 16)
 	// hardcoded to 16
 	// this means we take up 1MB of kernel memory and 32 FHs per volume, with room for 16 concurrent iops
-	for i := 0 ; i < 16 ; i++ {
-		r,w,err := os.Pipe()
-		if err != nil { return nil,err }
-		ret <- pipe{r,w}
+	for i := 0; i < 16; i++ {
+		r, w, err := os.Pipe()
+		if err != nil {
+			return nil, err
+		}
+		ret <- pipe{r, w}
 	}
-	return ret,nil
+	return ret, nil
 }
 
-func (v *volume) withPipe(id, uint64, op func(pipe) error) error {
-	p := <- v.bufferPool
+func (v *volume) withPipe(op func(pipe) error) error {
+	p := <-v.bufferPool
 	err := op(p)
 	if err != nil {
 		v.bufferPool <- p
 		return nil
-	} 
+	}
 	// else add new entry to pipe pool
 	p.r.Close()
 	p.w.Close()
-	r,w,err2 := os.Pipe()
+	r, w, err2 := os.Pipe()
 	if err2 == nil {
-		p := pipe{r,w}
+		p := pipe{r, w}
 		v.bufferPool <- p
 	}
 	return err
+}
+
+func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
+	err = v.withFile(req.Blk.Id, func(file *os.File) error {
+		// check off
+		resp := ResponseHeader{STAT_OK}
+		// write header
+		_, err = resp.WriteTo(client)
+		// sendfile
+		if err != nil {
+			return err
+		}
+		nSent := 0
+		sendPos := int64(req.Pos)
+		sockFile,_ := client.File()
+		stat,_ := file.Stat()
+		// send only the bytes we have, then we'll send zeroes for the rest
+		sendLength := uint64(req.Length)
+		zerosLength := 0
+		fileSize := uint64(stat.Size())
+		if uint64(sendPos)+sendLength > fileSize {
+			fileSize = uint64(stat.Size() - sendPos)
+			zerosLength = int(uint32(req.Length) - uint32(sendLength))
+		}
+		for nSent < int(req.Length) {
+			n, err := syscall.Sendfile(int(sockFile.Fd()), int(file.Fd()), &sendPos, int(sendLength))
+			if err != nil {
+				return err
+			}
+			nSent += n
+			sendPos += int64(n)
+		}
+		for zerosLength > 0 {
+			// send some zeroes
+			zerosSend := zerosLength
+			if zerosSend > 65536 {
+				zerosSend = 65536
+			}
+			sent, err := client.Write(ZERO_64KB[:zerosSend])
+			if err != nil {
+				return err
+			}
+			zerosLength -= sent
+		}
+		return nil
+	})
+	if os.IsNotExist(err) {
+		// above function didn't run cause file didn't exist, so return NOBLOCK from here
+		resp := ResponseHeader{STAT_NOBLOCK}
+		_, err = resp.WriteTo(client)
+	}
+	return err
+}
+
+func (v *volume) serveWrite(client *net.Conn, req RequestHeader, datas DataClient) error {
+	// should we check block.Version here?  skipping for now
+	err := v.withFile(req.Blk.Id, func(file *os.File) error {
+		innerErr := v.withPipe(func(p pipe) error {
+
+			// remove ourself from pipeline
+			for idx, volId := range req.Blk.Volumes {
+				if volId == v.id {
+					if idx < len(req.Blk.Volumes) {
+						req.Blk.Volumes = append(req.Blk.Volumes[:idx], req.Blk.Volumes...)
+					} else {
+						req.Blk.Volumes = req.Blk.Volumes[:idx]
+					}
+					break
+				}
+			}
+	  	// check if we have other dataservers in pipeline
+			
+			return nil
+		})
+		return innerErr
+	})
+	return err
+}
+
+func (v *volume) pipelineWrite(incoming *net.Conn, outgoing *net.Conn, buff pipe, file *os.File) error {
+
+	// send headers if so
+
+	// splice from sock			
+
+	// tee if necessary
+
+	// splice to disk
+
+	// wait for resp
+	if outgoing != nil {
+
+	}
+	return nil
 }
 
 // paths are resolved using an intermediate hash so that we don't blow up the data dir with millions of entries

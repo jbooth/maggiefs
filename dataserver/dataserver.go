@@ -93,11 +93,30 @@ func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (ds *DataServer,e
   return ds,nil
 }
 
-func (ds *DataServer) serveNameData() {
-  
+func (ds *DataServer) serveClientData() {
+	for {
+		tcpConn,err := ds.dataIface.AcceptTCP()
+		if err != nil {
+			fmt.Printf("Error accepting client on listen addr, shutting down: %s\n",err.Error())
+			return
+		}
+		tcpConn.SetNoDelay(true)
+		go ds.serveClientConn(tcpConn)
+	}
 }
 
-func (ds *DataServer) serveClientData() {
+func (ds *DataServer) serveClientConn(conn *net.TCPConn) {
+	for {
+		req := RequestHeader{}
+		req.ReadFrom(conn)
+		if req.Op == OP_READ {
+			
+		} else if req.Op == OP_WRITE {
+		
+		} else {
+			
+		}
+	}
 }
 
 

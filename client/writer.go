@@ -42,8 +42,22 @@ func (w *Writer) WriteAt(p []byte, off uint64, length uint32) (written uint32, e
 	// this func encapsulates the change in the inode we'll be persisting to nameserver at end of call
 	var inoUpdate = func(i *maggiefs.Inode) {}
 	// first figure which block we're supposed to be at
-	// if offset is greater than length, we can't write (must append from eof)
+	// if offset is greater than length, we need to add blocks and treat as sparse file
 	if off > inode.Length {
+		// fuck i'm tired will fix this later
+//		// extend last block and add new blocks as necessary -- we support sparse files
+//		for off > inode.Length {
+//			lastBlock := inode.Blocks[len(inode.Blocks)]
+//			if lastBlock.Length() < BLOCKLENGTH {
+//			  // extend last block
+//				extendLength = BLOCKLENGTH - lastBlock.Length()
+//				if lastBlock.EndPos + extendLength 
+//				lastBlock.EndPos
+//			} else {
+//				// add new block
+//			}
+//		}
+
 		return 0, errors.New("offset > length of file")
 	}
 	currBlock, err := blockForPos(off, inode)
