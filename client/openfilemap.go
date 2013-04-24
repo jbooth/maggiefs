@@ -8,7 +8,7 @@ import (
 
 type openFile struct {
   r *Reader
-  w *Writer
+  w *InodeWriter
   lease maggiefs.ReadLease
   writelock maggiefs.WriteLease
 }

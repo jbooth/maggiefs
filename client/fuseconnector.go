@@ -240,7 +240,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 		}
 	}
 	if writable {
-		f.w, err = NewWriter(inode.Inodeid, m.leases, m.names, m.datas)
+		f.w, err = NewInodeWriter(inode.Inodeid, m.leases, m.names, m.datas)
 		if err != nil {
 			return fuse.EROFS
 		}

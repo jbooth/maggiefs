@@ -58,7 +58,7 @@ type NameService interface {
   Link(parent uint64, child uint64, name string, force bool) (err error)
   // Unlinks the child with the given name
   Unlink(parent uint64, name string) (err error)
-  // add a block to the end of a file, returns new block
+  // add a block attached to this inode, returns new block
   AddBlock(nodeid uint64, length uint32) (newBlock Block, err error)
   // called by datanodes to register the datanode with the cluster
   // nameDataAddr is the address:port that the NN will connect to to administer the DN

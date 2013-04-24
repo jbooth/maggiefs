@@ -10,7 +10,7 @@ type DataService interface {
   // read some bytes
   Read(blk Block, p []byte, pos uint64, length uint32) (err error)
 
-  // write some bytes, extending block if necessary
+  // write some bytes
   // updates generation ID on datanodes before returning
   // if generation id doesn't match prev generation id, we have an error
   Write(blk Block, p []byte, pos uint64) (err error)
