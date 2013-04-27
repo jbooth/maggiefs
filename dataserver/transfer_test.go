@@ -26,3 +26,11 @@ func TestSendfile(t *testing.T) {
   return
 }
 
+func TestSplice(t *testing.T) {
+  return
+}
+
+func getMatchedSockets() {
+
+}
+
