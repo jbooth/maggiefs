@@ -64,11 +64,7 @@ func loadVolume(volRoot string) (*volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	pipes, err := initPipes()
-	if err != nil {
-		return nil, err
-	}
-	return &volume{id, volRoot, rootFile, maggiefs.VolumeInfo{id, dnInfo}, db, pipes}, nil
+	return &volume{id, volRoot, rootFile, maggiefs.VolumeInfo{id, dnInfo}, db}, nil
 }
 
 func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
@@ -113,11 +109,7 @@ func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	pipes, err := initPipes()
-	if err != nil {
-		return nil, err
-	}
-	return &volume{vol.VolId, volRoot, rootFile, vol, db, pipes}, nil
+	return &volume{vol.VolId, volRoot, rootFile, vol, db}, nil
 }
 
 func getVolId(volRoot string) (uint32, error) {
@@ -134,17 +126,11 @@ func getVolId(volRoot string) (uint32, error) {
 // and then the directories 'meta' and 'blocks' which contain, respectively, a levelDB of block metadata 
 // and the physical blocks
 type volume struct {
-	id         uint32
-	rootPath   string
-	rootFile   *os.File
-	info       maggiefs.VolumeInfo
-	blockData  *levigo.DB
-	bufferPool chan pipe
-}
-
-type pipe struct {
-	r *os.File
-	w *os.File
+	id        uint32
+	rootPath  string
+	rootFile  *os.File
+	info      maggiefs.VolumeInfo
+	blockData *levigo.DB
 }
 
 func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
@@ -241,38 +227,6 @@ func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 	return op(f)
 }
 
-func initPipes() (chan pipe, error) {
-	ret := make(chan pipe, 16)
-	// hardcoded to 16
-	// this means we take up 1MB of kernel memory and 32 FHs per volume, with room for 16 concurrent iops
-	for i := 0; i < 16; i++ {
-		r, w, err := os.Pipe()
-		if err != nil {
-			return nil, err
-		}
-		ret <- pipe{r, w}
-	}
-	return ret, nil
-}
-
-func (v *volume) withPipe(op func(pipe) error) error {
-	p := <-v.bufferPool
-	err := op(p)
-	if err != nil {
-		v.bufferPool <- p
-		return nil
-	}
-	// else add new entry to pipe pool
-	p.r.Close()
-	p.w.Close()
-	r, w, err2 := os.Pipe()
-	if err2 == nil {
-		p := pipe{r, w}
-		v.bufferPool <- p
-	}
-	return err
-}
-
 func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
 	err = v.withFile(req.Blk.Id, func(file *os.File) error {
 		// check off
@@ -285,8 +239,8 @@ func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
 		}
 		nSent := 0
 		sendPos := int64(req.Pos)
-		sockFile,_ := client.File()
-		stat,_ := file.Stat()
+		sockFile, _ := client.File()
+		stat, _ := file.Stat()
 		// send only the bytes we have, then we'll send zeroes for the rest
 		sendLength := uint64(req.Length)
 		zerosLength := 0
@@ -328,24 +282,21 @@ func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
 func (v *volume) serveWrite(client *net.Conn, req RequestHeader, datas DataClient) error {
 	// should we check block.Version here?  skipping for now
 	err := v.withFile(req.Blk.Id, func(file *os.File) error {
-		innerErr := v.withPipe(func(p pipe) error {
 
-			// remove ourself from pipeline
-			for idx, volId := range req.Blk.Volumes {
-				if volId == v.id {
-					if idx < len(req.Blk.Volumes) {
-						req.Blk.Volumes = append(req.Blk.Volumes[:idx], req.Blk.Volumes...)
-					} else {
-						req.Blk.Volumes = req.Blk.Volumes[:idx]
-					}
-					break
+		// remove ourself from pipeline
+		for idx, volId := range req.Blk.Volumes {
+			if volId == v.id {
+				if idx < len(req.Blk.Volumes) {
+					req.Blk.Volumes = append(req.Blk.Volumes[:idx], req.Blk.Volumes...)
+				} else {
+					req.Blk.Volumes = req.Blk.Volumes[:idx]
 				}
+				break
 			}
-	  	// check if we have other dataservers in pipeline
-			
-			return nil
-		})
-		return innerErr
+		}
+		// check if we have other dataservers in pipeline
+
+		return nil
 	})
 	return err
 }
