@@ -1,7 +1,6 @@
 package dataserver
 
 import (
-	"net"
 	"os"
 	"syscall"
 	"unsafe"
@@ -67,8 +66,7 @@ func withPipe(f func(p pipe) error) (err error) {
 }
 
 // uses sendFile to send to a socket
-func SendFile(in *os.File, out *net.TCPConn, pos int64, length int) (err error) {
-	outFile, err := out.File()
+func SendFile(in *os.File, outFile *os.File, pos int64, length int) (err error) {
 	nSent := 0
 	for nSent < length {
 		n, err := syscall.Sendfile(int(outFile.Fd()), int(in.Fd()), &pos, length)
@@ -103,7 +101,7 @@ func SpliceAdv(in *os.File, inOff *int64, out *os.File, outOff *int64, teeFiles 
 					toTee := totalSpliced
 					for toTee > 0 {
 						// no offset to tee arguments for now
-						n, err := syscall.Splice(int(p.r.Fd()), nil, int(tee.Fd()), nil, toTee, 0)
+						n, err := syscall.Tee(int(p.r.Fd()), int(tee.Fd()), toTee, 0)
 						if err != nil {
 							return err
 						}

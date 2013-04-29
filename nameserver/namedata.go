@@ -13,33 +13,31 @@ var (
   ReadOpts = levigo.NewReadOptions()
   WriteOpts = levigo.NewWriteOptions()
   OpenOpts = levigo.NewOptions()
+  COUNTER_INODE = "INODES"
+  COUNTER_BLOCK = "BLOCKS"
+  COUNTER_VOLID = "VOLIDS"
+  COUNTER_DNID = "DNIDS"
 )
 
 // this struct is responsible for managing the on disk data underlying the inode system
 // and the relationships between inodes and blocks
 type NameData struct {
-  inodeIdCounter uint64
-  blockIdCounter uint64
   inodeStripeLock map[uint64] *sync.Mutex
-  hintInodeGC chan uint64
   inodb *levigo.DB // inodeid -> inode
-  volBlocks *levigo.DB // volIdBlockId (12 byte key) -> inodeid (8 byte value), we can scan this to find all blocks belonging to a given volume
-  volumes *levigo.DB // maps dn uint32 volume id  -> volume
+  counterLock *sync.Mutex
+  counterdb *levigo.DB // counterName -> uint64
 }
 const STRIPE_SIZE = 1024 // must be power of 2
 
 const dir_inodb = "inodes"
-const dir_volBlocks = "volBlocks"
-const dir_volumes = "volumes"
+const dir_counters = "counters"
 
 // formats a new filesystem in the given data dir
 func Format(dataDir string) error {
   // wipe out previous
   err := os.RemoveAll(dataDir + "/" + dir_inodb)
   if err != nil { return err }
-  err = os.RemoveAll(dataDir + "/" + dir_volBlocks)
-  if err != nil { return err }
-  err = os.RemoveAll(dataDir + "/" + dir_volumes)
+  err = os.RemoveAll(dataDir + "/" + dir_counters)
   if err != nil { return err }
   // create
   opts := levigo.NewOptions()
@@ -49,11 +47,7 @@ func Format(dataDir string) error {
   db,err := levigo.Open(dataDir + "/" + dir_inodb, opts)
   if err != nil { return err }
   db.Close()
-  db.Close()
-  db,err = levigo.Open(dataDir + "/" + dir_volBlocks,opts)
-  if err != nil { return err }
-  db.Close()
-  db,err = levigo.Open(dataDir + "/" + dir_volumes,opts)
+  db,err = levigo.Open(dataDir + "/" + dir_counters, opts)
   if err != nil { return err }
   db.Close()
   
@@ -67,20 +61,13 @@ func NewNameData(dataDir string) (*NameData, error) {
   // todo investigate turning off compression
   inodb, err := levigo.Open(dataDir + "/" + dir_inodb,opts)
   if err != nil { return nil,err }
-  volBlocks, err := levigo.Open(dataDir + "/" + dir_volBlocks,opts)
-  if err != nil { return nil,err }
-  volumes, err := levigo.Open(dataDir + "/" + dir_volumes,opts)
-  if err != nil { return nil,err }
   
   ret := &NameData{}
   ret.inodb = inodb
-  ret.volBlocks = volBlocks
-  ret.volumes = volumes
   ret.inodeStripeLock = make(map[uint64] *sync.Mutex)
   for i := uint64(0) ; i < STRIPE_SIZE ; i++ {
     ret.inodeStripeLock[i] = &sync.Mutex{}
   }
-  ret.inodeIdCounter = highestKey(ret.inodb)
   // gotta set up blockid counter
   //ret.blockIdCounter = highestKey(ret.allBlocks)
   return ret,nil
@@ -88,23 +75,6 @@ func NewNameData(dataDir string) (*NameData, error) {
 
 func (nd *NameData) Close() {
   nd.inodb.Close()
-  nd.volBlocks.Close()
-  nd.volumes.Close()
-}
-
-// scans the uint64 keys of the indicated db, returning the highest one by value
-// scans all keys rather than using a comparator, this is slow, replace later
-func highestKey(db *levigo.DB) uint64 {
-  opts := levigo.NewReadOptions()
-  defer opts.Close()
-  opts.SetFillCache(false)
-  iter := db.NewIterator(opts)
-  highest := uint64(0)
-  for iter.Valid() {
-    key := binary.LittleEndian.Uint64(iter.Key())
-    if key > highest { highest = key }
-  }
-  return highest
 }
 
 func (nd *NameData) GetInode(inodeid uint64) (*maggiefs.Inode,error) {
@@ -132,8 +102,12 @@ func (nd *NameData) SetInode(i *maggiefs.Inode) (err error) {
 // adds an inode persistent store, setting its inode ID to the generated ID, and returning 
 // the generated id and error
 func (nd *NameData) AddInode(i *maggiefs.Inode) (uint64,error) {
-  i.Inodeid = maggiefs.IncrementAndGet(&nd.inodeIdCounter,1)
-  err := nd.SetInode(i)
+  newNodeId,err := nd.GetIncrCounter(COUNTER_INODE,1)
+  if err != nil {
+    return 0,err
+  }
+  i.Inodeid = newNodeId
+  err = nd.SetInode(i)
   return i.Inodeid,err
 }
 
@@ -169,11 +143,33 @@ func (nd *NameData) GetBlock(inodeid uint64, blockid uint64) (*maggiefs.Block, e
 // adds a block to persistent store as the last block of inodeid, 
 // setting its blockid to the generated ID, and returning the generated ID and error
 func (nd *NameData) AddBlock(b maggiefs.Block, inodeid uint64) (uint64,error) {
-    b.Id = maggiefs.IncrementAndGet(&nd.blockIdCounter,1)
-    _,err := nd.Mutate(inodeid, func(i *maggiefs.Inode) (error) {
+    newBlockId,err := nd.GetIncrCounter(COUNTER_BLOCK,1)
+    b.Id = newBlockId
+    _,err = nd.Mutate(inodeid, func(i *maggiefs.Inode) (error) {
       i.Blocks = append(i.Blocks, b)
       return nil
     })
     if err != nil { return 0,err }
     return b.Id,nil
 }
+
+// gets and increments the counter, creating if necessary.  returns new val
+func (nd *NameData) GetIncrCounter(counterName string, incr uint64) (uint64,error) {
+  nd.counterLock.Lock()
+  defer nd.counterLock.Unlock()
+  key := []byte(counterName)
+  valBytes,err := nd.counterdb.Get(ReadOpts,key)
+  if err != nil {
+    return 0,err
+  }
+  val := uint64(0)
+  if (valBytes != nil && len(valBytes) == 8) {
+    val = binary.LittleEndian.Uint64(valBytes)
+  } else {
+    valBytes = make([]byte,8)
+  }
+  val += incr
+  binary.LittleEndian.PutUint64(valBytes,val)
+  err = nd.counterdb.Put(WriteOpts,key,valBytes)
+  return val,err
+} 

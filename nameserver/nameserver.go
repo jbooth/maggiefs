@@ -256,11 +256,11 @@ func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
 }
 
 func (ns *NameServer) NextVolId() (id uint32, err error) {
-	panic("unimplemented!")
-	return 0, nil
+  ret,err := ns.nd.GetIncrCounter(COUNTER_VOLID,1)
+  return uint32(ret),err
 }
 
 func (ns *NameServer) NextDnId() (id uint32, err error) {
-	panic("unimplemented!")
-	return 0, nil
+  ret,err := ns.nd.GetIncrCounter(COUNTER_DNID,1)
+  return uint32(ret),err	
 }
