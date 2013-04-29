@@ -77,18 +77,18 @@ type dnConn struct {
 	c *net.TCPConn
 }
 
-func (dc *DataClient) withConn(dnId uint32, f func(d *dnConn) error) error {
+func (dc *DataClient) withConn(volId uint32, f func(d *dnConn) error) error {
 	dc.volLock.RLock()
-	raddr,exists := dc.volMap[dnId]
+	raddr,exists := dc.volMap[volId]
 	dc.volLock.RUnlock()
 	if !exists {
 		// try refreshing map and try again
 		dc.refreshDNs()
 		dc.volLock.RLock()
-		raddr,exists = dc.volMap[dnId]
+		raddr,exists = dc.volMap[volId]
 		dc.volLock.RUnlock()
 		if ! exists {
-			return fmt.Errorf("No dn with id %d",dnId)
+			return fmt.Errorf("No dn for vol id %d",volId)
 		}
 	}
 	return dc.pool.withConn(raddr,f)

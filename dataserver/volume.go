@@ -279,11 +279,12 @@ func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
 	return err
 }
 
-func (v *volume) serveWrite(client *net.Conn, req RequestHeader, datas DataClient) error {
+func (v *volume) serveWrite(client *net.TCPConn, req RequestHeader, datas DataClient) error {
+  resp := ResponseHeader{STAT_OK}
+  
 	// should we check block.Version here?  skipping for now
 	err := v.withFile(req.Blk.Id, func(file *os.File) error {
-
-		// remove ourself from pipeline
+		// remove ourself from pipeline remainder
 		for idx, volId := range req.Blk.Volumes {
 			if volId == v.id {
 				if idx < len(req.Blk.Volumes) {
@@ -294,11 +295,45 @@ func (v *volume) serveWrite(client *net.Conn, req RequestHeader, datas DataClien
 				break
 			}
 		}
+		// prepare to splice
+		outOffset := int64(req.Pos)
+		inFile, err := client.File()
+		if err != nil {
+			return err
+		}
 		// check if we have other dataservers in pipeline
-
+		if len(req.Blk.Volumes) > 0 {
+			err = datas.withConn(pickVol(req.Blk.Volumes), func(d *dnConn) error {
+				// forward request minus us in the replication chain
+				req.WriteTo(d.c)
+				// tee/splice
+				teeFile, err := d.c.File()
+				if err != nil {
+					return err
+				}
+				tees := []*os.File{teeFile}
+				return SpliceAdv(inFile, nil, file, &outOffset, tees, int(req.Length))
+			})
+			return err
+		}
+		// just us, so splice to file and return
+		return SpliceAdv(inFile, nil, file, &outOffset, nil, int(req.Length))
+		// unreachable
 		return nil
 	})
+	// send response
+  resp.WriteTo(client)
 	return err
+}
+
+func checkResponse(c *net.TCPConn) error {
+  resp := ResponseHeader{}
+  resp.ReadFrom(c)
+  if resp.Stat == STAT_OK {
+    return nil
+  } 
+  return fmt.Errorf("Response stat not ok : %d",resp.Stat)
+  
 }
 
 func (v *volume) pipelineWrite(incoming *net.Conn, outgoing *net.Conn, buff pipe, file *os.File) error {
