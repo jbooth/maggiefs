@@ -19,20 +19,15 @@ type DataServer struct {
   nameDataIface *net.TCPListener
 }
 
-// create a new dataserver connected to the nameserver specified in config
-func NewDataServer(config *DSConfig) (*DataServer,error) {
-  client,err := rpc.Dial("tcp",fmt.Sprintf("%s:%d",config.NameHost, config.NamePort))
-  
-  if err != nil { return nil,err }
-  return NewDataServer2(config,maggiefs.NewNameServiceClient(client))
-}
-
-// create a new dataserver by joining the specified nameservice
-func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (ds *DataServer,err error) {
+// create a new dataserver serving the specified volumes, on the specified addrs, joining the specified nameservice
+func NewDataServer(volRoots []string, 
+                    dataClientBindAddr string, 
+                    nameDataBindAddr string, 
+                    ns maggiefs.NameService) (ds *DataServer,err error) {
   // scan volumes
   volumes := make(map[uint32] *volume)
   unformatted := make([]string, 0)
-  for _,volRoot := range config.VolumeRoots {
+  for _,volRoot := range volRoots {
     if validVolume(volRoot) {
       // initialize existing volume
       vol,err := loadVolume(volRoot)
@@ -58,7 +53,7 @@ func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (ds *DataServer,e
   if dnInfo.DnId == 0 {
     dnInfo.DnId,err = ns.NextDnId()
   }
-  dnInfo.Addr = config.DataClientBindAddr
+  dnInfo.Addr = dataClientBindAddr
   
   // format unformatted volumes
   for _,path := range unformatted {
@@ -70,14 +65,14 @@ func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (ds *DataServer,e
   }
   
   // start up listeners
-  dataClientBindAddr,err := net.ResolveTCPAddr("tcp", config.DataClientBindAddr) 
+  dataClientBind,err := net.ResolveTCPAddr("tcp", dataClientBindAddr) 
   if err != nil { return nil,err }
-  nameDataBindAddr,err := net.ResolveTCPAddr("tcp",config.NameDataBindAddr)
+  nameDataBind,err := net.ResolveTCPAddr("tcp",nameDataBindAddr)
   if err != nil { return nil,err }
   
-  dataClientListen,err := net.ListenTCP("tcp",dataClientBindAddr)
+  dataClientListen,err := net.ListenTCP("tcp",dataClientBind)
   if err != nil { return nil,err }
-  nameDataListen,err := net.ListenTCP("tcp",nameDataBindAddr)
+  nameDataListen,err := net.ListenTCP("tcp",nameDataBind)
   if err != nil { return nil,err }
   
   ds = &DataServer{ns, dnInfo, volumes,dataClientListen,nameDataListen}
@@ -89,7 +84,7 @@ func NewDataServer2(config *DSConfig, ns maggiefs.NameService) (ds *DataServer,e
   // start servicing client data
   go ds.serveClientData() 
   // register ourselves with namenode, namenode will query us for volumes
-  err = ns.Join(dnInfo.DnId, config.NameDataBindAddr)
+  err = ns.Join(dnInfo.DnId, nameDataBindAddr)
   return ds,nil
 }
 
