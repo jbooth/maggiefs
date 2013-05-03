@@ -41,8 +41,11 @@ func (rm *replicationManager) addDn(dn maggiefs.NameDataIface) error {
 }
 
 
-func newReplicationManager() *replicationManager {
-  return nil
+func newReplicationManager(replicationFactor uint32) *replicationManager {
+  return &replicationManager{
+  	replicationFactor: replicationFactor,
+  	volumes: make(map[uint32]*volume),
+  }
 }
 
 // note, doesn't actually use suggestedDN just yet

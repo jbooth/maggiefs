@@ -12,15 +12,14 @@ type DSConfig struct {
   VolumeRoots        []string // list of paths to the roots of the volumes we're exposing 
 }
 
-func ReadConfig(file string) (*DSConfig, error) {
+func (ds *DSConfig) ReadConfig(file string) error {
   f, err := os.Open(file)
   if err != nil {
-    return nil, err
+    return err
   }
-  ret := &DSConfig{}
+  defer f.Close()
   d := json.NewDecoder(f)
-  d.Decode(ret)
-  return ret, nil
+  return d.Decode(ds)
 }
 
 func (ds *DSConfig) Write(file string) error {
@@ -38,6 +37,7 @@ type NNConfig struct {
   NameBindAddr           string   // host:port of namenode
   LeaseBindAddr          string   // host:port for lease service
   NNHomeDir              string   // path to nn home on disk
+  ReplicationFactor			 uint32   // number of replicas for each block
 }
 
 
@@ -46,6 +46,7 @@ func (cfg *NNConfig) ReadConfig(file string) (error) {
   if err != nil {
     return err
   }
+  defer f.Close()f
   d := json.NewDecoder(f)
   return d.Decode(cfg)
 }

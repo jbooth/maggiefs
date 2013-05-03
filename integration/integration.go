@@ -8,6 +8,8 @@ import (
   "github.com/jbooth/maggiefs/maggiefs"
   "github.com/jbooth/maggiefs/dataserver"
   "os"
+  "fmt"
+  "net/rpc"
 )
 
 type SingleNodeCluster struct {
@@ -19,9 +21,66 @@ type SingleNodeCluster struct {
   datas maggiefs.DataService
 }
 
-func NewSingleNodeCluster(volRoots [][]string, nameHome string, bindInterface string, startPort int) (*SingleNodeCluster,error) {
-  
-  return nil,nil
+type NameLeaseServer struct {
+	leaseServer *leaseserver.LeaseServer
+	nameserver *nameserver.NameServer
+}
+
+func NewNameServer(cfg *NNConfig, format bool) (nls *NameLeaseServer, err error) {
+	nls.leaseServer,err = leaseserver.NewLeaseServer(cfg.LeaseBindAddr)
+	if err != nil {
+		return
+	}
+	leaseService,err := leaseserver.NewLeaseClient(cfg.LeaseBindAddr)
+	if err != nil {
+		return
+	}
+	nls.nameserver,err = nameserver.NewNameServer(leaseService,cfg.NameBindAddr,cfg.NNHomeDir,cfg.replicationFactor,format)
+	return
+}
+
+func NewDataServer(cfg *DSConfig) (dn *dataserver.DataServer, err error) {
+	return nil,nil
+}
+
+
+// bindIn
+func NewSingleNodeCluster(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (cl *SingleNodeCluster,err error) {
+  // start leaseserver and nameserver
+  leaseAddr := fmt.Sprintf("%s:%d",bindHost,startPort)
+  startPort++
+  cl.leaseServer,err = leaseserver.NewLeaseServer(leaseAddr)
+  if err != nil {
+  	return cl,err
+  }
+  cl.leases,err = leaseserver.NewLeaseClient(leaseAddr)
+  if err != nil {
+  	return cl,err
+  }
+  nameAddr := fmt.Sprintf("%s:%d",bindHost,startPort)
+  startPort++
+  cl.nameServer,err = nameserver.NewNameServer(cl.leases,nameAddr,nameHome,replicationFactor,format)
+  if err != nil {
+  	return cl,err
+  }
+  namesClient,err := rpc.Dial("tcp4",nameAddr)
+  if err != nil {
+  	return cl,err
+  }
+  cl.names = maggiefs.NewNameServiceClient(namesClient)
+  // start dataservers
+  cl.dataNodes = make([]*dataserver.DataServer, len(volRoots))
+  for idx,dnVolRoots := range volRoots {
+  	dataClientAddr := fmt.Sprintf("%s:%d",bindHost,startPort)
+  	startPort++
+  	nameDataAddr := fmt.Sprintf("%s:%d",bindHost,startPort)
+  	startPort++
+  	cl.dataNodes[idx],err = dataserver.NewDataServer(dnVolRoots,dataClientAddr,nameDataAddr,cl.names)
+  	if err != nil {
+  		return cl,err
+  	}
+  }
+  return cl,nil
 } 
 
 func TestCluster(numDNs int, baseDir string) (*nameserver.NameServer,[]*dataserver.DataServer,error) {
@@ -34,16 +93,13 @@ func TestCluster(numDNs int, baseDir string) (*nameserver.NameServer,[]*dataserv
   if err != nil {
     return nil,nil,err
   }
-  leaseAddr := "0.0.0.0:10100"
-  nameAddr := "0.0.0.0:10200"
-  nameServer,err := nameserver.NewNameServer(leaseAddr,nameAddr,nameBase,true)
   if err != nil {
     return nil,nil,nil
   }
   for i := 0 ; i < numDNs ; i++ {
     
   }
-  return nameServer,nil,nil
+  return nil,nil,nil
 } 
 
 

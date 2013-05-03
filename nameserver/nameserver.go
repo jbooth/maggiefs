@@ -1,7 +1,6 @@
 package nameserver
 
 import (
-	"github.com/jbooth/maggiefs/leaseserver"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"net"
 	"net/rpc"
@@ -12,20 +11,14 @@ import (
 
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
 // addresses should be a 0.0.0.0:9999 type address
-func NewNameServer(leaseServerAddr string, nameAddr string, dataDir string, format bool) (*NameServer, error) {
-	ret := &NameServer{}
-	leaseServer, err := leaseserver.NewLeaseServer(leaseServerAddr)
-	if err != nil {
-		return nil, err
-	}
-	go leaseServer.Serve()
-
-	ret.nd, err = NewNameData(dataDir)
+func NewNameServer(ls maggiefs.LeaseService, nameAddr string, dataDir string, replicationFactor uint32, format bool) (ns *NameServer, err error) {
+	ns.ls = ls
+	ns.nd, err = NewNameData(dataDir)
 	if err != nil {
 		return nil, err
 	}
 
-	ret.rm = newReplicationManager()
+	ns.rm = newReplicationManager(replicationFactor)
 	clientListenAddr, err := net.ResolveTCPAddr("tcp", nameAddr)
 	if err != nil {
 		return nil, err
@@ -34,17 +27,17 @@ func NewNameServer(leaseServerAddr string, nameAddr string, dataDir string, form
 	if err != nil {
 		return nil, err
 	}
-	nameServerServer := maggiefs.NewNameServiceService(ret)
+	nameServerServer := maggiefs.NewNameServiceService(ns)
 	server := rpc.NewServer()
 	server.Register(nameServerServer)
 	go server.Accept(clientListen)
-	return ret, nil
+	return ns, nil
 }
 
 type NameServer struct {
 	ls          maggiefs.LeaseService
-	rm          *replicationManager
 	nd          *NameData
+	rm          *replicationManager
 	listen      *net.TCPListener
 	dirTreeLock *sync.Mutex // used so all dir tree operations (link/unlink) are atomic
 }
