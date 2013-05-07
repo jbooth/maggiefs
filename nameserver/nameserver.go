@@ -1,8 +1,8 @@
 package nameserver
 
 import (
-	"github.com/jbooth/maggiefs/maggiefs"
-	"net"
+  "github.com/jbooth/maggiefs/maggiefs"
+  "github.com/jbooth/maggiefs/util"
 	"net/rpc"
 	"sync"
 	"time"
@@ -17,20 +17,7 @@ func NewNameServer(ls maggiefs.LeaseService, nameAddr string, dataDir string, re
 	if err != nil {
 		return nil, err
 	}
-
 	ns.rm = newReplicationManager(replicationFactor)
-	clientListenAddr, err := net.ResolveTCPAddr("tcp", nameAddr)
-	if err != nil {
-		return nil, err
-	}
-	clientListen, err := net.ListenTCP("tcp", clientListenAddr)
-	if err != nil {
-		return nil, err
-	}
-	nameServerServer := maggiefs.NewNameServiceService(ns)
-	server := rpc.NewServer()
-	server.Register(nameServerServer)
-	go server.Accept(clientListen)
 	return ns, nil
 }
 
@@ -38,8 +25,25 @@ type NameServer struct {
 	ls          maggiefs.LeaseService
 	nd          *NameData
 	rm          *replicationManager
-	listen      *net.TCPListener
+	listenAddr      string
 	dirTreeLock *sync.Mutex // used so all dir tree operations (link/unlink) are atomic
+	rpcServer *util.CloseableServer // created at start time, need to be closed
+}
+
+func (ns *NameServer) Start() error {
+  var err error = nil
+  ns.rpcServer,err = util.CloseableRPC(ns.listenAddr,maggiefs.NewNameServiceService(ns))
+  ns.rpcServer.Start()
+  return err
+}
+
+func (ns *NameServer) Close() {
+  ns.nd.Close()
+  ns.rpcServer.Close()
+}
+
+func (ns *NameServer) WaitClosed() {
+  ns.rpcServer.WaitClosed()
 }
 
 func (ns *NameServer) GetInode(nodeid uint64) (node *maggiefs.Inode, err error) {

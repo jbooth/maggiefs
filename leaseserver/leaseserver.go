@@ -1,7 +1,8 @@
 package leaseserver
 
 import (
-	"github.com/jbooth/maggiefs/maggiefs"
+  "github.com/jbooth/maggiefs/maggiefs"
+  "github.com/jbooth/maggiefs/util"
 	"encoding/gob"
 	"fmt"
 	"net"
@@ -96,17 +97,17 @@ func newClientConn(ls *LeaseServer, raw *net.TCPConn) (*clientConn, error) {
 }
 
 type LeaseServer struct {
-	sock           *net.TCPListener
 	req            chan queuedServerRequest
 	leasesByInode  map[uint64][]lease
 	leasesById     map[uint64]lease
 	leaseIdCounter uint64
 	clientIdCounter uint64
+	server *util.CloseableServer
 }
 
 // new lease server listening on bindAddr
 // bindAddr should be like 0.0.0.0:9999
-func NewLeaseServer(bindAddr string) (*LeaseServer, error) {
+func NewLeaseServer(bindAddr string) (*LeaseServer,error) {
 
 	laddr, err := net.ResolveTCPAddr("tcp", bindAddr)
 	if err != nil {
@@ -117,12 +118,21 @@ func NewLeaseServer(bindAddr string) (*LeaseServer, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	ret := &LeaseServer{listener, make(chan queuedServerRequest), make(map[uint64][]lease),
-		make(map[uint64]lease), 0,0}
-
-	go ret.process()
-	return ret, nil
+	ls := &LeaseServer{}
+  ls.req = make(chan queuedServerRequest)
+  ls.leasesByInode = make(map[uint64][]lease)
+  ls.leasesById = make(map[uint64]lease)
+	ls.server = util.NewCloseServer(listener,func(conn *net.TCPConn) {
+	  // instantiate conn object
+    client, err := newClientConn(ls, conn)
+    if err != nil {
+      fmt.Printf("error wrapping clientConn %s\n", err)
+    }
+    // launch goroutines to serve
+    go client.readRequests()
+    go client.sendResponses()
+	})
+  return ls,err
 }
 
 type queuedServerRequest struct {
@@ -131,25 +141,19 @@ type queuedServerRequest struct {
 	conn *clientConn
 }
 
-func (ls *LeaseServer) Serve() {
-	// dispatch process() to handle requests from connections
-	go ls.process()
-	// for new connection
-	for {
-		tcpConn, err := ls.sock.AcceptTCP()
-		if err != nil {
-			fmt.Printf("error accepting connection: %s\n", err)
-			return
-		}
-		// instantiate conn object
-		client, err := newClientConn(ls, tcpConn)
-		if err != nil {
-			fmt.Printf("error wrapping clientConn %s\n", err)
-		}
-		// launch its goroutines
-		go client.readRequests()
-		go client.sendResponses()
-	}
+func (ls *LeaseServer) Start() error {
+  go ls.process()
+  ls.server.Start()
+  return nil
+}
+
+func (ls *LeaseServer) Close() {
+  // TODO unwind pending lease requests?  or notify clients of shutdown?
+  ls.server.Close()
+}
+
+func (ls *LeaseServer) WaitClosed() {
+  ls.server.WaitClosed()
 }
 
 func (ls *LeaseServer) process() {
@@ -267,8 +271,4 @@ func (ls *LeaseServer) checkLeases(r request, c *clientConn) (response, error) {
 		return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_WAIT}, nil
 	}
 	return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_OK}, nil
-}
-
-func (ls *LeaseServer) Close() {
-
 }

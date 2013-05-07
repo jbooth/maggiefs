@@ -46,7 +46,7 @@ func (cfg *NNConfig) ReadConfig(file string) (error) {
   if err != nil {
     return err
   }
-  defer f.Close()f
+  defer f.Close()
   d := json.NewDecoder(f)
   return d.Decode(cfg)
 }
@@ -59,4 +59,9 @@ func (cfg *NNConfig) Write(file string) error {
   defer f.Close()
   err = json.NewEncoder(f).Encode(cfg)
   return err
+}
+
+type ClientConfig struct {
+  LeaseAddr string
+  NameAddr string
 }

@@ -26,6 +26,16 @@ type NameLeaseServer struct {
 	nameserver *nameserver.NameServer
 }
 
+
+
+func NewNameClient(addr string) (maggiefs.NameService,error) {
+  client, err := rpc.Dial("tcp", addr)
+  if err != nil {
+    return nil,err
+  }
+  return maggiefs.NewNameServiceClient(client),nil
+}
+
 func NewNameServer(cfg *NNConfig, format bool) (nls *NameLeaseServer, err error) {
 	nls.leaseServer,err = leaseserver.NewLeaseServer(cfg.LeaseBindAddr)
 	if err != nil {
@@ -35,12 +45,16 @@ func NewNameServer(cfg *NNConfig, format bool) (nls *NameLeaseServer, err error)
 	if err != nil {
 		return
 	}
-	nls.nameserver,err = nameserver.NewNameServer(leaseService,cfg.NameBindAddr,cfg.NNHomeDir,cfg.replicationFactor,format)
+	nls.nameserver,err = nameserver.NewNameServer(leaseService,cfg.NameBindAddr, cfg.NNHomeDir, cfg.ReplicationFactor,format)
 	return
 }
 
-func NewDataServer(cfg *DSConfig) (dn *dataserver.DataServer, err error) {
-	return nil,nil
+func NewDataServer(cfg *DSConfig) (*dataserver.DataServer, error) {
+	nameService,err := NewNameClient(cfg.NameAddr)
+	if err != nil {
+	  return nil,err
+	}
+	return dataserver.NewDataServer(cfg.VolumeRoots,cfg.DataClientBindAddr,cfg.NameDataBindAddr,nameService)
 }
 
 

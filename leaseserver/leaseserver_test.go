@@ -19,9 +19,7 @@ func startServer() {
   fmt.Println("starting lease server")
   server,err := NewLeaseServer(fmt.Sprintf("0.0.0.0:%d",LEASESERVER_PORT))
   if (err != nil) { panic(err) }
-  go func() {
-    server.Serve()
-  }()
+  server.Start()
   fmt.Println("connecting client")
   ls,err = NewLeaseClient(fmt.Sprintf("127.0.0.1:%d",LEASESERVER_PORT))
   if err != nil { panic(err) }
