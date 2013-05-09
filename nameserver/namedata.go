@@ -33,19 +33,31 @@ const dir_inodb = "inodes"
 const dir_counters = "counters"
 
 // formats a new filesystem in the given data dir
-func Format(dataDir string) error {
+func Format(dataDir string, rootUid, rootGid uint32) error {
   // wipe out previous
-  err := os.RemoveAll(dataDir + "/" + dir_inodb)
-  if err != nil { return err }
-  err = os.RemoveAll(dataDir + "/" + dir_counters)
+  err := os.RemoveAll(dataDir)
   if err != nil { return err }
   // create
+  err = os.Mkdir(dataDir, 0755)
+  if err != nil { return fmt.Errorf("issue creating namenode home dir: %s\n",err.Error()) }
+  err = os.Mkdir(dataDir + "/" + dir_inodb, 0755)
+  if err != nil { return fmt.Errorf("issue creating inodb parent dir: %s\n",err.Error()) }
+  err = os.Mkdir(dataDir + "/" + dir_counters,0755)
+  if err != nil { return fmt.Errorf("issue creating counters parent dir: %s\n",err.Error()) }
+  
   opts := levigo.NewOptions()
   defer opts.Close()
   opts.SetCreateIfMissing(true)
   
+  // create inodb
   db,err := levigo.Open(dataDir + "/" + dir_inodb, opts)
   if err != nil { return err }
+  // add root node
+  ino := maggiefs.NewInode(1, maggiefs.FTYPE_DIR, 0777, rootUid, rootGid)
+  inoBytes,_ := ino.GobEncode()
+  rootNodeId := make([]byte,8)
+  binary.LittleEndian.PutUint64(rootNodeId,1)
+  db.Put(WriteOpts, rootNodeId,inoBytes)
   db.Close()
   db,err = levigo.Open(dataDir + "/" + dir_counters, opts)
   if err != nil { return err }
@@ -73,8 +85,9 @@ func NewNameData(dataDir string) (*NameData, error) {
   return ret,nil
 }
 
-func (nd *NameData) Close() {
+func (nd *NameData) Close() error {
   nd.inodb.Close()
+	return nil
 }
 
 func (nd *NameData) GetInode(inodeid uint64) (*maggiefs.Inode,error) {

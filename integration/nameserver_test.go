@@ -8,6 +8,8 @@ import (
   "github.com/jbooth/maggiefs/maggiefs"
 	"testing"
 	"fmt"
+	"reflect"
+	"os"
 )
 
 var (
@@ -27,6 +29,7 @@ func initNS() {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("created nameserver %+v\n",ns)
 	ns.Start()
 	fmt.Printf("getting name client for addr %s\n",cfg.NameBindAddr)
 	client,err = NewNameClient(cfg.NameBindAddr)
@@ -47,8 +50,18 @@ func teardownNS() {
 func TestAddInode(t *testing.T) {
 	fmt.Println("setting up")
 	initNS()
-	fmt.Println("tearing down")
-	teardownNS()
+	defer teardownNS()
+	ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
+	id,err := client.AddInode(ino)
+	if err != nil {
+		panic(err)
+	}
+	ino.Inodeid = id
+	
+	ino2,err := client.GetInode(id)
+	if ! reflect.DeepEqual(ino,ino2) {
+		t.Fatal(fmt.Errorf("Error, inodes not equal : %+v : %+v\n",ino, ino2))
+	}
 }
 
 

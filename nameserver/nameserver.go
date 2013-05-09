@@ -7,18 +7,28 @@ import (
 	"sync"
 	"time"
 	"fmt"
+	"os"
 )
 
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
 // addresses should be a 0.0.0.0:9999 type address
-func NewNameServer(ls maggiefs.LeaseService, nameAddr string, dataDir string, replicationFactor uint32, format bool) (ns *NameServer, err error) {
+func NewNameServer(ls maggiefs.LeaseService, nameAddr string, dataDir string, replicationFactor uint32, format bool) (*NameServer, error) {
+	ns := NameServer{}
+	var err error = nil
 	ns.ls = ls
+	ns.listenAddr = nameAddr
+	if format {
+		err = Format(dataDir, uint32(os.Getuid()), uint32(os.Getgid()))
+		if err != nil {
+			return nil,err
+		}
+	}
 	ns.nd, err = NewNameData(dataDir)
 	if err != nil {
 		return nil, err
 	}
 	ns.rm = newReplicationManager(replicationFactor)
-	return ns, nil
+	return &ns, nil
 }
 
 type NameServer struct {
@@ -32,18 +42,24 @@ type NameServer struct {
 
 func (ns *NameServer) Start() error {
   var err error = nil
-  ns.rpcServer,err = util.CloseableRPC(ns.listenAddr,maggiefs.NewNameServiceService(ns))
+  fmt.Printf("%+v\n",ns)
+  ns.rpcServer,err = util.CloseableRPC(ns.listenAddr,maggiefs.NewNameServiceService(ns), "NameService")
   ns.rpcServer.Start()
   return err
 }
 
-func (ns *NameServer) Close() {
-  ns.nd.Close()
-  ns.rpcServer.Close()
+func (ns *NameServer) Close() error {
+  var retError error = nil
+  err := ns.nd.Close() 
+  if err != nil { retError = err }
+  err = ns.rpcServer.Close()
+  if err != nil { retError = err }
+  return retError
 }
 
-func (ns *NameServer) WaitClosed() {
+func (ns *NameServer) WaitClosed() error {
   ns.rpcServer.WaitClosed()
+  return nil
 }
 
 func (ns *NameServer) GetInode(nodeid uint64) (node *maggiefs.Inode, err error) {

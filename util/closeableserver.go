@@ -10,7 +10,7 @@ import (
 )
 
 // wraps the provided impl for gob rpc
-func CloseableRPC(listenAddr string, impl interface{}) (*CloseableServer, error) {
+func CloseableRPC(listenAddr string, impl interface{}, name string) (*CloseableServer, error) {
 	listenTCPAddr, err := net.ResolveTCPAddr("tcp", listenAddr)
 	if err != nil {
 		return nil, err
@@ -19,9 +19,11 @@ func CloseableRPC(listenAddr string, impl interface{}) (*CloseableServer, error)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("listening on %s\n",listenAddr)
 	rpcServer := rpc.NewServer()
-	rpcServer.Register(impl)
+	rpcServer.RegisterName(name,impl)
 	onAccept := func(conn *net.TCPConn) {
+		fmt.Println("accepted conn!")
 		buf := bufio.NewWriter(conn)
 		codec := &gobServerCodec{conn, gob.NewDecoder(conn), gob.NewEncoder(buf), buf}
 		go rpcServer.ServeCodec(codec)
@@ -51,11 +53,13 @@ func (r *CloseableServer) Start() {
 // blocking accept loop
 func (r *CloseableServer) Accept() {
 	for {
+		fmt.Println("accepting")
 		conn, err := r.listen.AcceptTCP()
 		if err != nil {
 			// stop accepting, shut down
-			fmt.Println(err)
+			fmt.Printf("Error accepting, stopping acceptor: %s\n",err.Error())
 			r.listen.Close()
+			r.done <- true
 			return
 		}
 		file, err := conn.File()
@@ -69,6 +73,7 @@ func (r *CloseableServer) Accept() {
 				// close before shutting down
 				r.listen.Close()
 				conn.Close()
+				r.done <- true
 				return
 			} else {
 				// store reference and serve requests
@@ -81,14 +86,14 @@ func (r *CloseableServer) Accept() {
 }
 
 
-func (r *CloseableServer) Close() {
+func (r *CloseableServer) Close() error {
 	r.l.Lock()
 	defer r.l.Unlock()
-	r.listen.Close()
+	err := r.listen.Close()
 	for _, conn := range r.conns {
 		conn.Close()
 	}
-	r.done <- true
+	return err
 }
 
 func (r *CloseableServer) WaitClosed() error {
@@ -104,10 +109,15 @@ type gobServerCodec struct {
 }
 
 func (c *gobServerCodec) ReadRequestHeader(r *rpc.Request) error {
-	return c.dec.Decode(r)
+	err := c.dec.Decode(r)	
+	if err != nil { fmt.Println(err.Error()) }
+	return err
 }
+
 func (c *gobServerCodec) ReadRequestBody(body interface{}) error {
-	return c.dec.Decode(body)
+	err := c.dec.Decode(body)
+	if err != nil { fmt.Println(err.Error()) }
+	return err
 }
 func (c *gobServerCodec) WriteResponse(r *rpc.Response, body interface{}) (err error) {
 	if err = c.enc.Encode(r); err != nil {

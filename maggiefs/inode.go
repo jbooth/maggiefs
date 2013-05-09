@@ -4,6 +4,7 @@ import (
   "syscall"
   "fmt"
   "encoding/binary"
+  "time"
 )
 
 
@@ -30,6 +31,27 @@ type Inode struct {
   Blocks      []Block           // can be 0 blocks in case of directory,symlink or empty file
   Children    map[string]Dentry // empty unless we are a dir, maps name to inode id 
   Xattr       map[string][]byte
+}
+
+
+func NewInode(id uint64, ftype, mode, uid, gid uint32) *Inode {
+	currTime := time.Now().Unix()
+	return &Inode{
+		id,
+		0,
+		ftype,
+		0,
+		mode,
+		currTime,
+		currTime,
+		0,
+		0,
+		0,
+		"",
+		make([]Block, 0, 0),
+		make(map[string]Dentry),
+		make(map[string][]byte),
+	}
 }
 
 func (i *Inode) BinSize() int {
