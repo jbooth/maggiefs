@@ -28,10 +28,12 @@ func newRawClient(addr string) (*rawclient, error) {
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("connecting to %s\n",addr)
 	c, err := net.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("connected")
 	c.SetNoDelay(true)
 	c.SetKeepAlive(true)
 	idBuff := make([]byte,8,8)

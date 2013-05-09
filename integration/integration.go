@@ -26,27 +26,59 @@ type NameLeaseServer struct {
 	nameserver *nameserver.NameServer
 }
 
+// no-op, we are started at construction time
+func (n *NameLeaseServer) Start() {
+}
+
+func (n *NameLeaseServer) Close() error {
+	retErr := n.leaseServer.Close()
+	err := n.nameserver.Close()
+	if err != nil {
+		return err
+	}
+	return retErr
+}
+
+func (n *NameLeaseServer) WaitClosed() error {
+	retErr := n.leaseServer.WaitClosed()
+	err := n.nameserver.WaitClosed()
+	if err != nil {
+		return err
+	}
+	return retErr
+}
+
+
 
 
 func NewNameClient(addr string) (maggiefs.NameService,error) {
+	fmt.Printf("nameclient dialing %d for rpc\n",addr)
   client, err := rpc.Dial("tcp", addr)
   if err != nil {
-    return nil,err
+    return nil,fmt.Errorf("Error dialing nameclient tcp to %s : %s",addr,err.Error())
   }
   return maggiefs.NewNameServiceClient(client),nil
 }
 
-func NewNameServer(cfg *NNConfig, format bool) (nls *NameLeaseServer, err error) {
+// returns a started nameserver -- we must start lease server in order to boot up nameserver, so
+func NewNameServer(cfg *NNConfig, format bool) (*NameLeaseServer, error) {
+	nls := &NameLeaseServer{}
+	var err error = nil
+	fmt.Println("creating lease server")
 	nls.leaseServer,err = leaseserver.NewLeaseServer(cfg.LeaseBindAddr)
 	if err != nil {
-		return
+		return nls,err
 	}
+	nls.leaseServer.Start()
+	fmt.Println("creating lease client")
 	leaseService,err := leaseserver.NewLeaseClient(cfg.LeaseBindAddr)
 	if err != nil {
-		return
+		return nls,err
 	}
+	fmt.Println("creating name server")
 	nls.nameserver,err = nameserver.NewNameServer(leaseService,cfg.NameBindAddr, cfg.NNHomeDir, cfg.ReplicationFactor,format)
-	return
+	nls.nameserver.Start()
+	return nls,err
 }
 
 func NewDataServer(cfg *DSConfig) (*dataserver.DataServer, error) {

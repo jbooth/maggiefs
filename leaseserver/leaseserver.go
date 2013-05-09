@@ -90,9 +90,11 @@ func newClientConn(ls *LeaseServer, raw *net.TCPConn) (*clientConn, error) {
 		req:  ls.req,
 		resp: make(chan response, 10)}
 	// send client id
+	fmt.Printf("sending id %d\n",ret.id)
 	idBuff := make([]byte,8,8)
 	binary.LittleEndian.PutUint64(idBuff,ret.id)
 	ret.c.Write(idBuff)
+	fmt.Println("sent")
 	return ret, nil
 }
 
@@ -125,10 +127,12 @@ func NewLeaseServer(bindAddr string) (*LeaseServer,error) {
 	ls.server = util.NewCloseServer(listener,func(conn *net.TCPConn) {
 	  // instantiate conn object
     client, err := newClientConn(ls, conn)
+    fmt.Println("got new client")
     if err != nil {
       fmt.Printf("error wrapping clientConn %s\n", err)
     }
     // launch goroutines to serve
+    
     go client.readRequests()
     go client.sendResponses()
 	})
@@ -142,18 +146,19 @@ type queuedServerRequest struct {
 }
 
 func (ls *LeaseServer) Start() error {
+	fmt.Println("lease server starting")
   go ls.process()
   ls.server.Start()
   return nil
 }
 
-func (ls *LeaseServer) Close() {
+func (ls *LeaseServer) Close() error {
   // TODO unwind pending lease requests?  or notify clients of shutdown?
-  ls.server.Close()
+  return ls.server.Close()
 }
 
-func (ls *LeaseServer) WaitClosed() {
-  ls.server.WaitClosed()
+func (ls *LeaseServer) WaitClosed() error {
+  return ls.server.WaitClosed()
 }
 
 func (ls *LeaseServer) process() {
