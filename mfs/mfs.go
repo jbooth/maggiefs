@@ -4,10 +4,10 @@ import (
   "fmt"
   "os"
   "flag"
-  "github.com/jbooth/maggiefs/maggiefs"
-  "github.com/jbooth/maggiefs/integration"
-  "github.com/jbooth/maggiefs/client"
-  "github.com/hanwen/go-fuse/fuse"
+//  "github.com/jbooth/maggiefs/maggiefs"
+//  "github.com/jbooth/maggiefs/integration"
+//  "github.com/jbooth/maggiefs/client"
+//  "github.com/hanwen/go-fuse/fuse"
 )
 
 // usage:
@@ -46,16 +46,16 @@ func main() {
     
   }
   
-  fmt.Println(baseDir)
-  leases := maggiefs.NewLocalLeases()
-  datas := maggiefs.NewLocalDatas(baseDir)
-  names := maggiefs.NewMemNames(datas)
-  mfs := client.NewMaggieFuse(leases,names,datas)
-  fmt.Println(mfs)
-  mountState := fuse.NewMountState(mfs)
-  mountState.Debug = true
-  err := mountState.Mount("/tmp/maggiefs",nil)
-  if (err != nil) { fmt.Println(err) }
-  fmt.Println("Mounted")
-  mountState.Loop()
+//  fmt.Println(baseDir)
+//  leases := maggiefs.NewLocalLeases()
+//  datas := maggiefs.NewLocalDatas(baseDir)
+//  names := maggiefs.NewMemNames(datas)
+//  mfs := client.NewMaggieFuse(leases,names,datas)
+//  fmt.Println(mfs)
+//  mountState := fuse.NewMountState(mfs)
+//  mountState.Debug = true
+//  err := mountState.Mount("/tmp/maggiefs",nil)
+//  if (err != nil) { fmt.Println(err) }
+//  fmt.Println("Mounted")
+//  mountState.Loop()
 }

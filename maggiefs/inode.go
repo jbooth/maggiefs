@@ -19,8 +19,8 @@ const (
 
 func init() {
 	ino := Inode{}
-	gob.RegisterName("*maggiefs.Inode",&ino)
-	gob.RegisterName("maggiefs.Block",Block{})
+	gob.RegisterName("Inode",&ino)
+	gob.RegisterName("Block",Block{})
 }
 type Inode struct {
   Inodeid     uint64
@@ -90,13 +90,13 @@ func (i *Inode) BinSize() int {
 	return size
 }
 
-func (i *Inode) GobEncode() ([]byte,error) {
-	size := i.BinSize()
-	fmt.Printf("size should be %d\n",size)
-	bytes := make([]byte,size,size)
-  i.ToBytes(bytes)
-  return bytes,nil
-}
+//func (i *Inode) GobEncode() ([]byte,error) {
+//	size := i.BinSize()
+//	fmt.Printf("size should be %d\n",size)
+//	bytes := make([]byte,size,size)
+//  i.ToBytes(bytes)
+//  return bytes,nil
+//}
 
 // does not bounds check make sure you allocate enough space using BinSize()
 // returns num written
@@ -177,10 +177,10 @@ func (i *Inode) ToBytes(bytes []byte) int {
   return currOff
 }
 
-func (i *Inode) GobDecode(bytes []byte) {
-	i.FromBytes(bytes)
-	return
-}
+//func (i *Inode) GobDecode(bytes []byte) {
+//	i.FromBytes(bytes)
+//	return
+//}
 
 // reads from the bytes, returns num read
 // TODO this keeps the underlying buffer around for a while..  might actually be a benefit?
@@ -265,6 +265,8 @@ func (i *Inode) String() string {
     i.Children)
 }
 
+
+
 // all 0777 for now
 func (i *Inode) FullMode() uint32 {
   switch {
@@ -307,12 +309,12 @@ func (b *Block) BinSize() int {
 	return size
 }
 
-func (b *Block) GobEncode() ([]byte,error) {
-	size := b.BinSize()
-	bytes := make([]byte,size,size)
-	b.ToBytes(bytes)
-	return bytes,nil
-}
+//func (b *Block) GobEncode() ([]byte,error) {
+//	size := b.BinSize()
+//	bytes := make([]byte,size,size)
+//	b.ToBytes(bytes)
+//	return bytes,nil
+//}
 
 // writes to the specified byte slice -- note that we don't bounds check here so make sure you ensure the correct size using BinSize()
 // returns num bytes written
@@ -339,10 +341,10 @@ func (b *Block) ToBytes(bytes []byte) int {
 	return currOff
 }
 
-func (b *Block) GobDecode(bytes []byte) {
-	b.FromBytes(bytes)
-	return
-}
+//func (b *Block) GobDecode(bytes []byte) {
+//	b.FromBytes(bytes)
+//	return
+//}
 
 // returns num bytes read
 func (b *Block) FromBytes(bytes []byte) int {

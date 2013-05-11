@@ -59,8 +59,8 @@ func TestAddInode(t *testing.T) {
 	ino.Inodeid = id
 	
 	ino2,err := client.GetInode(id)
-	if ! reflect.DeepEqual(ino,ino2) {
-		t.Fatal(fmt.Errorf("Error, inodes not equal : %+v : %+v\n",ino, ino2))
+	if ! reflect.DeepEqual(*ino,*ino2) {
+		t.Fatal(fmt.Errorf("Error, inodes not equal : %+v : %+v\n",*ino, *ino2))
 	}
 }
 

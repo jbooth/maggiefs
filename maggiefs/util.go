@@ -1,7 +1,6 @@
 package maggiefs
 
 import (
-  "sync/atomic"
 )
 
 // deep copies an inode
@@ -33,14 +32,5 @@ func CopyInode(i *Inode) *Inode {
     ret.Xattr[n] = newV
   }
   return &ret
-}
-
-// atomically adds incr to val, returns new val
-func IncrementAndGet(val *uint64, incr uint64) uint64 {
-  currVal := atomic.LoadUint64(val)
-  for ; !atomic.CompareAndSwapUint64(val,currVal,currVal+incr) ; {
-    currVal = atomic.LoadUint64(val)
-  }
-  return currVal + incr
 }
 

@@ -11,7 +11,6 @@ import (
   "os"
   "fmt"
   "net/rpc"
-  "encoding/gob"
 )
 
 type SingleNodeCluster struct {
@@ -55,7 +54,6 @@ func (n *NameLeaseServer) WaitClosed() error {
 
 func NewNameClient(addr string) (maggiefs.NameService,error) {
 	fmt.Printf("nameclient dialing %d for rpc\n",addr)
-	gob.Register(&maggiefs.Inode{})
   client, err := rpc.Dial("tcp", addr)
   if err != nil {
     return nil,fmt.Errorf("Error dialing nameclient tcp to %s : %s",addr,err.Error())
@@ -79,7 +77,6 @@ func NewNameServer(cfg *NNConfig, format bool) (*NameLeaseServer, error) {
 		return nls,err
 	}
 	fmt.Println("creating name server")
-	gob.Register(&maggiefs.Inode{})
 	nls.nameserver,err = nameserver.NewNameServer(leaseService,cfg.NameBindAddr, cfg.NNHomeDir, cfg.ReplicationFactor,format)
 	if err != nil {
 		fmt.Printf("Error creating nameserver: %s\n\n Nameserver config: %+v\n",err.Error(),cfg)

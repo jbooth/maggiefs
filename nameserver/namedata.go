@@ -54,7 +54,9 @@ func Format(dataDir string, rootUid, rootGid uint32) error {
   if err != nil { return err }
   // add root node
   ino := maggiefs.NewInode(1, maggiefs.FTYPE_DIR, 0777, rootUid, rootGid)
-  inoBytes,_ := ino.GobEncode()
+  binSize := ino.BinSize()
+  inoBytes := make([]byte,binSize)
+  ino.ToBytes(inoBytes)
   rootNodeId := make([]byte,8)
   binary.LittleEndian.PutUint64(rootNodeId,1)
   db.Put(WriteOpts, rootNodeId,inoBytes)
@@ -80,9 +82,9 @@ func NewNameData(dataDir string) (*NameData, error) {
   for i := uint64(0) ; i < STRIPE_SIZE ; i++ {
     ret.inodeStripeLock[i] = &sync.Mutex{}
   }
-  // gotta set up blockid counter
-  //ret.blockIdCounter = highestKey(ret.allBlocks)
-  return ret,nil
+  ret.counterLock = &sync.Mutex{}
+  ret.counterdb,err = levigo.Open(dataDir + "/" + dir_counters,opts)
+  return ret,err
 }
 
 func (nd *NameData) Close() error {
@@ -107,7 +109,10 @@ func (nd *NameData) SetInode(i *maggiefs.Inode) (err error) {
   key := make([]byte,8)
   binary.LittleEndian.PutUint64(key,i.Inodeid)
   // do the write and send OK
-  b,err := i.GobEncode()
+  binsize := i.BinSize()
+  b := make([]byte,binsize)
+  i.ToBytes(b)
+  
   err = nd.inodb.Put(WriteOpts,key,b)
   return err
 }
@@ -171,6 +176,7 @@ func (nd *NameData) GetIncrCounter(counterName string, incr uint64) (uint64,erro
   nd.counterLock.Lock()
   defer nd.counterLock.Unlock()
   key := []byte(counterName)
+  fmt.Printf("%s %+v\n",key,key)
   valBytes,err := nd.counterdb.Get(ReadOpts,key)
   if err != nil {
     return 0,err

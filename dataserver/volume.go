@@ -158,7 +158,9 @@ func (v *volume) AddBlock(blk maggiefs.Block) error {
 	// add to blockmeta db
 	key := make([]byte, 8)
 	binary.LittleEndian.PutUint64(key, blk.Id)
-	val, _ := blk.GobEncode()
+	binSize := blk.BinSize()
+	val := make([]byte,binSize)
+	blk.ToBytes(val)
 	err = v.blockData.Put(writeOpts, key, val)
 	return err
 }

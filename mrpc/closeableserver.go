@@ -32,6 +32,15 @@ func CloseableRPC(listenAddr string, impl interface{}, name string) (*CloseableS
 	return ret, nil
 } 
 
+type Service interface {
+	// asynchronously starts service, does not return until service ready to respond 
+	Start() error 
+	// requests stop
+	Close() error
+	// waits till actually stopped
+	WaitClosed() error
+}
+
 type CloseableServer struct {
 	conns       map[int]*net.TCPConn
 	listen      *net.TCPListener
@@ -46,8 +55,9 @@ func NewCloseServer(listen *net.TCPListener, onAccept func(*net.TCPConn)) *Close
 }
 
 // spins off accept loop
-func (r *CloseableServer) Start() {
+func (r *CloseableServer) Start() error {
 	go r.Accept()
+	return nil
 }
 
 // blocking accept loop

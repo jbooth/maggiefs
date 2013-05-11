@@ -6,6 +6,7 @@ import (
 	"net/rpc"
   "github.com/jbooth/maggiefs/maggiefs"
   "encoding/gob"
+  "fmt"
 )
 
 type NameServiceService struct {
@@ -46,7 +47,8 @@ func (s *NameServiceService) StatFs(request *NameServiceStatFsRequest, response 
 }
 
 func init() {
-	gob.Register(&NameServiceAddInodeRequest{})
+	fmt.Println("nsrpc init")
+	gob.RegisterName("NameServiceAddInodeRequest", &NameServiceAddInodeRequest{})
 }
 
 type NameServiceAddInodeRequest struct {
