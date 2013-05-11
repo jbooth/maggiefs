@@ -1,12 +1,12 @@
 package leaseserver
 
 import (
-  "github.com/jbooth/maggiefs/maggiefs"
   "github.com/jbooth/maggiefs/mrpc"
 	"encoding/gob"
 	"fmt"
 	"net"
 	"encoding/binary"
+	"sync/atomic"
 )
 
 // maps
@@ -83,7 +83,7 @@ func newClientConn(ls *LeaseServer, raw *net.TCPConn) (*clientConn, error) {
 		return nil, err
 	}
 	ret := &clientConn{
-	  id: maggiefs.IncrementAndGet(&ls.clientIdCounter,1),
+	  id: incrementAndGet(&ls.clientIdCounter,1),
 		c:    raw,
 		d:    gob.NewDecoder(raw),
 		e:    gob.NewEncoder(raw),
@@ -276,4 +276,13 @@ func (ls *LeaseServer) checkLeases(r request, c *clientConn) (response, error) {
 		return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_WAIT}, nil
 	}
 	return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_OK}, nil
+}
+
+// atomically adds incr to val, returns new val
+func incrementAndGet(val *uint64, incr uint64) uint64 {
+  currVal := atomic.LoadUint64(val)
+  for ; !atomic.CompareAndSwapUint64(val,currVal,currVal+incr) ; {
+    currVal = atomic.LoadUint64(val)
+  }
+  return currVal + incr
 }

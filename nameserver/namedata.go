@@ -53,7 +53,7 @@ func Format(dataDir string, rootUid, rootGid uint32) error {
   db,err := levigo.Open(dataDir + "/" + dir_inodb, opts)
   if err != nil { return err }
   // add root node
-  ino := maggiefs.NewInode(1, maggiefs.FTYPE_DIR, 0777, rootUid, rootGid)
+  ino := maggiefs.NewInode(1, maggiefs.FTYPE_DIR, 0755, rootUid, rootGid)
   binSize := ino.BinSize()
   inoBytes := make([]byte,binSize)
   ino.ToBytes(inoBytes)
@@ -62,6 +62,12 @@ func Format(dataDir string, rootUid, rootGid uint32) error {
   db.Put(WriteOpts, rootNodeId,inoBytes)
   db.Close()
   db,err = levigo.Open(dataDir + "/" + dir_counters, opts)
+  if err != nil { return err }
+  // put 1 for inode counter so other nodes are higher
+  key := []byte(COUNTER_INODE)
+  val := make([]byte,8)
+  binary.LittleEndian.PutUint64(val,1)
+  err = db.Put(WriteOpts,key,val)
   if err != nil { return err }
   db.Close()
   
@@ -89,6 +95,7 @@ func NewNameData(dataDir string) (*NameData, error) {
 
 func (nd *NameData) Close() error {
   nd.inodb.Close()
+  nd.counterdb.Close()
 	return nil
 }
 
@@ -140,9 +147,18 @@ func (nd *NameData) Mutate(inodeid uint64, f func(i *maggiefs.Inode) (error)) (*
   defer nd.inodeStripeLock[inodeid & STRIPE_SIZE].Unlock()
   i,err := nd.GetInode(inodeid)
   if err != nil { return nil,err }
+  fmt.Printf("Inode before mutate: %+v\n",i)
   err = f(i)
   if err != nil { return nil,err }
-  err = nd.SetInode(i)
+  fmt.Printf("Inode after mutating: %+v\n",i)
+	key := make([]byte,8)
+  binary.LittleEndian.PutUint64(key,i.Inodeid)
+  // do the write and send OK
+  binsize := i.BinSize()
+  b := make([]byte,binsize)
+  i.ToBytes(b)
+  
+  err = nd.inodb.Put(WriteOpts,key,b)
   return i,err
 }
 

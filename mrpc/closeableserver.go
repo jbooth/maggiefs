@@ -72,6 +72,7 @@ func (r *CloseableServer) Accept() {
 			r.done <- true
 			return
 		}
+		conn.SetNoDelay(true)
 		file, err := conn.File()
 		if err != nil {
 			// throw out connection

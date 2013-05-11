@@ -280,7 +280,46 @@ func (i *Inode) FullMode() uint32 {
   return syscall.S_IFREG | 0777
 }
 
-
+func (i *Inode) Equals(other *Inode) bool {
+	if other == nil { 
+		return false
+	}
+	eq := (
+	  i.Inodeid == other.Inodeid && i.Generation == other.Generation &&  
+	  i.Ftype == other.Ftype && i.Mode == other.Mode && i.Ctime == other.Ctime && 
+	  i.Mtime == other.Mtime && i.Nlink == other.Nlink && i.Uid == other.Uid && i.Gid == other.Gid && i.Symlinkdest == other.Symlinkdest)
+	if ! eq { return false }
+	if len(i.Blocks) != len(other.Blocks) {
+		return false
+	}
+	for idx,b := range(i.Blocks) {
+		if b.Id != other.Blocks[idx].Id {
+			return false
+		}
+	}
+	for name,dentry := range(i.Children) {
+		otherDentry,ok := other.Children[name]
+		if !ok || dentry.Inodeid != otherDentry.Inodeid {
+			return false
+		}
+	}
+	return true
+}
+//  Inodeid     uint64
+//  Generation  uint64
+//  Ftype       uint32
+//  Length      uint64
+//  Mode        uint32
+//  Mtime       int64  // changed on data change - can be changed by user with touch
+//  Ctime       int64  // changed on file attr change or date -- owned by kernel
+//  Nlink       uint32 // number of paths linked to this inode
+//  Uid         uint32
+//  Gid         uint32
+//  Symlinkdest string            // only populated for symlinks, nil or "" otherwise
+//  Blocks      []Block           // can be 0 blocks in case of directory,symlink or empty file
+//  Children    map[string]Dentry // empty unless we are a dir, maps name to inode id 
+//  Xattr       map[string][]byte
+//}
 type Dentry struct {
   Inodeid     uint64
   CreatedTime int64 // time this link was created.  used to return consistent ordering in ReadDir.
