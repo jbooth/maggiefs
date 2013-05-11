@@ -123,7 +123,7 @@ func getVolId(volRoot string) (uint32, error) {
 
 // represents a volume
 // each volume has a root path, with a file VOLID containing the string representation of our volume id,
-// and then the directories 'meta' and 'blocks' which contain, respectively, a levelDB of block metadata
+// and then the directories 'meta' and 'blocks' which contain, respectively, a levelDB of block metadata 
 // and the physical blocks
 type volume struct {
 	id        uint32
@@ -147,7 +147,7 @@ func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
 	return stat, nil
 }
 
-func (v *volume) AddBlock(blk ino.Block) error {
+func (v *volume) AddBlock(blk maggiefs.Block) error {
 	// TODO should blow up here if blk already exists
 	// create file representing block
 	f, err := os.Create(v.resolvePath(blk.Id))
@@ -163,7 +163,7 @@ func (v *volume) AddBlock(blk ino.Block) error {
 	return err
 }
 
-func (v *volume) getBlock(id uint64) (blk ino.Block, err error) {
+func (v *volume) getBlock(id uint64) (blk maggiefs.Block, err error) {
 	key := make([]byte, 8)
 	binary.LittleEndian.PutUint64(key, id)
 	val, err := v.blockData.Get(readOpts, key)
@@ -187,19 +187,19 @@ func (v *volume) RmBlock(id uint64) error {
 	return err
 }
 
-func (v *volume) TruncBlock(blk ino.Block, newSize uint32) error {
+func (v *volume) TruncBlock(blk maggiefs.Block, newSize uint32) error {
 	return v.withFile(blk.Id, func(f *os.File) error {
 		return f.Truncate(int64(newSize))
 	})
 }
 
-func (v *volume) BlockReport() ([]ino.Block, error) {
-	ret := make([]ino.Block, 0, 0)
+func (v *volume) BlockReport() ([]maggiefs.Block, error) {
+	ret := make([]maggiefs.Block, 0, 0)
 	it := v.blockData.NewIterator(readOpts)
 	defer it.Close()
 	it.SeekToFirst()
 	for it = it; it.Valid(); it.Next() {
-		blk := ino.Block{}
+		blk := maggiefs.Block{}
 		blk.FromBytes(it.Value())
 		ret = append(ret, blk)
 	}
@@ -280,8 +280,8 @@ func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
 }
 
 func (v *volume) serveWrite(client *net.TCPConn, req RequestHeader, datas DataClient) error {
-	resp := ResponseHeader{STAT_OK}
-
+  resp := ResponseHeader{STAT_OK}
+  
 	// should we check block.Version here?  skipping for now
 	err := v.withFile(req.Blk.Id, func(file *os.File) error {
 		// remove ourself from pipeline remainder
@@ -322,25 +322,25 @@ func (v *volume) serveWrite(client *net.TCPConn, req RequestHeader, datas DataCl
 		return nil
 	})
 	// send response
-	resp.WriteTo(client)
+  resp.WriteTo(client)
 	return err
 }
 
 func checkResponse(c *net.TCPConn) error {
-	resp := ResponseHeader{}
-	resp.ReadFrom(c)
-	if resp.Stat == STAT_OK {
-		return nil
-	}
-	return fmt.Errorf("Response stat not ok : %d", resp.Stat)
-
+  resp := ResponseHeader{}
+  resp.ReadFrom(c)
+  if resp.Stat == STAT_OK {
+    return nil
+  } 
+  return fmt.Errorf("Response stat not ok : %d",resp.Stat)
+  
 }
 
 func (v *volume) pipelineWrite(incoming *net.Conn, outgoing *net.Conn, buff pipe, file *os.File) error {
 
 	// send headers if so
 
-	// splice from sock
+	// splice from sock			
 
 	// tee if necessary
 

@@ -5,6 +5,7 @@ import (
 	"reflect"
 )
 
+
 type VolDnMap map[int32]*net.Addr
 
 type DataNodeInfo struct {
@@ -31,7 +32,7 @@ type FsStat struct {
 
 type DataNodeStat struct {
 	DataNodeInfo
-	Volumes []VolumeStat
+	Volumes            []VolumeStat
 }
 
 func (dn DataNodeStat) Size() uint64 {
@@ -60,7 +61,7 @@ func (dn DataNodeStat) Free() uint64 {
 
 type VolumeStat struct {
 	VolumeInfo
-	Size uint64 // total bytes
-	Used uint64 // bytes used
-	Free uint64 // bytes free
+	Size      uint64 // total bytes
+	Used      uint64 // bytes used
+	Free      uint64 // bytes free
 }

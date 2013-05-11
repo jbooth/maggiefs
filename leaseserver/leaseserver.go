@@ -1,12 +1,12 @@
 package leaseserver
 
 import (
-	"encoding/binary"
+  "github.com/jbooth/maggiefs/maggiefs"
+  "github.com/jbooth/maggiefs/util"
 	"encoding/gob"
 	"fmt"
-	"github.com/jbooth/maggiefs/maggiefs"
-	"github.com/jbooth/maggiefs/util"
 	"net"
+	"encoding/binary"
 )
 
 // maps
@@ -36,7 +36,7 @@ type lease struct {
 }
 
 type clientConn struct {
-	id     uint64 // unique id for this client
+	id 		 uint64                   // unique id for this client
 	c      *net.TCPConn
 	d      *gob.Decoder
 	e      *gob.Encoder
@@ -46,7 +46,7 @@ type clientConn struct {
 }
 
 func (c *clientConn) String() string {
-	return fmt.Sprintf("%+v", c)
+	return fmt.Sprintf("%+v",c)
 }
 
 func (c *clientConn) readRequests() {
@@ -83,33 +83,33 @@ func newClientConn(ls *LeaseServer, raw *net.TCPConn) (*clientConn, error) {
 		return nil, err
 	}
 	ret := &clientConn{
-		id:   maggiefs.IncrementAndGet(&ls.clientIdCounter, 1),
+	  id: maggiefs.IncrementAndGet(&ls.clientIdCounter,1),
 		c:    raw,
 		d:    gob.NewDecoder(raw),
 		e:    gob.NewEncoder(raw),
 		req:  ls.req,
 		resp: make(chan response, 10)}
 	// send client id
-	fmt.Printf("sending id %d\n", ret.id)
-	idBuff := make([]byte, 8, 8)
-	binary.LittleEndian.PutUint64(idBuff, ret.id)
+	fmt.Printf("sending id %d\n",ret.id)
+	idBuff := make([]byte,8,8)
+	binary.LittleEndian.PutUint64(idBuff,ret.id)
 	ret.c.Write(idBuff)
 	fmt.Println("sent")
 	return ret, nil
 }
 
 type LeaseServer struct {
-	req             chan queuedServerRequest
-	leasesByInode   map[uint64][]lease
-	leasesById      map[uint64]lease
-	leaseIdCounter  uint64
+	req            chan queuedServerRequest
+	leasesByInode  map[uint64][]lease
+	leasesById     map[uint64]lease
+	leaseIdCounter uint64
 	clientIdCounter uint64
-	server          *util.CloseableServer
+	server *util.CloseableServer
 }
 
 // new lease server listening on bindAddr
 // bindAddr should be like 0.0.0.0:9999
-func NewLeaseServer(bindAddr string) (*LeaseServer, error) {
+func NewLeaseServer(bindAddr string) (*LeaseServer,error) {
 
 	laddr, err := net.ResolveTCPAddr("tcp", bindAddr)
 	if err != nil {
@@ -121,22 +121,22 @@ func NewLeaseServer(bindAddr string) (*LeaseServer, error) {
 		return nil, err
 	}
 	ls := &LeaseServer{}
-	ls.req = make(chan queuedServerRequest)
-	ls.leasesByInode = make(map[uint64][]lease)
-	ls.leasesById = make(map[uint64]lease)
-	ls.server = util.NewCloseServer(listener, func(conn *net.TCPConn) {
-		// instantiate conn object
-		client, err := newClientConn(ls, conn)
-		fmt.Println("got new client")
-		if err != nil {
-			fmt.Printf("error wrapping clientConn %s\n", err)
-		}
-		// launch goroutines to serve
-
-		go client.readRequests()
-		go client.sendResponses()
+  ls.req = make(chan queuedServerRequest)
+  ls.leasesByInode = make(map[uint64][]lease)
+  ls.leasesById = make(map[uint64]lease)
+	ls.server = util.NewCloseServer(listener,func(conn *net.TCPConn) {
+	  // instantiate conn object
+    client, err := newClientConn(ls, conn)
+    fmt.Println("got new client")
+    if err != nil {
+      fmt.Printf("error wrapping clientConn %s\n", err)
+    }
+    // launch goroutines to serve
+    
+    go client.readRequests()
+    go client.sendResponses()
 	})
-	return ls, err
+  return ls,err
 }
 
 type queuedServerRequest struct {
@@ -147,18 +147,18 @@ type queuedServerRequest struct {
 
 func (ls *LeaseServer) Start() error {
 	fmt.Println("lease server starting")
-	go ls.process()
-	ls.server.Start()
-	return nil
+  go ls.process()
+  ls.server.Start()
+  return nil
 }
 
 func (ls *LeaseServer) Close() error {
-	// TODO unwind pending lease requests?  or notify clients of shutdown?
-	return ls.server.Close()
+  // TODO unwind pending lease requests?  or notify clients of shutdown?
+  return ls.server.Close()
 }
 
 func (ls *LeaseServer) WaitClosed() error {
-	return ls.server.WaitClosed()
+  return ls.server.WaitClosed()
 }
 
 func (ls *LeaseServer) process() {
@@ -176,10 +176,8 @@ func (ls *LeaseServer) process() {
 		case OP_READLEASE_RELEASE:
 			resp, err = ls.releaseLease(qr.req, qr.conn)
 		case OP_WRITELEASE_RELEASE:
-			_, err = ls.commitWriteLease(qr.req, qr.conn)
-			if err != nil {
-				break
-			}
+			_,err = ls.commitWriteLease(qr.req,qr.conn)
+			if err != nil { break }
 			resp, err = ls.releaseLease(qr.req, qr.conn)
 		case OP_CHECKLEASES:
 			resp, err = ls.checkLeases(qr.req, qr.conn)
@@ -237,7 +235,7 @@ func (ls *LeaseServer) releaseLease(r request, c *clientConn) (response, error) 
 	inodeid := ls.leasesById[r.Leaseid].inodeid
 	// find readleases
 	inodeLeases := ls.leasesByInode[r.Inodeid]
-	// remove from lease map
+	// remove from lease map 
 	delete(ls.leasesById, r.Leaseid)
 	// find in inode leaselist
 	for idx, val := range inodeLeases {
@@ -258,11 +256,11 @@ func (ls *LeaseServer) releaseLease(r request, c *clientConn) (response, error) 
 func (ls *LeaseServer) commitWriteLease(r request, c *clientConn) (response, error) {
 	// find all readleases attached to this inode id
 	readLeases := ls.leasesByInode[r.Inodeid]
-	readLeasesWithoutCommitter := make([]lease, 0, len(readLeases))
+	readLeasesWithoutCommitter := make([]lease,0,len(readLeases))
 	// omit the connection that sent the commit request -- we don't want to blow our own cache while writing
-	for _, rl := range readLeases {
+	for _,rl := range readLeases {
 		if rl.client.id != c.id && !rl.writeLease {
-			readLeasesWithoutCommitter = append(readLeasesWithoutCommitter, rl)
+			readLeasesWithoutCommitter = append(readLeasesWithoutCommitter,rl)
 		}
 	}
 	// notify them all

@@ -1,13 +1,13 @@
 package nameserver
 
 import (
-	"fmt"
-	"github.com/jbooth/maggiefs/maggiefs"
-	"github.com/jbooth/maggiefs/util"
+  "github.com/jbooth/maggiefs/maggiefs"
+  "github.com/jbooth/maggiefs/util"
 	"net/rpc"
-	"os"
 	"sync"
 	"time"
+	"fmt"
+	"os"
 )
 
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
@@ -20,7 +20,7 @@ func NewNameServer(ls maggiefs.LeaseService, nameAddr string, dataDir string, re
 	if format {
 		err = Format(dataDir, uint32(os.Getuid()), uint32(os.Getgid()))
 		if err != nil {
-			return nil, err
+			return nil,err
 		}
 	}
 	ns.nd, err = NewNameData(dataDir)
@@ -35,46 +35,42 @@ type NameServer struct {
 	ls          maggiefs.LeaseService
 	nd          *NameData
 	rm          *replicationManager
-	listenAddr  string
-	dirTreeLock *sync.Mutex           // used so all dir tree operations (link/unlink) are atomic
-	rpcServer   *util.CloseableServer // created at start time, need to be closed
+	listenAddr      string
+	dirTreeLock *sync.Mutex // used so all dir tree operations (link/unlink) are atomic
+	rpcServer *util.CloseableServer // created at start time, need to be closed
 }
 
 func (ns *NameServer) Start() error {
-	var err error = nil
-	fmt.Printf("%+v\n", ns)
-	ns.rpcServer, err = util.CloseableRPC(ns.listenAddr, maggiefs.NewNameServiceService(ns), "NameService")
-	ns.rpcServer.Start()
-	return err
+  var err error = nil
+  fmt.Printf("%+v\n",ns)
+  ns.rpcServer,err = util.CloseableRPC(ns.listenAddr,maggiefs.NewNameServiceService(ns), "NameService")
+  ns.rpcServer.Start()
+  return err
 }
 
 func (ns *NameServer) Close() error {
-	var retError error = nil
-	err := ns.nd.Close()
-	if err != nil {
-		retError = err
-	}
-	err = ns.rpcServer.Close()
-	if err != nil {
-		retError = err
-	}
-	return retError
+  var retError error = nil
+  err := ns.nd.Close() 
+  if err != nil { retError = err }
+  err = ns.rpcServer.Close()
+  if err != nil { retError = err }
+  return retError
 }
 
 func (ns *NameServer) WaitClosed() error {
-	ns.rpcServer.WaitClosed()
-	return nil
+  ns.rpcServer.WaitClosed()
+  return nil
 }
 
-func (ns *NameServer) GetInode(nodeid uint64) (node *ino.Inode, err error) {
+func (ns *NameServer) GetInode(nodeid uint64) (node *maggiefs.Inode, err error) {
 	return ns.nd.GetInode(nodeid)
 }
 
-func (ns *NameServer) AddInode(node *ino.Inode) (id uint64, err error) {
+func (ns *NameServer) AddInode(node *maggiefs.Inode) (id uint64, err error) {
 	return ns.nd.AddInode(node)
 }
 
-func (ns *NameServer) SetInode(node *ino.Inode) (err error) {
+func (ns *NameServer) SetInode(node *maggiefs.Inode) (err error) {
 	return ns.nd.SetInode(node)
 }
 
@@ -85,7 +81,7 @@ func (ns *NameServer) Link(parent uint64, child uint64, name string, force bool)
 	var prevChildId = uint64(0)
 	for !parentSuccess {
 		// try to link to parent
-		_, err := ns.nd.Mutate(parent, func(i *ino.Inode) error {
+		_, err := ns.nd.Mutate(parent, func(i *maggiefs.Inode) error {
 			dentry, childExists := i.Children[name]
 			if childExists {
 				prevChildId = dentry.Inodeid
@@ -115,7 +111,7 @@ func (ns *NameServer) Link(parent uint64, child uint64, name string, force bool)
 		}
 	}
 	// now increment numLinks on child
-	_, err = ns.nd.Mutate(child, func(i *ino.Inode) error {
+	_, err = ns.nd.Mutate(child, func(i *maggiefs.Inode) error {
 		i.Nlink++
 		i.Ctime = time.Now().Unix()
 		return nil
@@ -133,7 +129,7 @@ func (ns *NameServer) Unlink(parent uint64, name string) (err error) {
 func (ns *NameServer) doUnlink(parent uint64, name string) (err error) {
 	var childId = uint64(0)
 	// unlink from parent
-	_, err = ns.nd.Mutate(parent, func(i *ino.Inode) error {
+	_, err = ns.nd.Mutate(parent, func(i *maggiefs.Inode) error {
 		dentry, exists := i.Children[name]
 		if !exists {
 			return maggiefs.E_NOENT
@@ -147,7 +143,7 @@ func (ns *NameServer) doUnlink(parent uint64, name string) (err error) {
 		return nil
 	}
 	// decrement numlinks on child
-	child, err := ns.nd.Mutate(childId, func(i *ino.Inode) error {
+	child, err := ns.nd.Mutate(childId, func(i *maggiefs.Inode) error {
 		i.Nlink--
 		i.Ctime = time.Now().Unix()
 		return nil
@@ -157,28 +153,28 @@ func (ns *NameServer) doUnlink(parent uint64, name string) (err error) {
 	}
 	// garbage collect if necessary
 	if child.Nlink <= 0 {
-		go ns.del(child.Inodeid)
+		go ns.del(child.Inodeid) 
 	}
 	return nil
 }
 
 // called to clean up an inode after it's been unlinked all the way
-// invoked as a goroutine typically,
+// invoked as a goroutine typically, 
 func (ns *NameServer) del(inodeid uint64) {
 	// wait until no clients have this file open (posix convention)
 	err := ns.ls.WaitAllReleased(inodeid)
 	if err != nil {
-		fmt.Printf("error waiting all released for node %d : %s\n", inodeid, err.Error())
+		fmt.Printf("error waiting all released for node %d : %s\n",inodeid,err.Error())
 	}
 	// truncating to 0 bytes will remove all blocks
-	err = ns.Truncate(inodeid, 0)
+	err = ns.Truncate(inodeid,0)
 	if err != nil {
-		fmt.Printf("error truncating node %d : %s\n", inodeid, err.Error())
+		fmt.Printf("error truncating node %d : %s\n",inodeid,err.Error())
 	}
 	// now clean up the inode itself
 	err = ns.nd.DelInode(inodeid)
 	if err != nil {
-		fmt.Printf("error deleting node %d from node store : %s\n", inodeid, err.Error())
+		fmt.Printf("error deleting node %d from node store : %s\n",inodeid,err.Error())
 	}
 }
 
@@ -187,15 +183,15 @@ func (ns *NameServer) StatFs() (stat maggiefs.FsStat, err error) {
 	return maggiefs.FsStat{}, nil
 }
 
-func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock ino.Block, err error) {
+func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.Block, err error) {
 	i, err := ns.nd.GetInode(nodeid)
 	if err != nil {
-		return ino.Block{}, nil
+		return maggiefs.Block{}, nil
 	}
 	// check which hosts we want
 	vols, err := ns.rm.volumesForNewBlock(nil)
 	if err != nil {
-		return ino.Block{}, err
+		return maggiefs.Block{}, err
 	}
 	volIds := make([]uint32, len(vols))
 	for idx, v := range vols {
@@ -212,7 +208,7 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock ino.Block
 
 	endPos := startPos + uint64(length)
 	// allocate block and id
-	b := ino.Block{
+	b := maggiefs.Block{
 		Id:       0,
 		Inodeid:  i.Inodeid,
 		Version:  0,
@@ -223,7 +219,7 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock ino.Block
 	newId, err := ns.nd.AddBlock(b, i.Inodeid)
 	b.Id = newId
 	if err != nil {
-		return ino.Block{}, err
+		return maggiefs.Block{}, err
 	}
 
 	// replicate block to datanodes
@@ -235,8 +231,8 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 
 	inode, err := ns.nd.GetInode(nodeid)
 	if len(inode.Blocks) > 0 {
-		delset := make([]ino.Block, 0, 0)
-		var truncBlock *ino.Block = nil
+		delset := make([]maggiefs.Block, 0, 0)
+		var truncBlock *maggiefs.Block = nil
 		var truncLength uint32 = 0
 		for idx := len(inode.Blocks); idx >= 0; idx-- {
 			blk := inode.Blocks[idx]
@@ -245,7 +241,7 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 				if blk.StartPos >= newSize {
 					// delete
 					delset = append(delset, blk)
-					inode.Blocks = inode.Blocks[:len(inode.Blocks)-1]
+					inode.Blocks = inode.Blocks[:len(inode.Blocks) - 1]
 				} else {
 					// truncate
 					truncLength = uint32(newSize - blk.StartPos)
@@ -253,16 +249,14 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 				}
 			}
 		}
-		for _, rmblk := range delset {
+		for _,rmblk := range delset {
 			err = ns.rm.RmBlock(rmblk)
-			if err != nil {
-				return err
-			}
+			if err != nil { return err }
 		}
 		if truncBlock != nil {
-			err = ns.rm.TruncBlock(*truncBlock, truncLength)
+			err = ns.rm.TruncBlock(*truncBlock,truncLength)
 		}
-
+		
 	}
 	return nil
 }
@@ -275,11 +269,11 @@ func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
 }
 
 func (ns *NameServer) NextVolId() (id uint32, err error) {
-	ret, err := ns.nd.GetIncrCounter(COUNTER_VOLID, 1)
-	return uint32(ret), err
+  ret,err := ns.nd.GetIncrCounter(COUNTER_VOLID,1)
+  return uint32(ret),err
 }
 
 func (ns *NameServer) NextDnId() (id uint32, err error) {
-	ret, err := ns.nd.GetIncrCounter(COUNTER_DNID, 1)
-	return uint32(ret), err
+  ret,err := ns.nd.GetIncrCounter(COUNTER_DNID,1)
+  return uint32(ret),err	
 }

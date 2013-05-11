@@ -19,9 +19,9 @@ func CloseableRPC(listenAddr string, impl interface{}, name string) (*CloseableS
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("listening on %s\n", listenAddr)
+	fmt.Printf("listening on %s\n",listenAddr)
 	rpcServer := rpc.NewServer()
-	rpcServer.RegisterName(name, impl)
+	rpcServer.RegisterName(name,impl)
 	onAccept := func(conn *net.TCPConn) {
 		fmt.Println("accepted conn!")
 		buf := bufio.NewWriter(conn)
@@ -30,7 +30,7 @@ func CloseableRPC(listenAddr string, impl interface{}, name string) (*CloseableS
 	}
 	ret := NewCloseServer(listener, onAccept)
 	return ret, nil
-}
+} 
 
 type CloseableServer struct {
 	conns       map[int]*net.TCPConn
@@ -57,7 +57,7 @@ func (r *CloseableServer) Accept() {
 		conn, err := r.listen.AcceptTCP()
 		if err != nil {
 			// stop accepting, shut down
-			fmt.Printf("Error accepting, stopping acceptor: %s\n", err.Error())
+			fmt.Printf("Error accepting, stopping acceptor: %s\n",err.Error())
 			r.listen.Close()
 			r.done <- true
 			return
@@ -85,6 +85,7 @@ func (r *CloseableServer) Accept() {
 	}
 }
 
+
 func (r *CloseableServer) Close() error {
 	r.l.Lock()
 	defer r.l.Unlock()
@@ -108,18 +109,14 @@ type gobServerCodec struct {
 }
 
 func (c *gobServerCodec) ReadRequestHeader(r *rpc.Request) error {
-	err := c.dec.Decode(r)
-	if err != nil {
-		fmt.Println(err.Error())
-	}
+	err := c.dec.Decode(r)	
+	if err != nil { fmt.Println(err.Error()) }
 	return err
 }
 
 func (c *gobServerCodec) ReadRequestBody(body interface{}) error {
 	err := c.dec.Decode(body)
-	if err != nil {
-		fmt.Println(err.Error())
-	}
+	if err != nil { fmt.Println(err.Error()) }
 	return err
 }
 func (c *gobServerCodec) WriteResponse(r *rpc.Response, body interface{}) (err error) {
