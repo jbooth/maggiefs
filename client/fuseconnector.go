@@ -26,7 +26,7 @@ type MaggieFuse struct {
 	datas          maggiefs.DataService
 	openFiles      openFileMap                                // maps FD numbers to open files
 	fdCounter      uint64                                     // used to get unique FD numbers
-	changeNotifier chan uint64                  // remote changes to inodes are notified through this chan
+	changeNotifier chan uint64                                // remote changes to inodes are notified through this chan
 	inodeNotify    func(*raw.NotifyInvalInodeOut) fuse.Status // used to signal to OS that a remote inode changed
 	log            *log.Logger
 }
@@ -43,7 +43,7 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 		nil,
 		log.New(os.Stderr, "maggie-fuse", 0),
 	}
-	// 
+	//
 	go func() {
 		notify := &raw.NotifyInvalInodeOut{}
 		for inodeid := range m.changeNotifier {
@@ -55,23 +55,25 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 	return m, nil
 }
 
-func (m *MaggieFuse) mutate(inodeid uint64, mutator func(i *maggiefs.Inode) error) (*maggiefs.Inode,error) {
-    wl, err := m.leases.WriteLease(inodeid)
-    defer wl.Release()
-    if err != nil {
-      return nil,err
-    }
-    inode, err := m.names.GetInode(inodeid)
-    if err != nil {
-      return nil,err
-    }
-    err = mutator(inode)
-    if err != nil { return nil,err }
-    inode.Mtime = int64(time.Now().Unix())
-    err = m.names.SetInode(inode)
-    return inode,err
+func (m *MaggieFuse) mutate(inodeid uint64, mutator func(i *ino.Inode) error) (*ino.Inode, error) {
+	wl, err := m.leases.WriteLease(inodeid)
+	defer wl.Release()
+	if err != nil {
+		return nil, err
+	}
+	inode, err := m.names.GetInode(inodeid)
+	if err != nil {
+		return nil, err
+	}
+	err = mutator(inode)
+	if err != nil {
+		return nil, err
+	}
+	inode.Mtime = int64(time.Now().Unix())
+	err = m.names.SetInode(inode)
+	return inode, err
 }
- 
+
 // FUSE implementation
 func (m *MaggieFuse) Init(init *fuse.RawFsInit) {
 	m.inodeNotify = init.InodeNotify
@@ -138,10 +140,10 @@ func (m *MaggieFuse) Lookup(out *raw.EntryOut, h *raw.InHeader, name string) (co
 	return fuse.OK
 }
 
-func fillEntryOut(out *raw.EntryOut, i *maggiefs.Inode) {
+func fillEntryOut(out *raw.EntryOut, i *ino.Inode) {
 	// fill out
 	out.NodeId = i.Inodeid
-  out.Generation = i.Generation
+	out.Generation = i.Generation
 	out.EntryValid = uint64(0)
 	out.AttrValid = uint64(0)
 	out.EntryValidNsec = uint32(100)
@@ -168,7 +170,7 @@ func (m *MaggieFuse) Forget(nodeID, nlookup uint64) {
 	// noop
 }
 
-func fillAttrOut(out *raw.AttrOut, i *maggiefs.Inode) {
+func fillAttrOut(out *raw.AttrOut, i *ino.Inode) {
 	// raw.Attr
 	out.Ino = i.Inodeid
 	out.Size = i.Length
@@ -298,7 +300,7 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
 
 	// other mutations, if applicable
 	if input.Valid&(raw.FATTR_MODE|raw.FATTR_UID|raw.FATTR_GID|raw.FATTR_MTIME|raw.FATTR_MTIME_NOW|raw.FATTR_MTIME|raw.FATTR_MTIME_NOW) != 0 {
-    
+
 		wl, err := m.leases.WriteLease(header.NodeId)
 		defer wl.Release()
 		if err != nil {
@@ -349,7 +351,7 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 
 	//build node
 	currTime := time.Now().Unix()
-	i := maggiefs.Inode{
+	i := ino.Inode{
 		0, // id 0 to start
 		0, // gen 0
 		maggiefs.FTYPE_REG,
@@ -361,7 +363,7 @@ func (m *MaggieFuse) Mknod(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 		header.Uid,
 		header.Gid,
 		"",
-		make([]maggiefs.Block, 0, 0),
+		make([]ino.Block, 0, 0),
 		make(map[string]maggiefs.Dentry),
 		make(map[string][]byte),
 	}
@@ -392,7 +394,7 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 
 	// make new child
 	currTime := time.Now().Unix()
-	i := maggiefs.Inode{
+	i := ino.Inode{
 		0, // id 0 to start, we get id when inserting
 		0,
 		maggiefs.FTYPE_DIR,
@@ -404,7 +406,7 @@ func (m *MaggieFuse) Mkdir(out *raw.EntryOut, header *raw.InHeader, input *raw.M
 		header.Uid,
 		header.Gid,
 		"",
-		make([]maggiefs.Block, 0, 0),
+		make([]ino.Block, 0, 0),
 		make(map[string]maggiefs.Dentry),
 		make(map[string][]byte),
 	}
@@ -486,7 +488,7 @@ func (m *MaggieFuse) Rmdir(header *raw.InHeader, name string) (code fuse.Status)
 func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo string, linkName string) (code fuse.Status) {
 	// new inode type symlink
 	currTime := time.Now().Unix()
-	i := maggiefs.Inode{
+	i := ino.Inode{
 		0, // id 0 to start, we get id when inserting
 		0,
 		maggiefs.FTYPE_LNK,
@@ -498,7 +500,7 @@ func (m *MaggieFuse) Symlink(out *raw.EntryOut, header *raw.InHeader, pointedTo 
 		header.Uid,
 		header.Gid,
 		pointedTo,
-		make([]maggiefs.Block, 0, 0),
+		make([]ino.Block, 0, 0),
 		make(map[string]maggiefs.Dentry),
 		make(map[string][]byte),
 	}
@@ -581,7 +583,7 @@ func (m *MaggieFuse) GetXAttrData(header *raw.InHeader, attr string) (data []byt
 }
 
 func (m *MaggieFuse) SetXAttr(header *raw.InHeader, input *raw.SetXAttrIn, attr string, data []byte) fuse.Status {
-	_,err := m.mutate(header.NodeId, func(node *maggiefs.Inode) error {
+	_, err := m.mutate(header.NodeId, func(node *ino.Inode) error {
 		node.Xattr[attr] = data
 		return nil
 	})
@@ -606,7 +608,7 @@ func (m *MaggieFuse) ListXAttr(header *raw.InHeader) (data []byte, code fuse.Sta
 }
 
 func (m *MaggieFuse) RemoveXAttr(header *raw.InHeader, attr string) fuse.Status {
-	_,err := m.mutate(header.NodeId, func(node *maggiefs.Inode) error {
+	_, err := m.mutate(header.NodeId, func(node *ino.Inode) error {
 		delete(node.Xattr, attr)
 		return nil
 	})

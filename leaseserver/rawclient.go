@@ -1,14 +1,14 @@
 package leaseserver
 
 import (
-	"encoding/gob"
 	"encoding/binary"
+	"encoding/gob"
 	"fmt"
 	"net"
 )
 
 type rawclient struct {
-	id 				 uint64
+	id         uint64
 	c          *net.TCPConn
 	reqcounter uint32
 	notifier   chan uint64
@@ -28,7 +28,7 @@ func newRawClient(addr string) (*rawclient, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("connecting to %s\n",addr)
+	fmt.Printf("connecting to %s\n", addr)
 	c, err := net.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
 		return nil, err
@@ -36,14 +36,14 @@ func newRawClient(addr string) (*rawclient, error) {
 	fmt.Println("connected")
 	c.SetNoDelay(true)
 	c.SetKeepAlive(true)
-	idBuff := make([]byte,8,8)
-	_,err = c.Read(idBuff)
+	idBuff := make([]byte, 8, 8)
+	_, err = c.Read(idBuff)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
-	ret := &rawclient{binary.LittleEndian.Uint64(idBuff),c, 0, make(chan uint64, 100), make(chan queuedRequest), make(chan response), make(chan bool)}
+	ret := &rawclient{binary.LittleEndian.Uint64(idBuff), c, 0, make(chan uint64, 100), make(chan queuedRequest), make(chan response), make(chan bool)}
 	// read client id
-	
+
 	go ret.mux()
 	go ret.readResponses()
 	return ret, nil
@@ -78,8 +78,8 @@ func (c *rawclient) mux() {
 			}
 		case resp := <-c.responses:
 			if resp.Status == STATUS_NOTIFY {
-			  // this is a notification so forward to the notification chan
-			  c.notifier <- resp.Inodeid  
+				// this is a notification so forward to the notification chan
+				c.notifier <- resp.Inodeid
 			} else {
 				// response to a request, forward to it's response chan
 				k := resp.Reqno
@@ -87,7 +87,7 @@ func (c *rawclient) mux() {
 				delete(responseChans, k)
 				respChan <- resp
 				close(respChan)
-			}  
+			}
 		case _ = <-c.closeMux:
 			return
 		}
@@ -98,11 +98,8 @@ func (c *rawclient) mux() {
 func (c *rawclient) readResponses() {
 	respDecoder := gob.NewDecoder(c.c)
 	for {
-    resp := response{}
-    respDecoder.Decode(&resp)
-    c.responses <- resp  
+		resp := response{}
+		respDecoder.Decode(&resp)
+		c.responses <- resp
 	}
 }
-
-
-

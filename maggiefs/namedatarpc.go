@@ -4,7 +4,7 @@ package maggiefs
 
 import (
 	"net/rpc"
-	
+	"github.com/jbooth/maggiefs/ino"
 )
 
 type NameDataIfaceService struct {
@@ -23,7 +23,7 @@ type NameDataIfaceHeartBeatRequest struct {
 }
 
 type NameDataIfaceHeartBeatResponse struct {
-	Stat *DataNodeStat
+	Stat *ino.DataNodeStat
 }
 
 func (s *NameDataIfaceService) HeartBeat(request *NameDataIfaceHeartBeatRequest, response *NameDataIfaceHeartBeatResponse) (err error) {
@@ -32,7 +32,7 @@ func (s *NameDataIfaceService) HeartBeat(request *NameDataIfaceHeartBeatRequest,
 }
 
 type NameDataIfaceAddBlockRequest struct {
-	Blk   Block
+	Blk   ino.Block
 	VolId uint32
 }
 
@@ -58,7 +58,7 @@ func (s *NameDataIfaceService) RmBlock(request *NameDataIfaceRmBlockRequest, res
 }
 
 type NameDataIfaceTruncBlockRequest struct {
-	Blk     Block
+	Blk     ino.Block
 	VolId   uint32
 	NewSize uint32
 }
@@ -76,7 +76,7 @@ type NameDataIfaceBlockReportRequest struct {
 }
 
 type NameDataIfaceBlockReportResponse struct {
-	Blocks []Block
+	Blocks []inoBlock
 }
 
 func (s *NameDataIfaceService) BlockReport(request *NameDataIfaceBlockReportRequest, response *NameDataIfaceBlockReportResponse) (err error) {
@@ -114,14 +114,14 @@ func (_c *NameDataIfaceClient) RmBlock(id uint64, volId uint32) (err error) {
 	return err
 }
 
-func (_c *NameDataIfaceClient) TruncBlock(blk Block, volId uint32, newSize uint32) (err error) {
+func (_c *NameDataIfaceClient) TruncBlock(blk ino.Block, volId uint32, newSize uint32) (err error) {
 	_request := &NameDataIfaceTruncBlockRequest{blk, volId, newSize}
 	_response := &NameDataIfaceTruncBlockResponse{}
 	err = _c.client.Call(_c.service+".TruncBlock", _request, _response)
 	return err
 }
 
-func (_c *NameDataIfaceClient) BlockReport(volId uint32) (blocks []Block, err error) {
+func (_c *NameDataIfaceClient) BlockReport(volId uint32) (blocks []ino.Block, err error) {
 	_request := &NameDataIfaceBlockReportRequest{volId}
 	_response := &NameDataIfaceBlockReportResponse{}
 	err = _c.client.Call(_c.service+".BlockReport", _request, _response)
