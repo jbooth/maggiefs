@@ -4,6 +4,7 @@ import (
   "syscall"
   "fmt"
   "encoding/binary"
+  "encoding/gob"
   "time"
 )
 
@@ -16,6 +17,11 @@ const (
   BLOCKLENGTH = uint64(1024 * 1024 * 128) // 128MB, hardcoded for now
 )
 
+func init() {
+	ino := Inode{}
+	gob.RegisterName("*maggiefs.Inode",&ino)
+	gob.RegisterName("maggiefs.Block",Block{})
+}
 type Inode struct {
   Inodeid     uint64
   Generation  uint64

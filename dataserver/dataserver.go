@@ -4,6 +4,7 @@ import (
   "net"
   "net/rpc"
   "github.com/jbooth/maggiefs/maggiefs"
+  "github.com/jbooth/maggiefs/mrpc"
   "errors"
   "fmt"
 )
@@ -77,7 +78,7 @@ func NewDataServer(volRoots []string,
   
   ds = &DataServer{ns, dnInfo, volumes,dataClientListen,nameDataListen}
   // start servicing namedata
-  nameData := maggiefs.NewNameDataIfaceService(ds)
+  nameData := mrpc.NewNameDataIfaceService(ds)
   server := rpc.NewServer()
   server.Register(nameData)
   go server.Accept(nameDataListen)

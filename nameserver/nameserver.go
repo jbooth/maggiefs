@@ -2,7 +2,7 @@ package nameserver
 
 import (
   "github.com/jbooth/maggiefs/maggiefs"
-  "github.com/jbooth/maggiefs/util"
+  "github.com/jbooth/maggiefs/mrpc"
 	"net/rpc"
 	"sync"
 	"time"
@@ -37,13 +37,13 @@ type NameServer struct {
 	rm          *replicationManager
 	listenAddr      string
 	dirTreeLock *sync.Mutex // used so all dir tree operations (link/unlink) are atomic
-	rpcServer *util.CloseableServer // created at start time, need to be closed
+	rpcServer *mrpc.CloseableServer // created at start time, need to be closed
 }
 
 func (ns *NameServer) Start() error {
   var err error = nil
   fmt.Printf("%+v\n",ns)
-  ns.rpcServer,err = util.CloseableRPC(ns.listenAddr,maggiefs.NewNameServiceService(ns), "NameService")
+  ns.rpcServer,err = mrpc.CloseableRPC(ns.listenAddr,mrpc.NewNameServiceService(ns), "NameService")
   ns.rpcServer.Start()
   return err
 }
@@ -264,7 +264,7 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
 	// TODO confirm not duplicate datanode
 	client, err := rpc.Dial("tcp", nameDataAddr)
-	nameData := maggiefs.NewNameDataIfaceClient(client)
+	nameData := mrpc.NewNameDataIfaceClient(client)
 	return ns.rm.addDn(nameData)
 }
 

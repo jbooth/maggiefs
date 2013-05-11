@@ -2,7 +2,7 @@ package leaseserver
 
 import (
   "github.com/jbooth/maggiefs/maggiefs"
-  "github.com/jbooth/maggiefs/util"
+  "github.com/jbooth/maggiefs/mrpc"
 	"encoding/gob"
 	"fmt"
 	"net"
@@ -104,7 +104,7 @@ type LeaseServer struct {
 	leasesById     map[uint64]lease
 	leaseIdCounter uint64
 	clientIdCounter uint64
-	server *util.CloseableServer
+	server *mrpc.CloseableServer
 }
 
 // new lease server listening on bindAddr
@@ -124,7 +124,7 @@ func NewLeaseServer(bindAddr string) (*LeaseServer,error) {
   ls.req = make(chan queuedServerRequest)
   ls.leasesByInode = make(map[uint64][]lease)
   ls.leasesById = make(map[uint64]lease)
-	ls.server = util.NewCloseServer(listener,func(conn *net.TCPConn) {
+	ls.server = mrpc.NewCloseServer(listener,func(conn *net.TCPConn) {
 	  // instantiate conn object
     client, err := newClientConn(ls, conn)
     fmt.Println("got new client")

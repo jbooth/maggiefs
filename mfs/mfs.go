@@ -23,10 +23,10 @@ func usage() {
   fmt.Fprintf(os.Stderr, "maggiefs client namenodeAddr:port mountPoint\n")
   os.Exit(2)
 }
-
-func doNameNode(pathToProps string) {
-  cfg,err := integration.NewName
-}
+//
+//func doNameNode(pathToProps string) {
+//  cfg,err := integration.NewName
+//}
 
 func doDataNode(pathToProps string) {
 }

@@ -6,6 +6,7 @@ import (
   "github.com/jbooth/maggiefs/nameserver"
   "github.com/jbooth/maggiefs/leaseserver"
   "github.com/jbooth/maggiefs/maggiefs"
+  "github.com/jbooth/maggiefs/mrpc"
   "github.com/jbooth/maggiefs/dataserver"
   "os"
   "fmt"
@@ -59,7 +60,7 @@ func NewNameClient(addr string) (maggiefs.NameService,error) {
   if err != nil {
     return nil,fmt.Errorf("Error dialing nameclient tcp to %s : %s",addr,err.Error())
   }
-  return maggiefs.NewNameServiceClient(client),nil
+  return mrpc.NewNameServiceClient(client),nil
 }
 
 // returns a started nameserver -- we must start lease server in order to boot up nameserver, so
@@ -120,7 +121,7 @@ func NewSingleNodeCluster(volRoots [][]string, nameHome string, bindHost string,
   if err != nil {
   	return cl,err
   }
-  cl.names = maggiefs.NewNameServiceClient(namesClient)
+  cl.names = mrpc.NewNameServiceClient(namesClient)
   // start dataservers
   cl.dataNodes = make([]*dataserver.DataServer, len(volRoots))
   for idx,dnVolRoots := range volRoots {
