@@ -2,7 +2,6 @@ package dataserver
 
 import (
   "net"
-  "net/rpc"
   "github.com/jbooth/maggiefs/maggiefs"
   "github.com/jbooth/maggiefs/mrpc"
   "errors"
@@ -17,7 +16,8 @@ type DataServer struct {
   // accepts data conns for read/write requests
   dataIface *net.TCPListener
   // accepts conn from namenode 
-  nameDataIface *net.TCPListener
+  nameDataIface *mrpc.CloseableServer
+  
 }
 
 // create a new dataserver serving the specified volumes, on the specified addrs, joining the specified nameservice
@@ -68,25 +68,44 @@ func NewDataServer(volRoots []string,
   // start up listeners
   dataClientBind,err := net.ResolveTCPAddr("tcp", dataClientBindAddr) 
   if err != nil { return nil,err }
-  nameDataBind,err := net.ResolveTCPAddr("tcp",nameDataBindAddr)
-  if err != nil { return nil,err }
   
   dataClientListen,err := net.ListenTCP("tcp",dataClientBind)
   if err != nil { return nil,err }
-  nameDataListen,err := net.ListenTCP("tcp",nameDataBind)
-  if err != nil { return nil,err }
   
-  ds = &DataServer{ns, dnInfo, volumes,dataClientListen,nameDataListen}
+  
   // start servicing namedata
-  nameData := mrpc.NewNameDataIfaceService(ds)
-  server := rpc.NewServer()
-  server.Register(nameData)
-  go server.Accept(nameDataListen)
+  ds = &DataServer{ns, dnInfo, volumes,dataClientListen,nil}
+
+	ds.nameDataIface,err =  mrpc.CloseableRPC(nameDataBindAddr,mrpc.NewNameDataIfaceService(ds), "NameDataIface")
+	if err != nil { return ds,err }
+	ds.nameDataIface.Start()
   // start servicing client data
   go ds.serveClientData() 
   // register ourselves with namenode, namenode will query us for volumes
   err = ns.Join(dnInfo.DnId, nameDataBindAddr)
   return ds,nil
+}
+
+func (ds *DataServer) Start() error {
+	err1 := ds.nameDataIface.Start()
+	if err1 != nil {
+		return err1
+	}
+	go ds.serveClientData()
+	return nil
+}
+
+func (ds *DataServer) Close() {
+	
+	ds.nameDataIface.Close()
+	ds.dataIface.Close()
+	for _,v := range ds.volumes {
+		v.Close()
+	}
+}
+
+func (ds *DataServer) WaitClosed() error {
+	return ds.nameDataIface.WaitClosed()
 }
 
 func (ds *DataServer) serveClientData() {
@@ -146,8 +165,13 @@ func (ds *DataServer) TruncBlock(blk maggiefs.Block, volId uint32, newSize uint3
 }
 
 func (ds *DataServer) BlockReport(volId uint32) (blocks []maggiefs.Block, err error) {
+	fmt.Println("doing block report\n")
   vol,exists := ds.volumes[volId]
-  if ! exists { return nil,fmt.Errorf("No volume for volID %d",volId) }
+  if ! exists { 
+  	fmt.Printf("No volume for volID %d on dnId %d \n",volId,ds.info.DnId) 
+    return nil,fmt.Errorf("No volume for volID %d",volId) 
+  }
+  fmt.Printf("delegating to volid %d\n",vol.id)
   return vol.BlockReport()
 }
 

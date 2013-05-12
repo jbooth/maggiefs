@@ -1,37 +1,39 @@
 package nameserver
 
 import (
+	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"sort"
 	"sync"
-	"fmt"
 	//"time"
 )
 
 type replicationManager struct {
-  replicationFactor uint32
-  volumes map[uint32]*volume // maps volumes to their host (host is immutable for a volume, new volumes always get new IDs)
-  l          *sync.RWMutex
+	replicationFactor uint32
+	volumes           map[uint32]*volume // maps volumes to their host (host is immutable for a volume, new volumes always get new IDs)
+	l                 *sync.RWMutex
 }
+
 // internal object representing live connection to DN
 type volume struct {
-	stat    maggiefs.VolumeStat
-	conn    maggiefs.NameDataIface
-	l       *sync.Mutex
+	stat maggiefs.VolumeStat
+	conn maggiefs.NameDataIface
+	l    *sync.Mutex
 }
 
-
 // execute something against one of the datanodes while holding its lock
-func (v *volume) withLock(f func (v *volume) error) error {
-  v.l.Lock()
-  defer v.l.Unlock()
-  return f(v)
+func (v *volume) withLock(f func(v *volume) error) error {
+	v.l.Lock()
+	defer v.l.Unlock()
+	return f(v)
 }
 
 func (rm *replicationManager) addDn(dn maggiefs.NameDataIface) error {
-	stat,err := dn.HeartBeat()
-	if err != nil { return err }
-	for _,volStat := range stat.Volumes {
+	stat, err := dn.HeartBeat()
+	if err != nil {
+		return err
+	}
+	for _, volStat := range stat.Volumes {
 		vol := volume{}
 		vol.stat = volStat
 		vol.conn = dn
@@ -40,23 +42,45 @@ func (rm *replicationManager) addDn(dn maggiefs.NameDataIface) error {
 	return nil
 }
 
-
 func newReplicationManager(replicationFactor uint32) *replicationManager {
-  return &replicationManager{
-  	replicationFactor: replicationFactor,
-  	volumes: make(map[uint32]*volume),
-  }
+	return &replicationManager{
+		replicationFactor: replicationFactor,
+		volumes:           make(map[uint32]*volume),
+		l:                 &sync.RWMutex{},
+	}
+}
+
+func (rm *replicationManager) FsStat() (maggiefs.FsStat, error) {
+	ret := maggiefs.FsStat{}
+	ret.DnStat = make([]maggiefs.DataNodeStat, 0)
+	rm.l.RLock()
+	defer rm.l.RUnlock()
+	dnStats := make(map[uint32]*maggiefs.DataNodeStat)
+	for _, vol := range rm.volumes {
+		_, ok := dnStats[vol.stat.DnInfo.DnId]
+		if !ok {
+			dns, err := vol.conn.HeartBeat()
+			if err != nil {
+				return ret, fmt.Errorf("Error getting heartbeat for dnid %d", vol.stat.DnInfo.DnId)
+			}
+			dnStats[vol.stat.DnInfo.DnId] = dns
+			ret.DnStat = append(ret.DnStat, *dns)
+			ret.Free += dns.Free()
+			ret.Size += dns.Size()
+			ret.Used += dns.Used()
+		}
+	}
+	return ret, nil
 }
 
 // note, doesn't actually use suggestedDN just yet
 func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []maggiefs.VolumeStat, err error) {
 	rm.l.RLock()
 	defer rm.l.RUnlock()
-	
-	
+
 	var sortedVolumes volumeList = make([]maggiefs.VolumeStat, 0)
 
-	for _,v := range rm.volumes {
+	for _, v := range rm.volumes {
 		sortedVolumes = append(sortedVolumes, v.stat)
 	}
 	sort.Sort(sortedVolumes)
@@ -79,14 +103,14 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []
 		}
 	}
 	if added < rm.replicationFactor {
-		return nil,fmt.Errorf("Not enough datanodes available for replication factor %d -- only nodes available were %+s",rm.replicationFactor,ret)
+		return nil, fmt.Errorf("Not enough datanodes available for replication factor %d -- only nodes available were %+s", rm.replicationFactor, ret)
 	}
-	return ret,nil
+	return ret, nil
 }
 
 func (rm *replicationManager) AddBlock(blk maggiefs.Block) error {
-	for _,volId := range blk.Volumes {
-		err := rm.volumes[volId].conn.AddBlock(blk,volId)
+	for _, volId := range blk.Volumes {
+		err := rm.volumes[volId].conn.AddBlock(blk, volId)
 		if err != nil {
 			return err
 		}
@@ -95,8 +119,8 @@ func (rm *replicationManager) AddBlock(blk maggiefs.Block) error {
 }
 
 func (rm *replicationManager) RmBlock(blk maggiefs.Block) error {
-	for _,volId := range blk.Volumes {
-		err := rm.volumes[volId].conn.RmBlock(blk.Id,volId)
+	for _, volId := range blk.Volumes {
+		err := rm.volumes[volId].conn.RmBlock(blk.Id, volId)
 		if err != nil {
 			return err
 		}
@@ -105,8 +129,8 @@ func (rm *replicationManager) RmBlock(blk maggiefs.Block) error {
 }
 
 func (rm *replicationManager) TruncBlock(blk maggiefs.Block, newLength uint32) error {
-		for _,volId := range blk.Volumes {
-		err := rm.volumes[volId].conn.TruncBlock(blk,volId,newLength)
+	for _, volId := range blk.Volumes {
+		err := rm.volumes[volId].conn.TruncBlock(blk, volId, newLength)
 		if err != nil {
 			return err
 		}

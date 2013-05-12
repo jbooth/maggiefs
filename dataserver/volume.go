@@ -68,11 +68,13 @@ func loadVolume(volRoot string) (*volume, error) {
 }
 
 func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
+	volIdPath := volRoot + "/VOLID"
 	// write vol id
-	volIdFile, err := os.Create(volRoot + "/VOLID")
-	defer volIdFile.Close()
+	volIdFile, err := os.Create(volIdPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Volume.format : Error trying to create file %s : %s",volIdPath,err.Error())
+	} else {
+		defer volIdFile.Close()
 	}
 	idBytes := []byte(strconv.Itoa(int(vol.VolId)))
 	_, err = volIdFile.Write(idBytes)
@@ -133,6 +135,11 @@ type volume struct {
 	blockData *levigo.DB
 }
 
+func (v *volume) Close() {
+	v.blockData.Close()
+	v.rootFile.Close()
+}
+
 func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
 	sysstat := syscall.Statfs_t{}
 	err = syscall.Fstatfs(int(v.rootFile.Fd()), &sysstat)
@@ -148,11 +155,12 @@ func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
 }
 
 func (v *volume) AddBlock(blk maggiefs.Block) error {
+	fmt.Printf("Adding block to vol %d\n",v.id)
 	// TODO should blow up here if blk already exists
 	// create file representing block
 	f, err := os.Create(v.resolvePath(blk.Id))
 	if err != nil {
-		return err
+		return fmt.Errorf("Error creating block for %d : %s\n",blk.Id,err.Error())
 	}
 	defer f.Close()
 	// add to blockmeta db
@@ -196,6 +204,7 @@ func (v *volume) TruncBlock(blk maggiefs.Block, newSize uint32) error {
 }
 
 func (v *volume) BlockReport() ([]maggiefs.Block, error) {
+	fmt.Printf("doing block report in volume %d\n",v.id)
 	ret := make([]maggiefs.Block, 0, 0)
 	it := v.blockData.NewIterator(readOpts)
 	defer it.Close()
@@ -203,6 +212,7 @@ func (v *volume) BlockReport() ([]maggiefs.Block, error) {
 	for it = it; it.Valid(); it.Next() {
 		blk := maggiefs.Block{}
 		blk.FromBytes(it.Value())
+		fmt.Printf("got block %+v\n",blk)
 		ret = append(ret, blk)
 	}
 	return ret, it.GetError()
@@ -358,5 +368,6 @@ func (v *volume) pipelineWrite(incoming *net.Conn, outgoing *net.Conn, buff pipe
 // paths are resolved using an intermediate hash so that we don't blow up the data dir with millions of entries
 // we take the id modulo 1024 and use that as a string
 func (v *volume) resolvePath(blockid uint64) string {
+	os.Mkdir(fmt.Sprintf("%s/%d",v.rootPath,blockid&1023),0755)
 	return fmt.Sprintf("%s/%d/%d.block", v.rootPath, blockid&1023, blockid)
 }

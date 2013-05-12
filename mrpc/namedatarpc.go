@@ -16,7 +16,7 @@ func NewNameDataIfaceService(impl maggiefs.NameDataIface) *NameDataIfaceService 
 }
 
 func RegisterNameDataIfaceService(impl maggiefs.NameDataIface) error {
-	return rpc.RegisterName("maggiefs.NameDataIface", NewNameDataIfaceService(impl))
+	return rpc.RegisterName("NameDataIface", NewNameDataIfaceService(impl))
 }
 
 type NameDataIfaceHeartBeatRequest struct {

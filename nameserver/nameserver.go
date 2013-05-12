@@ -189,8 +189,7 @@ func (ns *NameServer) del(inodeid uint64) {
 }
 
 func (ns *NameServer) StatFs() (stat maggiefs.FsStat, err error) {
-
-	return maggiefs.FsStat{}, nil
+	return ns.rm.FsStat()
 }
 
 func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.Block, err error) {
@@ -226,9 +225,12 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 		EndPos:   endPos,
 		Volumes:  volIds,
 	}
+	fmt.Printf("nameserver adding block")
 	newId, err := ns.nd.AddBlock(b, i.Inodeid)
 	b.Id = newId
+	fmt.Printf("nameserver addblock returning new block %+v\n",b)
 	if err != nil {
+		fmt.Printf("NOPE we lied, returning err %s\n",err.Error())
 		return maggiefs.Block{}, err
 	}
 
@@ -274,6 +276,11 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
 	// TODO confirm not duplicate datanode
 	client, err := rpc.Dial("tcp", nameDataAddr)
+	if err != nil {
+		err = fmt.Errorf("Error connecting to client %d at %s : %s",dnId,nameDataAddr,err.Error())
+		fmt.Println(err)
+		return err
+	}
 	nameData := mrpc.NewNameDataIfaceClient(client)
 	return ns.rm.addDn(nameData)
 }
