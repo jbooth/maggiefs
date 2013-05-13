@@ -65,7 +65,8 @@ func TestAddBlock(t *testing.T) {
 	fmt.Printf("got block back %+v\n", newBlock)
 	ino, err = testCluster.names.GetInode(ino.Inodeid)
 
-	if newBlock.Id != ino.Blocks[0].Id || ino.Blocks[0].EndPos != 1024 {
+	if newBlock.Id != ino.Blocks[0].Id || ino.Blocks[0].EndPos != 1023 {
+		// 1023 end pos for 1024 length because we're 0 indexed
 		t.Fatal(fmt.Errorf("Wrong end length for block %+v", ino.Blocks[0]))
 	}
 	// check that block made it to each datanode
@@ -80,7 +81,7 @@ func TestAddBlock(t *testing.T) {
 					// dnIDs start at 1 so decrement 
 					blocks, err := testCluster.dataNodes[dnInfo.DnId - 1].BlockReport(volId)
 					if err != nil {
-						t.Fatal(err)
+						t.Fatal(err.Error())
 					}
 					fmt.Printf("Blocks for vol %d : %+v\n", volId, blocks)
 

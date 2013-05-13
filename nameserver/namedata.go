@@ -147,10 +147,8 @@ func (nd *NameData) Mutate(inodeid uint64, f func(i *maggiefs.Inode) (error)) (*
   defer nd.inodeStripeLock[inodeid & STRIPE_SIZE].Unlock()
   i,err := nd.GetInode(inodeid)
   if err != nil { return nil,err }
-  fmt.Printf("Inode before mutate: %+v\n",i)
   err = f(i)
   if err != nil { return nil,err }
-  fmt.Printf("Inode after mutating: %+v\n",i)
 	key := make([]byte,8)
   binary.LittleEndian.PutUint64(key,i.Inodeid)
   // do the write and send OK

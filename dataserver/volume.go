@@ -72,7 +72,7 @@ func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
 	// write vol id
 	volIdFile, err := os.Create(volIdPath)
 	if err != nil {
-		return nil, fmt.Errorf("Volume.format : Error trying to create file %s : %s",volIdPath,err.Error())
+		return nil, fmt.Errorf("Volume.format : Error trying to create file %s : %s", volIdPath, err.Error())
 	} else {
 		defer volIdFile.Close()
 	}
@@ -125,7 +125,7 @@ func getVolId(volRoot string) (uint32, error) {
 
 // represents a volume
 // each volume has a root path, with a file VOLID containing the string representation of our volume id,
-// and then the directories 'meta' and 'blocks' which contain, respectively, a levelDB of block metadata 
+// and then the directories 'meta' and 'blocks' which contain, respectively, a levelDB of block metadata
 // and the physical blocks
 type volume struct {
 	id        uint32
@@ -155,19 +155,19 @@ func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
 }
 
 func (v *volume) AddBlock(blk maggiefs.Block) error {
-	fmt.Printf("Adding block to vol %d\n",v.id)
+	fmt.Printf("Adding block to vol %d\n", v.id)
 	// TODO should blow up here if blk already exists
 	// create file representing block
 	f, err := os.Create(v.resolvePath(blk.Id))
 	if err != nil {
-		return fmt.Errorf("Error creating block for %d : %s\n",blk.Id,err.Error())
+		return fmt.Errorf("Error creating block for %d : %s\n", blk.Id, err.Error())
 	}
 	defer f.Close()
 	// add to blockmeta db
 	key := make([]byte, 8)
 	binary.LittleEndian.PutUint64(key, blk.Id)
 	binSize := blk.BinSize()
-	val := make([]byte,binSize)
+	val := make([]byte, binSize)
 	blk.ToBytes(val)
 	err = v.blockData.Put(writeOpts, key, val)
 	return err
@@ -204,7 +204,7 @@ func (v *volume) TruncBlock(blk maggiefs.Block, newSize uint32) error {
 }
 
 func (v *volume) BlockReport() ([]maggiefs.Block, error) {
-	fmt.Printf("doing block report in volume %d\n",v.id)
+	fmt.Printf("doing block report in volume %d\n", v.id)
 	ret := make([]maggiefs.Block, 0, 0)
 	it := v.blockData.NewIterator(readOpts)
 	defer it.Close()
@@ -212,7 +212,7 @@ func (v *volume) BlockReport() ([]maggiefs.Block, error) {
 	for it = it; it.Valid(); it.Next() {
 		blk := maggiefs.Block{}
 		blk.FromBytes(it.Value())
-		fmt.Printf("got block %+v\n",blk)
+		fmt.Printf("got block %+v\n", blk)
 		ret = append(ret, blk)
 	}
 	return ret, it.GetError()
@@ -231,7 +231,8 @@ func (v *volume) BlockReport() ([]maggiefs.Block, error) {
 //  BlockReport(volId int32) (blocks []Block, err error)
 
 func (v *volume) withFile(id uint64, op func(*os.File) error) error {
-	f, err := os.Open(v.resolvePath(id))
+	f, err := os.OpenFile(v.resolvePath(id),os.O_RDWR,0)
+	fmt.Printf("operating on file : %s\n",f.Name())
 	defer f.Close()
 	if err != nil {
 		return err
@@ -240,16 +241,18 @@ func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 }
 
 func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
+	fmt.Println("serving read")
 	err = v.withFile(req.Blk.Id, func(file *os.File) error {
+		fmt.Printf("Serving read to file %s\n",file.Name())
 		// check off
 		resp := ResponseHeader{STAT_OK}
 		// write header
+		fmt.Println("writing header")
 		_, err = resp.WriteTo(client)
 		// sendfile
 		if err != nil {
 			return err
 		}
-		nSent := 0
 		sendPos := int64(req.Pos)
 		sockFile, _ := client.File()
 		stat, _ := file.Stat()
@@ -258,16 +261,14 @@ func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
 		zerosLength := 0
 		fileSize := uint64(stat.Size())
 		if uint64(sendPos)+sendLength > fileSize {
-			fileSize = uint64(stat.Size() - sendPos)
+		
+			sendLength = uint64(stat.Size() - sendPos)
 			zerosLength = int(uint32(req.Length) - uint32(sendLength))
 		}
-		for nSent < int(req.Length) {
-			n, err := syscall.Sendfile(int(sockFile.Fd()), int(file.Fd()), &sendPos, int(sendLength))
-			if err != nil {
-				return err
-			}
-			nSent += n
-			sendPos += int64(n)
+		fmt.Printf("sending data from pos %d length %d\n",sendPos,sendLength)
+		err = SendFile(file, sockFile, sendPos, int(sendLength))
+		if err != nil {
+			return err
 		}
 		for zerosLength > 0 {
 			// send some zeroes
@@ -291,22 +292,28 @@ func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
 	return err
 }
 
-func (v *volume) serveWrite(client *net.TCPConn, req RequestHeader, datas DataClient) error {
-  resp := ResponseHeader{STAT_OK}
-  
+func (v *volume) serveWrite(client *net.TCPConn, req RequestHeader, datas *DataClient) error {
+	resp := ResponseHeader{STAT_OK}
+
 	// should we check block.Version here?  skipping for now
 	err := v.withFile(req.Blk.Id, func(file *os.File) error {
+		fmt.Printf("vol %d pipelining write to following vol IDs %+v\n", v.id, req.Blk.Volumes)
 		// remove ourself from pipeline remainder
 		for idx, volId := range req.Blk.Volumes {
 			if volId == v.id {
-				if idx < len(req.Blk.Volumes) {
-					req.Blk.Volumes = append(req.Blk.Volumes[:idx], req.Blk.Volumes...)
+				if idx == 0 {
+					  req.Blk.Volumes = req.Blk.Volumes[1:]
 				} else {
-					req.Blk.Volumes = req.Blk.Volumes[:idx]
+					if idx < len(req.Blk.Volumes) {
+						req.Blk.Volumes = append(req.Blk.Volumes[:idx], req.Blk.Volumes[idx+1:]...)
+					} else {
+						req.Blk.Volumes = req.Blk.Volumes[:idx]
+					}
 				}
 				break
 			}
 		}
+		fmt.Printf("volumes after removing self %+v\n", req.Blk.Volumes)
 		// prepare to splice
 		outOffset := int64(req.Pos)
 		inFile, err := client.File()
@@ -324,50 +331,39 @@ func (v *volume) serveWrite(client *net.TCPConn, req RequestHeader, datas DataCl
 					return err
 				}
 				tees := []*os.File{teeFile}
-				return SpliceAdv(inFile, nil, file, &outOffset, tees, int(req.Length))
+				err = SpliceAdv(inFile, nil, file, &outOffset, tees, int(req.Length))
+				if err != nil {
+					err = fmt.Errorf("Error splicing on volume %d : %s",v.id,err.Error())
+				}
+				// TODO read response back so we don't fuck up the sockets
+				return err
 			})
 			return err
 		}
 		// just us, so splice to file and return
-		return SpliceAdv(inFile, nil, file, &outOffset, nil, int(req.Length))
-		// unreachable
-		return nil
+		err = SpliceAdv(inFile, nil, file, &outOffset, nil, int(req.Length))
+		return err
 	})
+	
+  fmt.Printf("vol %d returning resp %+v \n",v.id,resp)
 	// send response
-  resp.WriteTo(client)
+	resp.WriteTo(client)
 	return err
 }
 
 func checkResponse(c *net.TCPConn) error {
-  resp := ResponseHeader{}
-  resp.ReadFrom(c)
-  if resp.Stat == STAT_OK {
-    return nil
-  } 
-  return fmt.Errorf("Response stat not ok : %d",resp.Stat)
-  
-}
-
-func (v *volume) pipelineWrite(incoming *net.Conn, outgoing *net.Conn, buff pipe, file *os.File) error {
-
-	// send headers if so
-
-	// splice from sock			
-
-	// tee if necessary
-
-	// splice to disk
-
-	// wait for resp
-	if outgoing != nil {
-
+	resp := ResponseHeader{}
+	resp.ReadFrom(c)
+	if resp.Stat == STAT_OK {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("Response stat not ok : %d", resp.Stat)
+
 }
 
 // paths are resolved using an intermediate hash so that we don't blow up the data dir with millions of entries
 // we take the id modulo 1024 and use that as a string
 func (v *volume) resolvePath(blockid uint64) string {
-	os.Mkdir(fmt.Sprintf("%s/%d",v.rootPath,blockid&1023),0755)
+	os.Mkdir(fmt.Sprintf("%s/%d", v.rootPath, blockid&1023), 0755)
 	return fmt.Sprintf("%s/%d/%d.block", v.rootPath, blockid&1023, blockid)
 }

@@ -23,7 +23,6 @@ func CloseableRPC(listenAddr string, impl interface{}, name string) (*CloseableS
 	rpcServer := rpc.NewServer()
 	rpcServer.RegisterName(name,impl)
 	onAccept := func(conn *net.TCPConn) {
-		fmt.Println("accepted conn!")
 		buf := bufio.NewWriter(conn)
 		codec := &gobServerCodec{conn, gob.NewDecoder(conn), gob.NewEncoder(buf), buf}
 		go rpcServer.ServeCodec(codec)
@@ -63,7 +62,6 @@ func (r *CloseableServer) Start() error {
 // blocking accept loop
 func (r *CloseableServer) Accept() {
 	for {
-		fmt.Println("accepting")
 		conn, err := r.listen.AcceptTCP()
 		if err != nil {
 			// stop accepting, shut down

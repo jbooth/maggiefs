@@ -15,6 +15,15 @@ type DataClient struct {
 	pool *connPool
 }
 
+func NewDataClient(names maggiefs.NameService, connsPerDn int) (*DataClient,error) {
+	return &DataClient{names,make(map[uint32]*net.TCPAddr),&sync.RWMutex{},newConnPool(connsPerDn,true)},nil
+}
+
+var (
+	// compile-time check for type safety
+	checkClnt maggiefs.DataService = &DataClient{}
+)
+
 func pickVol(vols []uint32) uint32 {
 	return vols[rand.Int() % len(vols)]
 }
@@ -23,17 +32,27 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 	return dc.withConn(pickVol(blk.Volumes),func(d *dnConn) error {
 		// send req
 		header := RequestHeader{OP_READ,blk,pos,length}
-		header.WriteTo(d.c)
+		fmt.Printf("data client writing read header to %s, local addr %s\n",d.c.RemoteAddr().String(),d.c.LocalAddr().String())
+		_,err = header.WriteTo(d.c)
+		if err != nil {
+			return fmt.Errorf("Error writing header to dn : %s",err.Error())
+		}
+		fmt.Println("dataclientRead:  wrote header")
 		// read resp header
 		resp := &ResponseHeader{}
-		resp.ReadFrom(d.c)
+		fmt.Println("reading response header")
+		_,err = resp.ReadFrom(d.c)
+		if err != nil {
+			return fmt.Errorf("Error reading header from dn : %s",err.Error())
+		}
 		if resp.Stat == STAT_ERR {
 			return fmt.Errorf("Error code %d from DN",resp.Stat)
 		} 
 		// read resp bytes
 		numRead := 0
 		for ; uint32(numRead) < length ; {
-			n,err := d.c.Read(p[numRead:int(length) - numRead])
+			
+			n,err := d.c.Read(p[numRead:(int(length) - 1)])
 			if err != nil { 
 				return err
 			}
@@ -50,8 +69,12 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 func (dc *DataClient)  Write(blk maggiefs.Block, p []byte, pos uint64) (err error) {
 	return dc.withConn(pickVol(blk.Volumes), func(d *dnConn) error {
 		// send req header
-		header := RequestHeader{OP_WRITE,blk,pos,uint32(len(p))}
+		header := &RequestHeader{OP_WRITE,blk,pos,uint32(len(p))}
+		if d == nil {
+			fmt.Println("nil dnconn!")
+		}
 		header.WriteTo(d.c)
+		fmt.Printf("wrote header, writing bytes first 5: %x\n",p[:5])
 		// send req bytes
 		numWritten := 0
 		for ; numWritten <  len(p) ; {
@@ -59,6 +82,7 @@ func (dc *DataClient)  Write(blk maggiefs.Block, p []byte, pos uint64) (err erro
 			if err != nil {
 				return err
 			}
+			fmt.Printf("wrote %d bytes\n",n)
 			numWritten += n
 		}
 		// read resp header
@@ -118,10 +142,14 @@ type connPool struct {
 	l *sync.RWMutex
 	maxPerKey int
 	destroyOnError bool
-	localAddr *net.TCPAddr
+}
+
+func newConnPool(maxPerKey int, destroyOnError bool) *connPool {
+	return &connPool{make(map[*net.TCPAddr] chan *dnConn),&sync.RWMutex{},maxPerKey,destroyOnError}
 }
 
 func (p *connPool) withConn(host *net.TCPAddr, with func(c *dnConn) error) (err error) {
+	fmt.Printf("Doing something with conn to host %s\n",host.String())
 	// get chan
 	p.l.RLock()
 	ch,exists := p.pool[host]
@@ -140,7 +168,7 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c *dnConn) error) (err 
 		  // nothing to do
 		default:
 		  // create new one
-		  conn,err := p.dial(host)
+		  conn,err = p.dial(host)
 		  if err != nil {
 		  	if conn != nil {
 			  	_ = conn.c.Close()
@@ -158,7 +186,7 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c *dnConn) error) (err 
 	}
 	// return	to pool
 	select {
-		case ch <- conn:
+		//case ch <- conn:
 		  // successfully added back to freelist
 		default:
 		  // freelist full, dispose of that trash
@@ -168,7 +196,8 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c *dnConn) error) (err 
 }
 
 func (p *connPool) dial(host *net.TCPAddr) (*dnConn,error) {
-	conn,err := net.DialTCP("tcp",p.localAddr,host)
+	conn,err := net.DialTCP("tcp",nil,host)
 	if err != nil { return nil,err }
+	conn.SetNoDelay(true)
 	return &dnConn { conn },nil
 }

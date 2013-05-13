@@ -14,6 +14,7 @@ import (
 
 type SingleNodeCluster struct {
 	leaseServer *leaseserver.LeaseServer
+	leases      maggiefs.LeaseService
 	nameServer  *nameserver.NameServer
 	names       maggiefs.NameService
 	dataNodes   []*dataserver.DataServer
@@ -106,13 +107,13 @@ func NewNameServer(cfg *NNConfig, format bool) (*NameLeaseServer, error) {
 	return nls, err
 }
 
-func NewDataServer(cfg *DSConfig) (*dataserver.DataServer, error) {
-	nameService, err := NewNameClient(cfg.NameAddr)
-	if err != nil {
-		return nil, err
-	}
-	return dataserver.NewDataServer(cfg.VolumeRoots, cfg.DataClientBindAddr, cfg.NameDataBindAddr, nameService)
-}
+//func NewDataServer(cfg *DSConfig) (*dataserver.DataServer, error) {
+//	nameService, err := NewNameClient(cfg.NameAddr)
+//	if err != nil {
+//		return nil, err
+//	}
+//	return dataserver.NewDataServer(cfg.VolumeRoots, cfg.DataClientBindAddr, cfg.NameDataBindAddr, nameService)
+//}
 
 // bindIn
 func NewSingleNodeCluster(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*SingleNodeCluster, error) {
@@ -135,9 +136,16 @@ func NewSingleNodeCluster(volRoots [][]string, nameHome string, bindHost string,
 	cl.leaseServer = nls.leaseServer
 	cl.nameServer = nls.nameserver
 	cl.names, err = NewNameClient(nncfg.NameBindAddr)
+	cl.leases,err = leaseserver.NewLeaseClient(nncfg.LeaseBindAddr)
 	if err != nil {
 		return cl, err
 	}
+	// start data client
+	dc,err := dataserver.NewDataClient(cl.names, 1)
+	if err != nil {
+		return cl,fmt.Errorf("error building dataclient : %s",err.Error())
+	}
+	cl.datas = dc
 	// start dataservers
 	cl.dataNodes = make([]*dataserver.DataServer, len(volRoots))
 	for idx, dnVolRoots := range volRoots {
@@ -145,7 +153,7 @@ func NewSingleNodeCluster(volRoots [][]string, nameHome string, bindHost string,
 		startPort++
 		nameDataAddr := fmt.Sprintf("%s:%d", bindHost, startPort)
 		startPort++
-		cl.dataNodes[idx], err = dataserver.NewDataServer(dnVolRoots, dataClientAddr, nameDataAddr, cl.names)
+		cl.dataNodes[idx], err = dataserver.NewDataServer(dnVolRoots, dataClientAddr, nameDataAddr, cl.names,dc)
 		if err != nil {
 			return cl, err
 		}

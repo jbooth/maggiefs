@@ -12,6 +12,8 @@ const (
 	STAT_OK  = uint8(0)
 	STAT_ERR = uint8(1)
 	STAT_NOBLOCK = uint8(2)
+	STAT_BADVOLUME = uint8(3)
+	STAT_BADOP = uint8(4)
 )
 
 type RequestHeader struct {

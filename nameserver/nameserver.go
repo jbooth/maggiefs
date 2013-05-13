@@ -215,7 +215,7 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 		startPos = 0
 	}
 
-	endPos := startPos + uint64(length)
+	endPos := startPos + uint64(length) - 1
 	// allocate block and id
 	b := maggiefs.Block{
 		Id:       0,

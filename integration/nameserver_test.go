@@ -20,7 +20,7 @@ var (
 		ReplicationFactor:3,
 	}
 	ns *NameLeaseServer = nil
-	client maggiefs.NameService = nil
+	ncli maggiefs.NameService = nil
 )
 
 func initNS() {
@@ -33,7 +33,7 @@ func initNS() {
 	fmt.Printf("created nameserver %+v\n",ns)
 	ns.Start()
 	fmt.Printf("getting name client for addr %s\n",cfg.NameBindAddr)
-	client,err = NewNameClient(cfg.NameBindAddr)
+	ncli,err = NewNameClient(cfg.NameBindAddr)
 	
 	if err != nil {
 		panic(err)
@@ -53,13 +53,13 @@ func TestAddInode(t *testing.T) {
 	initNS()
 	defer teardownNS()
 	ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
-	id,err := client.AddInode(ino)
+	id,err := ncli.AddInode(ino)
 	if err != nil {
 		panic(err)
 	}
 	ino.Inodeid = id
 	
-	ino2,err := client.GetInode(id)
+	ino2,err := ncli.GetInode(id)
 	if ! ino.Equals(ino2) {
 		t.Fatal(fmt.Errorf("Error, inodes not equal : %+v : %+v\n",*ino, *ino2))
 	}
@@ -70,17 +70,17 @@ func TestSetInode(t *testing.T) {
 	initNS()
 	defer teardownNS()
 	ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
-	id,err := client.AddInode(ino)
+	id,err := ncli.AddInode(ino)
 	if err != nil {
 		panic(err)
 	}
 	ino.Inodeid = id
 	ino.Mtime = time.Now().Unix()
-	err = client.SetInode(ino)
+	err = ncli.SetInode(ino)
 	if err != nil {
 		panic(err)
 	}
-	ino2,err := client.GetInode(id)
+	ino2,err := ncli.GetInode(id)
 	if ! ino.Equals(ino2) {
 		t.Fatal(fmt.Errorf("Error, inodes not equal : %+v : %+v\n",*ino, *ino2))
 	}
@@ -92,14 +92,14 @@ func TestLink(t *testing.T) {
 	initNS()
 	defer teardownNS()
 	ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
-	id,err := client.AddInode(ino)
+	id,err := ncli.AddInode(ino)
 	if err != nil {
 		panic(err)
 	}
 	ino.Inodeid = id
 	
 	ino2 := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
-	id,err = client.AddInode(ino)
+	id,err = ncli.AddInode(ino)
 	if err != nil {
 		panic(err)
 	}
@@ -107,11 +107,11 @@ func TestLink(t *testing.T) {
 	
 	// test normal link
 	fmt.Println("linking")
-	err = client.Link(ino.Inodeid,ino2.Inodeid,"name",true)
+	err = ncli.Link(ino.Inodeid,ino2.Inodeid,"name",true)
 	if err != nil {
 		panic(err)
 	}
-	ino,err = client.GetInode(ino.Inodeid)
+	ino,err = ncli.GetInode(ino.Inodeid)
 	if err != nil {
 	  panic(err) 
 	}
@@ -129,14 +129,14 @@ func TestUnlink(t *testing.T) {
 	initNS()
 	defer teardownNS()
 	ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
-	id,err := client.AddInode(ino)
+	id,err := ncli.AddInode(ino)
 	if err != nil {
 		panic(err)
 	}
 	ino.Inodeid = id
 	
 	ino2 := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
-	id,err = client.AddInode(ino)
+	id,err = ncli.AddInode(ino)
 	if err != nil {
 		panic(err)
 	}
@@ -144,11 +144,11 @@ func TestUnlink(t *testing.T) {
 	
 	// test normal link
 	fmt.Println("linking")
-	err = client.Link(ino.Inodeid,ino2.Inodeid,"name",true)
+	err = ncli.Link(ino.Inodeid,ino2.Inodeid,"name",true)
 	if err != nil {
 		panic(err)
 	}
-	ino,err = client.GetInode(ino.Inodeid)
+	ino,err = ncli.GetInode(ino.Inodeid)
 	if err != nil {
 	  panic(err) 
 	}
@@ -156,11 +156,11 @@ func TestUnlink(t *testing.T) {
 		t.Fatalf("Didn't link properly!")
 	}
 	
-	err = client.Unlink(ino.Inodeid,"name")
+	err = ncli.Unlink(ino.Inodeid,"name")
 	if err != nil {
 		panic(err)
 	}
-	ino,err = client.GetInode(ino.Inodeid)
+	ino,err = ncli.GetInode(ino.Inodeid)
 	if err != nil {
 	  panic(err) 
 	}
