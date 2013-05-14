@@ -228,7 +228,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 
 	// allocate new filehandle
 	fh := atomic.AddUint64(&m.fdCounter, uint64(1))
-	f := openFile{nil, nil, nil, nil}
+	f := openFile{nil, nil, nil}
 	f.lease, err = m.leases.ReadLease(inode.Inodeid)
 	if err != nil {
 		return fuse.EROFS
@@ -244,8 +244,6 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 		if err != nil {
 			return fuse.EROFS
 		}
-		//    f.writelock,err = m.names.WriteLease(inode.Inodeid)
-		//    if (err != nil) { return fuse.EROFS }
 	}
 
 	// output

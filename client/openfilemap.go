@@ -10,7 +10,6 @@ type openFile struct {
   r *Reader
   w *InodeWriter
   lease maggiefs.ReadLease
-  writelock maggiefs.WriteLease
 }
 
 func (f openFile) Close() error {
@@ -23,7 +22,6 @@ func (f openFile) Close() error {
     if (err != nil) { return err }
   }
   err = f.lease.Release()
-  if (f.writelock != nil) { err = f.writelock.Release() }
   return err
 }
 

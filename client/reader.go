@@ -61,6 +61,12 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		}
 		fmt.Printf("reader.go finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
 	}
+	// zero out rest of array
+	for ; nRead < length ; {
+		p[offset] = 0
+		nRead++
+		offset++
+	}
 	return nRead,nil
 }
 
