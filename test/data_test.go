@@ -1,4 +1,4 @@
-package integration
+package test
 
 import (
   "github.com/jbooth/maggiefs/maggiefs"
@@ -15,13 +15,13 @@ func TestWriteRead (t *testing.T) {
 	defer teardownCluster()
 	fmt.Println("Adding node to cluster")
 	ino := maggiefs.NewInode(0, maggiefs.FTYPE_REG, 0755, uint32(os.Getuid()), uint32(os.Getgid()))
-	id, err := testCluster.names.AddInode(ino)
+	id, err := testCluster.Names.AddInode(ino)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ino.Inodeid = id
 	
-	writer,err := client.NewInodeWriter(ino.Inodeid,testCluster.leases,testCluster.names,testCluster.datas)
+	writer,err := client.NewInodeWriter(ino.Inodeid,testCluster.Leases,testCluster.Names,testCluster.Datas)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestWriteRead (t *testing.T) {
 	}
 	
 	readBytes := make([]byte,1024*1024*200)
-	r,err := client.NewReader(ino.Inodeid,testCluster.names,testCluster.datas)
+	r,err := client.NewReader(ino.Inodeid,testCluster.Names,testCluster.Datas)
 	if err != nil {
 		t.Fatal(fmt.Sprintf("Error opening reader %s",err.Error()))
 	}

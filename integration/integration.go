@@ -13,12 +13,12 @@ import (
 )
 
 type SingleNodeCluster struct {
-	leaseServer *leaseserver.LeaseServer
-	leases      maggiefs.LeaseService
-	nameServer  *nameserver.NameServer
-	names       maggiefs.NameService
-	dataNodes   []*dataserver.DataServer
-	datas       maggiefs.DataService
+	LeaseServer *leaseserver.LeaseServer
+	Leases      maggiefs.LeaseService
+	NameServer  *nameserver.NameServer
+	Names       maggiefs.NameService
+	DataNodes   []*dataserver.DataServer
+	Datas       maggiefs.DataService
 }
 
 func (snc *SingleNodeCluster) Start() error {
@@ -27,19 +27,19 @@ func (snc *SingleNodeCluster) Start() error {
 }
 
 func (snc *SingleNodeCluster) Close() {
-	snc.nameServer.Close()
-	snc.leaseServer.Close()
-	for _,dn := range snc.dataNodes {
+	snc.NameServer.Close()
+	snc.LeaseServer.Close()
+	for _,dn := range snc.DataNodes {
 		dn.Close()
 	}
 }
 
 func (snc *SingleNodeCluster) WaitClosed() error {
-	err := snc.nameServer.WaitClosed()
+	err := snc.NameServer.WaitClosed()
 	if err != nil { return err }
-	err = snc.leaseServer.WaitClosed()
+	err = snc.LeaseServer.WaitClosed()
 	if err != nil { return err }
-	for _,dn := range snc.dataNodes {
+	for _,dn := range snc.DataNodes {
 		err = dn.WaitClosed()
 		if err != nil { return err }
 	}
@@ -116,7 +116,7 @@ func NewNameServer(cfg *NNConfig, format bool) (*NameLeaseServer, error) {
 //}
 
 // bindIn
-func NewSingleNodeCluster(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*SingleNodeCluster, error) {
+func NewSingleNodeCluster2(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*SingleNodeCluster, error) {
 	var err error
 	cl := &SingleNodeCluster{}
 	// start leaseserver and nameserver
@@ -133,27 +133,27 @@ func NewSingleNodeCluster(volRoots [][]string, nameHome string, bindHost string,
 	if err != nil {
 		return nil, err
 	}
-	cl.leaseServer = nls.leaseServer
-	cl.nameServer = nls.nameserver
-	cl.names, err = NewNameClient(nncfg.NameBindAddr)
-	cl.leases,err = leaseserver.NewLeaseClient(nncfg.LeaseBindAddr)
+	cl.LeaseServer = nls.leaseServer
+	cl.NameServer = nls.nameserver
+	cl.Names, err = NewNameClient(nncfg.NameBindAddr)
+	cl.Leases,err = leaseserver.NewLeaseClient(nncfg.LeaseBindAddr)
 	if err != nil {
 		return cl, err
 	}
 	// start data client
-	dc,err := dataserver.NewDataClient(cl.names, 1)
+	dc,err := dataserver.NewDataClient(cl.Names, 1)
 	if err != nil {
 		return cl,fmt.Errorf("error building dataclient : %s",err.Error())
 	}
-	cl.datas = dc
+	cl.Datas = dc
 	// start dataservers
-	cl.dataNodes = make([]*dataserver.DataServer, len(volRoots))
+	cl.DataNodes = make([]*dataserver.DataServer, len(volRoots))
 	for idx, dnVolRoots := range volRoots {
 		dataClientAddr := fmt.Sprintf("%s:%d", bindHost, startPort)
 		startPort++
 		nameDataAddr := fmt.Sprintf("%s:%d", bindHost, startPort)
 		startPort++
-		cl.dataNodes[idx], err = dataserver.NewDataServer(dnVolRoots, dataClientAddr, nameDataAddr, cl.names,dc)
+		cl.DataNodes[idx], err = dataserver.NewDataServer(dnVolRoots, dataClientAddr, nameDataAddr, cl.Names,dc)
 		if err != nil {
 			return cl, err
 		}
@@ -161,7 +161,7 @@ func NewSingleNodeCluster(volRoots [][]string, nameHome string, bindHost string,
 	return cl, nil
 }
 
-func TestCluster(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*SingleNodeCluster, error) {
+func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*SingleNodeCluster, error) {
 	err := os.Mkdir(baseDir, 0777)
 	if err != nil {
 		return nil, err
@@ -194,5 +194,5 @@ func TestCluster(numDNs int, volsPerDn int, replicationFactor uint32, baseDir st
 		}
 		volRoots[i] = dnRoots
 	}
-	return NewSingleNodeCluster(volRoots, nameBase, "0.0.0.0", 11001, replicationFactor, true)
+	return NewSingleNodeCluster2(volRoots, nameBase, "0.0.0.0", 11001, replicationFactor, true)
 }

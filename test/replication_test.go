@@ -1,4 +1,4 @@
-package integration
+package test
 
 import (
 	"fmt"
@@ -7,27 +7,7 @@ import (
 	"testing"
 )
 
-var (
-	testCluster *SingleNodeCluster
-)
 
-func initCluster() {
-	os.RemoveAll("/tmp/testcluster")
-	var err error
-	testCluster, err = TestCluster(4, 2, 3, "/tmp/testcluster")
-	if err != nil {
-		panic(err)
-	}
-}
-
-func teardownCluster() {
-	testCluster.Close()
-	err := testCluster.WaitClosed()
-	if err != nil {
-		panic(err)
-	}
-	return
-}
 
 func TestAddInodeToCluster(t *testing.T) {
 	fmt.Println("setting up cluster")
@@ -35,13 +15,13 @@ func TestAddInodeToCluster(t *testing.T) {
 	defer teardownCluster()
 	fmt.Println("Adding node to cluster")
 	ino := maggiefs.NewInode(0, maggiefs.FTYPE_REG, 0755, uint32(os.Getuid()), uint32(os.Getgid()))
-	id, err := testCluster.names.AddInode(ino)
+	id, err := testCluster.Names.AddInode(ino)
 	if err != nil {
 		panic(err)
 	}
 	ino.Inodeid = id
 	fmt.Println("getting node from cluster")
-	ino2, err := testCluster.names.GetInode(id)
+	ino2, err := testCluster.Names.GetInode(id)
 	if !ino.Equals(ino2) {
 		t.Fatal(fmt.Errorf("Error, inodes not equal : %+v : %+v\n", *ino, *ino2))
 	}
@@ -53,24 +33,24 @@ func TestAddBlock(t *testing.T) {
 	defer teardownCluster()
 	fmt.Println("Adding node to cluster")
 	ino := maggiefs.NewInode(0, maggiefs.FTYPE_REG, 0755, uint32(os.Getuid()), uint32(os.Getgid()))
-	id, err := testCluster.names.AddInode(ino)
+	id, err := testCluster.Names.AddInode(ino)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ino.Inodeid = id
-	newBlock, err := testCluster.names.AddBlock(ino.Inodeid, 1024)
+	newBlock, err := testCluster.Names.AddBlock(ino.Inodeid, 1024)
 	if err != nil {
 		t.Fatal(err)
 	}
 	fmt.Printf("got block back %+v\n", newBlock)
-	ino, err = testCluster.names.GetInode(ino.Inodeid)
+	ino, err = testCluster.Names.GetInode(ino.Inodeid)
 
 	if newBlock.Id != ino.Blocks[0].Id || ino.Blocks[0].EndPos != 1023 {
 		// 1023 end pos for 1024 length because we're 0 indexed
 		t.Fatal(fmt.Errorf("Wrong end length for block %+v", ino.Blocks[0]))
 	}
 	// check that block made it to each datanode
-	fstat, err := testCluster.names.StatFs()
+	fstat, err := testCluster.Names.StatFs()
 	fmt.Printf("got fstat %+v\n", fstat)
 	for _, dnInfo := range fstat.DnStat {
 		for _, volStat := range dnInfo.Volumes {
@@ -79,7 +59,7 @@ func TestAddBlock(t *testing.T) {
 				if blockVolId == volId {
 					fmt.Printf("looking for vol %d on dn %d\n",volId,dnInfo.DnId)
 					// dnIDs start at 1 so decrement 
-					blocks, err := testCluster.dataNodes[dnInfo.DnId - 1].BlockReport(volId)
+					blocks, err := testCluster.DataNodes[dnInfo.DnId - 1].BlockReport(volId)
 					if err != nil {
 						t.Fatal(err.Error())
 					}
