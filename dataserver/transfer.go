@@ -71,20 +71,18 @@ func withPipe(f func(p pipe) error) (err error) {
 func SendFile(in *os.File, outFile *os.File, pos int64, length int) (err error) {
 	nSent := 0
 	buff := make([]byte, 4096)
-	outputFirstFive := true
 	for nSent < length {
 		numTransfer := 4096
 		if length-nSent < 4096 {
 			numTransfer = length - nSent
 			buff = buff[0:numTransfer]
 		}
-		_, err = in.ReadAt(buff,pos)
+		nRead, err := in.ReadAt(buff, pos)
+		if nRead < 4096 {
+			fmt.Printf("less than 4096 sending from pos %d with nSent %d out of %d\n",pos,nSent,length)
+		}
 		if err != nil {
 			return fmt.Errorf("SendFile: Error reading from in file : %s", err.Error())
-		}
-		if outputFirstFive {
-			outputFirstFive = false
-			fmt.Printf("SendFile first 5 %x\n",buff[:5])
 		}
 		_, err = outFile.Write(buff)
 		if err != nil {
@@ -92,6 +90,7 @@ func SendFile(in *os.File, outFile *os.File, pos int64, length int) (err error) 
 		}
 		nSent += numTransfer
 		pos += int64(numTransfer)
+		
 		// TODO actually use sendfile
 		//		fmt.Println("calling sendfile")
 		//		n, err := syscall.Sendfile(int(outFile.Fd()), int(in.Fd()), &pos, length)
@@ -109,27 +108,22 @@ func SendFile(in *os.File, outFile *os.File, pos int64, length int) (err error) 
 
 // temp implementation that just uses a buffer
 func SpliceAdv(in *os.File, inOff *int64, out *os.File, outOff *int64, teeFiles []*os.File, length int) error {
-	buff := make([]byte, 4096)
+	buff := make([]byte, 65536)
 	nSpliced := 0
 	var err error
 	outputOffset := int64(0)
-	outputFirstFive := true
 	if outOff != nil {
 		outputOffset = *outOff
 	}
 	for nSpliced < length {
-		numTransfer := 4096
-		if length-nSpliced < 4096 {
+		numTransfer := 65536
+		if length-nSpliced < 65536 {
 			numTransfer = length - nSpliced
 			buff = buff[0:numTransfer]
 		}
 		_, err = io.ReadFull(in, buff)
 		if err != nil {
 			return fmt.Errorf("SpliceAdv: Error reading from in file : %s", err.Error())
-		}
-		if outputFirstFive {
-			outputFirstFive = false
-			fmt.Printf("SpliceAdv first 5 %x\n",buff[:5])
 		}
 		_, err = out.WriteAt(buff, outputOffset)
 		if err != nil {
@@ -142,9 +136,9 @@ func SpliceAdv(in *os.File, inOff *int64, out *os.File, outOff *int64, teeFiles 
 					return fmt.Errorf("SpliceAdv:  Error tee-ing : %s", err.Error())
 				}
 			}
-			nSpliced += numTransfer
-			outputOffset += int64(numTransfer)
 		}
+		nSpliced += numTransfer
+		outputOffset += int64(numTransfer)
 	}
 	return nil
 }

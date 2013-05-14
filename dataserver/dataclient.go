@@ -52,7 +52,7 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 		numRead := 0
 		for ; uint32(numRead) < length ; {
 			
-			n,err := d.c.Read(p[numRead:(int(length) - 1)])
+			n,err := d.c.Read(p[numRead:int(length)])
 			if err != nil { 
 				return err
 			}

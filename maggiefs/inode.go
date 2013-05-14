@@ -410,5 +410,5 @@ func (b *Block) FromBytes(bytes []byte) int {
 
 
 func (b *Block) Length() uint64 {
-  return b.EndPos - b.StartPos
+  return b.EndPos - b.StartPos + 1
 }

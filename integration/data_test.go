@@ -46,10 +46,12 @@ func TestWriteRead (t *testing.T) {
 	if err != nil {
 		t.Fatal(fmt.Sprintf("Error opening reader %s",err.Error()))
 	}
-	r.ReadAt(readBytes,0,0,1024*1024*200)
+	_,err = r.ReadAt(readBytes,0,0,1024*1024*200)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for idx,b := range readBytes {
 		if b != bytes[idx] {
-			
 			t.Fatal(fmt.Sprintf("Bytes not equal at offset %d : %x != %x",idx,b,bytes[idx]))
 		}
 	}

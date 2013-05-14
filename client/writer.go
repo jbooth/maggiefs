@@ -70,15 +70,15 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (written uint
 				posInBlock += off - b.StartPos 
 			}
 			fmt.Printf("nWritten %d off %d len %d endofWritePos %d block %+v posInBlock %d\n",nWritten,off,length,endOfWritePos,b,posInBlock)  
-			writeLength := len(p[nWritten:])
+			writeLength := int(length) - nWritten
 			fmt.Println(writeLength)
 			if b.EndPos < endOfWritePos {
-				writeLength = int(b.EndPos - posInBlock)
+				writeLength = int(b.Length() - posInBlock)
 			}
 			fmt.Printf("startIdx %d writeLength %d\n",nWritten,writeLength)
 			startIdx := nWritten
-			endIdx := startIdx + writeLength 
-			fmt.Printf("Writing %d bytes to block %+v\n",endIdx-startIdx,b)
+			endIdx := startIdx + writeLength
+			fmt.Printf("Writing %d bytes to block %+v startIdx %d endIdx %d\n",endIdx-startIdx,b,startIdx,endIdx)
 			err = w.datas.Write(b, p[startIdx:endIdx], posInBlock)
 			if err != nil { 
 				return 0,err
@@ -94,6 +94,7 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (written uint
 // acquires lease, then adds the blocks to the namenode,
 // patching up the referenced inode to match
 func (w *InodeWriter) addBlocksForFileWrite(inode *maggiefs.Inode, off uint64, length uint32) error {	
+	fmt.Printf("Adding blocks for write at off %d length %d\n",off,length)
 	newEndPos := off + uint64(length)
 	if newEndPos > inode.Length {
 		// if we have a last block and it's less than max length,
@@ -116,7 +117,9 @@ func (w *InodeWriter) addBlocksForFileWrite(inode *maggiefs.Inode, off uint64, l
 			if newBlockLength > BLOCKLENGTH {
 				newBlockLength = BLOCKLENGTH
 			}
+			fmt.Printf("Adding block with length %d\n",newBlockLength)
 			newBlock,err := w.names.AddBlock(inode.Inodeid,uint32(newBlockLength))
+			fmt.Printf("Got block %+v with length %d\n",newBlock,newBlock.Length())
 			if err != nil {
 				return err
 			}
