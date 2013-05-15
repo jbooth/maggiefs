@@ -26,7 +26,7 @@ type MaggieFuse struct {
 	datas          maggiefs.DataService
 	openFiles      openFileMap                                // maps FD numbers to open files
 	fdCounter      uint64                                     // used to get unique FD numbers
-	changeNotifier chan uint64                  // remote changes to inodes are notified through this chan
+	changeNotifier chan uint64                                // remote changes to inodes are notified through this chan
 	inodeNotify    func(*raw.NotifyInvalInodeOut) fuse.Status // used to signal to OS that a remote inode changed
 	log            *log.Logger
 }
@@ -43,7 +43,7 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 		nil,
 		log.New(os.Stderr, "maggie-fuse", 0),
 	}
-	// 
+	//
 	go func() {
 		notify := &raw.NotifyInvalInodeOut{}
 		for inodeid := range m.changeNotifier {
@@ -55,23 +55,25 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 	return m, nil
 }
 
-func (m *MaggieFuse) mutate(inodeid uint64, mutator func(i *maggiefs.Inode) error) (*maggiefs.Inode,error) {
-    wl, err := m.leases.WriteLease(inodeid)
-    defer wl.Release()
-    if err != nil {
-      return nil,err
-    }
-    inode, err := m.names.GetInode(inodeid)
-    if err != nil {
-      return nil,err
-    }
-    err = mutator(inode)
-    if err != nil { return nil,err }
-    inode.Mtime = int64(time.Now().Unix())
-    err = m.names.SetInode(inode)
-    return inode,err
+func (m *MaggieFuse) mutate(inodeid uint64, mutator func(i *maggiefs.Inode) error) (*maggiefs.Inode, error) {
+	wl, err := m.leases.WriteLease(inodeid)
+	defer wl.Release()
+	if err != nil {
+		return nil, err
+	}
+	inode, err := m.names.GetInode(inodeid)
+	if err != nil {
+		return nil, err
+	}
+	err = mutator(inode)
+	if err != nil {
+		return nil, err
+	}
+	inode.Mtime = int64(time.Now().Unix())
+	err = m.names.SetInode(inode)
+	return inode, err
 }
- 
+
 // FUSE implementation
 func (m *MaggieFuse) Init(init *fuse.RawFsInit) {
 	m.inodeNotify = init.InodeNotify
@@ -99,16 +101,16 @@ func (m *MaggieFuse) StatFs(out *fuse.StatfsOut, h *raw.InHeader) fuse.Status {
 }
 
 // all files are 0777 yay
-func mode(ftype uint32) uint32 {
+func mode(ftype uint32, mode uint32) uint32 {
 	switch {
 	case maggiefs.FTYPE_DIR == ftype:
-		return syscall.S_IFDIR | 0777
+		return syscall.S_IFDIR | mode
 	case maggiefs.FTYPE_REG == ftype:
-		return syscall.S_IFREG | 0777
+		return syscall.S_IFREG | mode
 	case maggiefs.FTYPE_LNK == ftype:
-		return syscall.S_IFLNK | 0777
+		return syscall.S_IFLNK | mode
 	}
-	return syscall.S_IFREG | 0777
+	return syscall.S_IFREG | mode
 }
 
 func numBlocks(size uint64, blksize uint32) uint64 {
@@ -141,7 +143,7 @@ func (m *MaggieFuse) Lookup(out *raw.EntryOut, h *raw.InHeader, name string) (co
 func fillEntryOut(out *raw.EntryOut, i *maggiefs.Inode) {
 	// fill out
 	out.NodeId = i.Inodeid
-  out.Generation = i.Generation
+	out.Generation = i.Generation
 	out.EntryValid = uint64(0)
 	out.AttrValid = uint64(0)
 	out.EntryValidNsec = uint32(100)
@@ -156,7 +158,7 @@ func fillEntryOut(out *raw.EntryOut, i *maggiefs.Inode) {
 	out.Atimensec = uint32(0)
 	out.Mtimensec = uint32(0)
 	out.Ctimensec = uint32(0)
-	out.Mode = mode(i.Ftype)
+	out.Mode = mode(i.Ftype,i.Mode)
 	out.Nlink = i.Nlink
 	out.Uid = i.Uid
 	out.Gid = i.Gid
@@ -179,7 +181,7 @@ func fillAttrOut(out *raw.AttrOut, i *maggiefs.Inode) {
 	out.Atimensec = uint32(0)
 	out.Mtimensec = uint32(0)
 	out.Ctimensec = uint32(0)
-	out.Mode = mode(i.Ftype)
+	out.Mode = mode(i.Ftype,i.Mode)
 	out.Nlink = i.Nlink
 	out.Uid = i.Uid
 	out.Gid = i.Gid
@@ -188,6 +190,7 @@ func fillAttrOut(out *raw.AttrOut, i *maggiefs.Inode) {
 	// raw.AttrOut
 	out.AttrValid = uint64(0)
 	out.AttrValidNsec = uint32(100)
+	fmt.Printf("Filled attrOut %v with inode %v\n",out,i)
 }
 
 func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.GetAttrIn) (code fuse.Status) {
@@ -228,7 +231,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 
 	// allocate new filehandle
 	fh := atomic.AddUint64(&m.fdCounter, uint64(1))
-	f := openFile{nil, nil, nil}
+	f := openFile{fh, inode.Inodeid, nil, nil, nil}
 	f.lease, err = m.leases.ReadLease(inode.Inodeid)
 	if err != nil {
 		return fuse.EROFS
@@ -279,24 +282,23 @@ func parseWRFlags(flags uint32) (bool, bool, bool, bool) {
 }
 
 func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.SetAttrIn) (code fuse.Status) {
-	var f *openFile
-	if input.Valid&raw.FATTR_FH != 0 {
-		f = m.openFiles.get(input.Fh)
-	}
 	// if this is a truncate, handle the truncation separately from other mutations, it requires a special call
 	if input.Valid&raw.FATTR_SIZE != 0 {
-		if f == nil {
-			return fuse.ENOENT
-		}
-		err := f.w.Truncate(input.Size)
+		w, err := NewInodeWriter(header.NodeId, m.leases, m.names, m.datas)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "fuseconnector: error opening writer to truncate inode %d to size %d : %s\n", header.NodeId, input.Size, err.Error())
+			return fuse.EROFS
+		}
+		err = w.Truncate(input.Size)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "fuseconnector: error truncating inode %d to size %d : %s\n", header.NodeId, input.Size, err.Error())
 			return fuse.EROFS
 		}
 	}
 
 	// other mutations, if applicable
-	if input.Valid&(raw.FATTR_MODE|raw.FATTR_UID|raw.FATTR_GID|raw.FATTR_MTIME|raw.FATTR_MTIME_NOW|raw.FATTR_MTIME|raw.FATTR_MTIME_NOW) != 0 {
-    
+	if input.Valid&(raw.FATTR_MODE|raw.FATTR_UID|raw.FATTR_GID|raw.FATTR_MTIME|raw.FATTR_MTIME_NOW|raw.FATTR_MTIME|raw.FATTR_MTIME_NOW|raw.FATTR_SIZE) != 0 {
+
 		wl, err := m.leases.WriteLease(header.NodeId)
 		defer wl.Release()
 		if err != nil {
@@ -328,6 +330,7 @@ func (m *MaggieFuse) SetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.
 		if err != nil {
 			return fuse.EROFS
 		}
+		fmt.Printf("SetAttr filling attr out with ino %+v\n",inode)
 		fillAttrOut(out, inode)
 	}
 
@@ -579,7 +582,7 @@ func (m *MaggieFuse) GetXAttrData(header *raw.InHeader, attr string) (data []byt
 }
 
 func (m *MaggieFuse) SetXAttr(header *raw.InHeader, input *raw.SetXAttrIn, attr string, data []byte) fuse.Status {
-	_,err := m.mutate(header.NodeId, func(node *maggiefs.Inode) error {
+	_, err := m.mutate(header.NodeId, func(node *maggiefs.Inode) error {
 		node.Xattr[attr] = data
 		return nil
 	})
@@ -604,7 +607,7 @@ func (m *MaggieFuse) ListXAttr(header *raw.InHeader) (data []byte, code fuse.Sta
 }
 
 func (m *MaggieFuse) RemoveXAttr(header *raw.InHeader, attr string) fuse.Status {
-	_,err := m.mutate(header.NodeId, func(node *maggiefs.Inode) error {
+	_, err := m.mutate(header.NodeId, func(node *maggiefs.Inode) error {
 		delete(node.Xattr, attr)
 		return nil
 	})
@@ -740,7 +743,7 @@ func (m *MaggieFuse) ReadDir(l *fuse.DirEntryList, header *raw.InHeader, input *
 		if err != nil {
 			return fuse.EROFS
 		}
-		if !l.Add(entryList[i].name, entryList[i].Inodeid, mode(inode.Ftype)) {
+		if !l.Add(entryList[i].name, entryList[i].Inodeid, mode(inode.Ftype,inode.Mode)) {
 			break
 		}
 	}

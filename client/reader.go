@@ -20,11 +20,9 @@ type Reader struct {
 	datas   maggiefs.DataService
 }
 
-// reads UP TO length bytes from this inode, from position into the provided array at offset
-// may return early without error, so ensure you loop and call again
 func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32) (n uint32, err error) {
 	// have to re-get inode every time because it might have changed
-
+	
 	inode, err := r.names.GetInode(r.inodeid)
 	if err != nil {
 		return 0, err
@@ -39,6 +37,9 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 	// confirm currBlock and currReader correct
 	nRead := uint32(0)
 	for nRead < length {
+		if position == inode.Length {
+			return nRead,io.EOF
+		}
 		block, err := blockForPos(position, inode)
 		if err != nil {
 			return 0, err
@@ -47,8 +48,9 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		// if we're being asked to read past end of block, we just return early
 		posInBlock := uint64(position) - block.StartPos
 		numBytesFromBlock := uint32(block.Length()) - uint32(posInBlock)
-		if numBytesFromBlock > length {
-			length = numBytesFromBlock
+		if posInBlock == block.Length() {
+			// bail out and fill in with 0s
+			break
 		}
 		// read bytes
 		fmt.Printf("reader.go reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
@@ -61,13 +63,8 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		}
 		fmt.Printf("reader.go finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
 	}
-	// zero out rest of array
-	for ; nRead < length ; {
-		p[offset] = 0
-		nRead++
-		offset++
-	}
-	return nRead,nil
+	// sometimes the length can be more bytes than there are in the file, so always just give that back
+	return length,nil
 }
 
 func blockForPos(position uint64, inode *maggiefs.Inode) (blk maggiefs.Block, err error) {

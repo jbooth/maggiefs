@@ -246,7 +246,8 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 		delset := make([]maggiefs.Block, 0, 0)
 		var truncBlock *maggiefs.Block = nil
 		var truncLength uint32 = 0
-		for idx := len(inode.Blocks); idx >= 0; idx-- {
+		
+		for idx := len(inode.Blocks) - 1; idx >= 0; idx-- {
 			blk := inode.Blocks[idx]
 			if blk.EndPos > newSize {
 				// either delete or truncate
@@ -270,7 +271,8 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 		}
 		
 	}
-	return nil
+	inode.Length = newSize
+	return ns.nd.SetInode(inode)
 }
 
 func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {

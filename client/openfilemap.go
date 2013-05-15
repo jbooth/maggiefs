@@ -3,16 +3,20 @@ package client
 import (
   "sync"
   "github.com/jbooth/maggiefs/maggiefs"
+  "fmt"
 )
 
 
 type openFile struct {
+	fh uint64
+	inodeid uint64
   r *Reader
   w *InodeWriter
   lease maggiefs.ReadLease
 }
 
-func (f openFile) Close() error {
+
+func (f *openFile) Close() error {
   var err error = nil
   if (f.r != nil) { err = f.r.Close() }
   if (f.w != nil) { 
@@ -23,6 +27,10 @@ func (f openFile) Close() error {
   }
   err = f.lease.Release()
   return err
+}
+
+func (f *openFile) String() string {
+	return fmt.Sprintf("openFile{Fh: %d inode %d}",f.fh,f.inodeid)
 }
 
 // ghetto concurrent hashmap
