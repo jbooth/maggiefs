@@ -100,19 +100,6 @@ func (m *MaggieFuse) StatFs(out *fuse.StatfsOut, h *raw.InHeader) fuse.Status {
 	return fuse.OK
 }
 
-// all files are 0777 yay
-func mode(ftype uint32, mode uint32) uint32 {
-	switch {
-	case maggiefs.FTYPE_DIR == ftype:
-		return syscall.S_IFDIR | mode
-	case maggiefs.FTYPE_REG == ftype:
-		return syscall.S_IFREG | mode
-	case maggiefs.FTYPE_LNK == ftype:
-		return syscall.S_IFLNK | mode
-	}
-	return syscall.S_IFREG | mode
-}
-
 func numBlocks(size uint64, blksize uint32) uint64 {
 	bs := uint64(blksize)
 	leftover := size % bs
@@ -158,7 +145,7 @@ func fillEntryOut(out *raw.EntryOut, i *maggiefs.Inode) {
 	out.Atimensec = uint32(0)
 	out.Mtimensec = uint32(0)
 	out.Ctimensec = uint32(0)
-	out.Mode = mode(i.Ftype,i.Mode)
+	out.Mode = i.FullMode()
 	out.Nlink = i.Nlink
 	out.Uid = i.Uid
 	out.Gid = i.Gid
@@ -181,7 +168,7 @@ func fillAttrOut(out *raw.AttrOut, i *maggiefs.Inode) {
 	out.Atimensec = uint32(0)
 	out.Mtimensec = uint32(0)
 	out.Ctimensec = uint32(0)
-	out.Mode = mode(i.Ftype,i.Mode)
+	out.Mode = i.FullMode()
 	out.Nlink = i.Nlink
 	out.Uid = i.Uid
 	out.Gid = i.Gid
@@ -743,7 +730,7 @@ func (m *MaggieFuse) ReadDir(l *fuse.DirEntryList, header *raw.InHeader, input *
 		if err != nil {
 			return fuse.EROFS
 		}
-		if !l.Add(entryList[i].name, entryList[i].Inodeid, mode(inode.Ftype,inode.Mode)) {
+		if !l.Add(entryList[i].name, entryList[i].Inodeid, inode.FullMode()) {
 			break
 		}
 	}

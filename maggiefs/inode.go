@@ -265,19 +265,16 @@ func (i *Inode) String() string {
     i.Children)
 }
 
-
-
-// all 0777 for now
 func (i *Inode) FullMode() uint32 {
   switch {
   case FTYPE_DIR == i.Ftype:
-    return syscall.S_IFDIR | 0777
+    return syscall.S_IFDIR | i.Mode
   case FTYPE_REG == i.Ftype:
-    return syscall.S_IFREG | 0777
+    return syscall.S_IFREG | i.Mode
   case FTYPE_LNK == i.Ftype:
-    return syscall.S_IFLNK | 0777
+    return syscall.S_IFLNK | i.Mode
   }
-  return syscall.S_IFREG | 0777
+  return syscall.S_IFREG | i.Mode
 }
 
 func (i *Inode) Equals(other *Inode) bool {
