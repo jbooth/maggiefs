@@ -46,6 +46,27 @@ func (snc *SingleNodeCluster) WaitClosed() error {
 	return nil
 }
 
+type Client struct {
+	Leases maggiefs.LeaseService
+	Names maggiefs.NameService
+	Datas *dataserver.DataClient // TODO generalize this to maggiefs.DataService
+}
+
+func NewClient(nameAddr string, leaseAddr string) (*Client,error) {
+	ret := &Client{}
+	var err error
+	ret.Leases,err = leaseserver.NewLeaseClient(leaseAddr)
+	if err != nil {
+		return ret,err
+	}
+	ret.Names,err = NewNameClient(nameAddr)
+	if err != nil {
+		return ret,nil
+	}
+	ret.Datas,err = dataserver.NewDataClient(ret.Names,3)
+	return ret,err
+}
+
 type NameLeaseServer struct {
 	leaseServer *leaseserver.LeaseServer
 	nameserver  *nameserver.NameServer

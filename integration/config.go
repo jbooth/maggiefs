@@ -6,6 +6,7 @@ import (
 )
 
 type DSConfig struct {
+	LeaseAddr					 string   // addr to connect to for lease service
   NameAddr           string   // addr to connect to for nameservice
   DataClientBindAddr string   // addr we expose for data clients in "0.0.0.0:PORT" syntax
   NameDataBindAddr   string   // addr we expose for nameDataIface, in "0.0.0.0:PORT" syntax
