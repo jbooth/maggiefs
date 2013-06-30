@@ -56,6 +56,9 @@ func (c *clientConn) readRequests() {
 		if err != nil {
 			// we should probably close here
 			fmt.Printf("error reading from conn %s\n", err)
+			c.c.Close()
+			close(c.resp)
+			return
 		}
 		c.req <- queuedServerRequest{req, c.resp, c}
 	}
@@ -64,7 +67,11 @@ func (c *clientConn) readRequests() {
 
 func (c *clientConn) sendResponses() {
 	for {
-		resp := <-c.resp
+		resp,ok := <-c.resp
+		if !ok { 
+			fmt.Printf("connection %d closed, sendResponseThread dying")
+			return
+		}
 		err := c.e.Encode(resp)
 		if err != nil {
 			// should prob signal close here

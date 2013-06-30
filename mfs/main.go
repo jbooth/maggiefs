@@ -25,8 +25,8 @@ func usage(err error) {
 	}
 	fmt.Fprintf(os.Stderr, "usage: mfs [cmd]\n")
 	fmt.Fprintf(os.Stderr, "mfs namenode path/to/propsFile\n")
-	fmt.Fprintf(os.Stderr, "mfs datanode path/to/propsFile\n")
-	fmt.Fprintf(os.Stderr, "mfs client namenodeAddr:port mountPoint\n")
+	fmt.Fprintf(os.Stderr, "mfs datanode path/to/propsFile [mountPoint]\n")
+	fmt.Fprintf(os.Stderr, "mfs client namenodeAddr:port leaseAddr:port mountPoint\n")
 	fmt.Fprintf(os.Stderr, "mfs singlenode numDNs volsPerDn replicationFactor baseDir mountPoint\n")
 }
 
@@ -76,25 +76,46 @@ func main() {
 		cluster.Close()
 	case "dataserver":
 		cfg := &integration.DSConfig{}
-		cfg.ReadConfig(args[0])
-		mountPoint := args[1]
+		err := cfg.ReadConfig(args[0])
+		if err != nil {
+			usage(err)
+			return
+		}
 		services, err := integration.NewClient(cfg.NameAddr, cfg.LeaseAddr)
 		if err != nil {
 			usage(err)
 			return
 		}
 		ds, err := dataserver.NewDataServer(cfg.VolumeRoots, cfg.DataClientBindAddr, cfg.NameDataBindAddr, services.Names, services.Datas)
+		if err != nil {
+			usage(err)
+			return
+		}
 		ds.Start()
-		// start client
-		client, err := newMountedClient(services.Leases, services.Names, services.Datas, mountPoint)
-		client.Loop()
-		ds.Close()
+		if len(args) > 1 {
+			mountPoint := args[1]
+
+			// start client
+			client, err := newMountedClient(services.Leases, services.Names, services.Datas, mountPoint)
+			if err != nil {
+				usage(err)
+				return
+			}
+			client.Loop()
+			ds.Close()
+		}
+		ds.WaitClosed()
 
 	case "nameserver":
 		cfg := &integration.NNConfig{}
-		cfg.ReadConfig(args[0])
+		err := cfg.ReadConfig(args[0])
+		if err != nil {
+			usage(err)
+			return
+		}
+		fmt.Printf("%+v\n", cfg)
 		format := (len(args) > 1 && args[1] == "-format")
-		ns,err := integration.NewNameServer(cfg,format)
+		ns, err := integration.NewNameServer(cfg, format)
 		if err != nil {
 			usage(err)
 			return

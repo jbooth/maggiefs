@@ -137,6 +137,7 @@ func NewNameServer(cfg *NNConfig, format bool) (*NameLeaseServer, error) {
 //}
 
 // bindIn
+// TODO refactor to use NewConfSet
 func NewSingleNodeCluster2(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*SingleNodeCluster, error) {
 	var err error
 	cl := &SingleNodeCluster{}
@@ -181,7 +182,7 @@ func NewSingleNodeCluster2(volRoots [][]string, nameHome string, bindHost string
 	}
 	return cl, nil
 }
-
+// TODO refactor to use NewConfSet
 func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*SingleNodeCluster, error) {
 	err := os.Mkdir(baseDir, 0777)
 	if err != nil {
@@ -216,4 +217,28 @@ func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, b
 		volRoots[i] = dnRoots
 	}
 	return NewSingleNodeCluster2(volRoots, nameBase, "0.0.0.0", 11001, replicationFactor, true)
+}
+
+func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*NNConfig, []*DSConfig) {
+	nncfg := &NNConfig{}
+	nncfg.LeaseBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+	startPort++
+	nncfg.NameBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+	startPort++
+	nncfg.NNHomeDir = nameHome
+	nncfg.ReplicationFactor = replicationFactor
+	dscfg := make([]*DSConfig,len(volRoots))
+	for idx, dnVolRoots := range volRoots {
+		thisDscfg := &DSConfig{}
+		thisDscfg.DataClientBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+		startPort++
+		thisDscfg.NameDataBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+		startPort++
+		thisDscfg.VolumeRoots = dnVolRoots
+		thisDscfg.LeaseAddr = nncfg.LeaseBindAddr
+		thisDscfg.NameAddr = nncfg.NameBindAddr
+		dscfg[idx] = thisDscfg
+		
+	}
+	return nncfg,dscfg
 }
