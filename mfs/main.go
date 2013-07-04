@@ -140,8 +140,13 @@ func newMountedClient(leases maggiefs.LeaseService, names maggiefs.NameService, 
 		return nil, err
 	}
 	mountState := fuse.NewMountState(mfs)
+	
 	mountState.Debug = true
-	err = mountState.Mount(mountPoint, nil)
+	opts := &fuse.MountOptions {
+		MaxBackground: 12,
+		Options: []string {"max_read=131072", "max_readahead=131072","max_write=131072"},
+	}
+	err = mountState.Mount(mountPoint, opts)
 	return mountState, err
 }
 
