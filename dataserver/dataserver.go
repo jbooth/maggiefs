@@ -25,6 +25,7 @@ type DataServer struct {
 func NewDataServer(volRoots []string,
 	dataClientBindAddr string,
 	nameDataBindAddr string,
+	webBindAddr string,
 	ns maggiefs.NameService,
 	dc *DataClient) (ds *DataServer, err error) {
 	// scan volumes

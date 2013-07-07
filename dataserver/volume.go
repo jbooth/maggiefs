@@ -364,6 +364,6 @@ func checkResponse(c *net.TCPConn) error {
 // paths are resolved using an intermediate hash so that we don't blow up the data dir with millions of entries
 // we take the id modulo 1024 and use that as a string
 func (v *volume) resolvePath(blockid uint64) string {
-	os.Mkdir(fmt.Sprintf("%s/%d", v.rootPath, blockid&1023), 0755)
-	return fmt.Sprintf("%s/%d/%d.block", v.rootPath, blockid&1023, blockid)
+	os.Mkdir(fmt.Sprintf("%s/blocks/%d", v.rootPath, blockid&1023), 0755)
+	return fmt.Sprintf("%s/blocks/%d/%d.block", v.rootPath, blockid&1023, blockid)
 }

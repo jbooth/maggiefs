@@ -48,6 +48,9 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		// if we're being asked to read past end of block, we just return early
 		posInBlock := uint64(position) - block.StartPos
 		numBytesFromBlock := uint32(block.Length()) - uint32(posInBlock)
+		if numBytesFromBlock > length {
+		  numBytesFromBlock = length
+		}
 		if posInBlock == block.Length() {
 			// bail out and fill in with 0s
 			break

@@ -12,7 +12,7 @@ import (
 
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
 // addresses should be a 0.0.0.0:9999 type address
-func NewNameServer(ls maggiefs.LeaseService, nameAddr string, dataDir string, replicationFactor uint32, format bool) (*NameServer, error) {
+func NewNameServer(ls maggiefs.LeaseService, nameAddr string, webAddr string, dataDir string, replicationFactor uint32, format bool) (*NameServer, error) {
 	ns := NameServer{}
 	var err error = nil
 	ns.ls = ls

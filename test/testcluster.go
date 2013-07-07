@@ -12,7 +12,11 @@ var (
 func initCluster() {
 	os.RemoveAll("/tmp/testcluster")
 	var err error
-	testCluster, err = integration.NewSingleNodeCluster(4, 2, 3, "/tmp/testcluster")
+	nncfg,dscfg,err := integration.NewConfSet2(4,2,3,"/tmp/testcluster")
+	if err != nil {
+	  panic(err)
+	}
+	testCluster, err = integration.NewSingleNodeCluster(nncfg,dscfg,true)
 	if err != nil {
 		panic(err)
 	}

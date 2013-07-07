@@ -65,7 +65,12 @@ func main() {
 		}
 		baseDir := args[3]
 		mountPoint := args[4]
-		cluster, err := integration.NewSingleNodeCluster(numDNs, volsPerDn, uint32(replicationFactor), baseDir)
+		nncfg,dscfg,err := integration.NewConfSet2(numDNs, volsPerDn, uint32(replicationFactor), baseDir)
+		if err != nil {
+		  usage(err)
+		  return
+		}
+		cluster, err := integration.NewSingleNodeCluster(nncfg,dscfg,true)
 		if err != nil {
 			usage(err)
 			return
@@ -86,7 +91,7 @@ func main() {
 			usage(err)
 			return
 		}
-		ds, err := dataserver.NewDataServer(cfg.VolumeRoots, cfg.DataClientBindAddr, cfg.NameDataBindAddr, services.Names, services.Datas)
+		ds, err := dataserver.NewDataServer(cfg.VolumeRoots, cfg.DataClientBindAddr, cfg.NameDataBindAddr, cfg.WebBindAddr, services.Names, services.Datas)
 		if err != nil {
 			usage(err)
 			return
@@ -144,7 +149,7 @@ func newMountedClient(leases maggiefs.LeaseService, names maggiefs.NameService, 
 	mountState.Debug = true
 	opts := &fuse.MountOptions {
 		MaxBackground: 12,
-		Options: []string {"max_read=131072", "max_readahead=131072","max_write=131072"},
+		//Options: []string {"max_read=131072", "max_readahead=131072","max_write=131072"},
 	}
 	err = mountState.Mount(mountPoint, opts)
 	return mountState, err

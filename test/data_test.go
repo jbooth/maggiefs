@@ -72,7 +72,7 @@ func TestShortRead (t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 200 MB to make us 2 blocks
+	// 5 bytes
 	bytes := make([]byte,5)
 	_,err = rand.Read(bytes)
 	if err != nil {
@@ -92,8 +92,8 @@ func TestShortRead (t *testing.T) {
 	if err != nil {
 		t.Fatal(fmt.Sprintf("Error opening reader %s",err.Error()))
 	}
-	n,err = r.ReadAt(readBytes,0,0,4096)
-	
+	n,err = r.ReadAt(readBytes,0,0,5)
+	fmt.Printf("Read %d bytes\n",n)
 	if err != nil {
 		t.Fatal(err)
 	}

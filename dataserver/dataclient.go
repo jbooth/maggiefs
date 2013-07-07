@@ -33,6 +33,7 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 		// send req
 		header := RequestHeader{OP_READ,blk,pos,length}
 		fmt.Printf("data client writing read header to %s, local addr %s\n",d.c.RemoteAddr().String(),d.c.LocalAddr().String())
+		fmt.Printf("Reading length %d to slice of length %d\n",length,len(p))
 		_,err = header.WriteTo(d.c)
 		if err != nil {
 			return fmt.Errorf("Error writing header to dn : %s",err.Error())
