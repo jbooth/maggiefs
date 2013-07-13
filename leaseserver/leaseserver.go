@@ -42,7 +42,6 @@ type clientConn struct {
 	e      *gob.Encoder
 	req    chan queuedServerRequest // pointer to main server request channel
 	resp   chan response            // client-specific, feeds responses to this client
-	closed chan bool
 }
 
 func (c *clientConn) String() string {
@@ -54,10 +53,11 @@ func (c *clientConn) readRequests() {
 		req := request{}
 		err := c.d.Decode(&req)
 		if err != nil {
-			// we should probably close here
-			fmt.Printf("error reading from conn %s\n", err)
-			c.c.Close()
-			close(c.resp)
+			fmt.Printf("error reading from conn id %d, remote adr %s : %s shutting down\n", c.id,c.c.RemoteAddr().String(),err)
+			// tell server to expire all our leases			
+			// server will then call c.closeAndDie when done
+			req.Op = OP_CLOSE
+			c.req <- queuedServerRequest{req, c.resp, c}
 			return
 		}
 		c.req <- queuedServerRequest{req, c.resp, c}
@@ -69,7 +69,7 @@ func (c *clientConn) sendResponses() {
 	for {
 		resp,ok := <-c.resp
 		if !ok { 
-			fmt.Printf("connection %d closed, sendResponseThread dying")
+			fmt.Printf("connection %d closed, sendResponseThread dying\n")
 			return
 		}
 		err := c.e.Encode(resp)
@@ -78,6 +78,12 @@ func (c *clientConn) sendResponses() {
 			fmt.Printf("error writing to conn %s\n", err)
 		}
 	}
+}
+
+// closes all resources and releases all 
+func (c *clientConn) closeAndDie() {
+  close(c.resp)
+  c.c.Close()
 }
 
 func newClientConn(ls *LeaseServer, raw *net.TCPConn) (*clientConn, error) {
@@ -188,6 +194,13 @@ func (ls *LeaseServer) process() {
 			resp, err = ls.releaseLease(qr.req, qr.conn)
 		case OP_CHECKLEASES:
 			resp, err = ls.checkLeases(qr.req, qr.conn)
+	  case OP_CLOSE:
+	    err = ls.releaseAll(qr.conn)
+	    qr.conn.closeAndDie()
+	    if err != nil {
+	      fmt.Printf("Error closing conn: %s",err)
+	    }
+	    continue  // don't send a response
 		default:
 			err = fmt.Errorf("Bad request num %d", qr.req.Op)
 		}
@@ -210,6 +223,7 @@ func (ls *LeaseServer) createLease(r request, c *clientConn, isWriteLease bool) 
 		if leases != nil {
 			for _, l := range ls.leasesByInode[r.Inodeid] {
 				if l.writeLease {
+				  fmt.Printf("Write lease already taken for inode %d, leases : %+v\n",r.Inodeid,ls.leasesByInode[r.Inodeid])
 					writeLeaseAlreadyTaken = true
 					break
 				}
@@ -242,7 +256,7 @@ func (ls *LeaseServer) releaseLease(r request, c *clientConn) (response, error) 
 	inodeid := ls.leasesById[r.Leaseid].inodeid
 	// find readleases
 	inodeLeases := ls.leasesByInode[r.Inodeid]
-	// remove from lease map 
+	// remove from lease->inode map 
 	delete(ls.leasesById, r.Leaseid)
 	// find in inode leaselist
 	for idx, val := range inodeLeases {
@@ -258,6 +272,27 @@ func (ls *LeaseServer) releaseLease(r request, c *clientConn) (response, error) 
 	}
 	// done
 	return response{r.Reqno, 0, 0, STATUS_OK}, nil
+}
+
+// release all belonging to a given client
+func (ls *LeaseServer) releaseAll(c *clientConn) (error) {
+  fmt.Printf("Releasing all belonging to client %d\n",c.id)
+  // iterate all leases 
+  for _,inodeLeases := range ls.leasesByInode {
+    for idx,lease := range inodeLeases {
+      fmt.Printf("Checking if lease on inode %d belongs to our client :  %d == %d\n",lease.inodeid,lease.client.id,c.id)
+      if lease.client.id == c.id {
+        fmt.Printf("Deleting\n")
+        // belongs to this client so kill it
+        delete(ls.leasesById,lease.leaseid)
+        ls.leasesByInode[lease.inodeid] = append(inodeLeases[:idx], inodeLeases[idx+1:]...)
+        if len(ls.leasesByInode[lease.inodeid]) == 0 {
+          delete(ls.leasesByInode,lease.inodeid)
+        }
+      }
+    }
+  }
+  return nil
 }
 
 func (ls *LeaseServer) commitWriteLease(r request, c *clientConn) (response, error) {
@@ -279,6 +314,7 @@ func (ls *LeaseServer) commitWriteLease(r request, c *clientConn) (response, err
 
 func (ls *LeaseServer) checkLeases(r request, c *clientConn) (response, error) {
 	inodeLeases := ls.leasesByInode[r.Inodeid]
+	fmt.Printf("Checking leases for inode %d : %+v\n",r.Inodeid,inodeLeases)
 	if inodeLeases != nil && len(inodeLeases) > 0 {
 		return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_WAIT}, nil
 	}

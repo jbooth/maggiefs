@@ -11,7 +11,7 @@ import (
 
 var (
   o sync.Once = sync.Once{}
-  ls maggiefs.LeaseService
+  ls maggiefs.LeaseService   
   ls2 maggiefs.LeaseService
 )
 
@@ -139,5 +139,40 @@ func TestWaitAllReleased(t *testing.T) {
   }
 }
 
-
+func TestDisconnect(t *testing.T) {
+  nodeid := uint64(45)
+  // dial new client, we're gonna break it 
+  cli,err := NewLeaseClient(fmt.Sprintf("127.0.0.1:%d",LEASESERVER_PORT))
+  
+  o.Do(startServer)
+  _,err = cli.WriteLease(nodeid)
+  if err != nil {
+    panic(err)
+  }
+  expiredChan := make(chan bool)
+  tenSecondTimeout := time.After(time.Duration(10*1e9))
+  
+  // this should succeed after client is killed
+  go func() {
+    fmt.Println("Trying to acquire other lease")
+    wl2,err := ls2.WriteLease(nodeid)
+    if err != nil {
+      panic(err)
+    }
+    fmt.Println("Acquired other lease")
+    expiredChan <- true
+    wl2.Release()
+  }()
+  // kill client
+  cli.c.c.Close()
+  fmt.Println("Asserting that killing client drops held leases")
+  select {
+    case <- expiredChan:
+      fmt.Println("Defunct connection successfully expired from lease")
+      break
+    case <- tenSecondTimeout:
+      fmt.Println("Timed out trying to acquire lease!") 
+      t.Fail()
+  }
+}
 
