@@ -9,6 +9,7 @@ import (
 	"testing"
 	"fmt"
 	"os"
+	"net/http"
 	"time"
 )
 func TestAddInode(t *testing.T) {
@@ -134,5 +135,29 @@ func TestUnlink(t *testing.T) {
 }
 
 
+func TestGetInodeJson(t *testing.T) {
+  fmt.Println("setting up")
+  initCluster()
+  defer teardownCluster()
+  ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
+  id,err := testCluster.Names.AddInode(ino)
+  if err != nil {
+    panic(err)
+  }
+  ino.Inodeid = id
+  
+  ino2,err := testCluster.Names.GetInode(id)
+  if ! ino.Equals(ino2) {
+    t.Fatal(fmt.Errorf("Error, inodes not equal : %+v : %+v\n",*ino, *ino2))
+  }
+  inoJsonAddr := fmt.Sprintf("http://%s/inode?inodeid=%d",testCluster.NameServer.HttpAddr(),ino.Inodeid)
+  fmt.Printf("Getting ino json from %s\n",inoJsonAddr)
+  inoJson,err := http.Get(inoJsonAddr)
+  if err != nil {
+    panic(err)
+  }
+  fmt.Printf("Got json %s\n",inoJson)
+  
+}
 
 

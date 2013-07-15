@@ -11,6 +11,7 @@ import (
 
 
 func TestWriteRead (t *testing.T) {
+  fmt.Println("testWriteRead")
 	initCluster()
 	defer teardownCluster()
 	fmt.Println("Adding node to cluster")

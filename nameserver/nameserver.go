@@ -3,7 +3,9 @@ package nameserver
 import (
   "github.com/jbooth/maggiefs/maggiefs"
   "github.com/jbooth/maggiefs/mrpc"
+  "net"
 	"net/rpc"
+	"net/http"
 	"sync"
 	"time"
 	"fmt"
@@ -29,6 +31,11 @@ func NewNameServer(ls maggiefs.LeaseService, nameAddr string, webAddr string, da
 	}
 	ns.rm = newReplicationManager(replicationFactor)
 	ns.dirTreeLock = &sync.Mutex{}
+	ns.webListen,err = net.Listen("tcp",webAddr)
+	if err != nil {
+	  return nil,err
+	}
+	ns.webServer = newNameWebServer(&ns,webAddr)
 	return &ns, nil
 }
 
@@ -39,13 +46,19 @@ type NameServer struct {
 	listenAddr      string
 	dirTreeLock *sync.Mutex // used so all dir tree operations (link/unlink) are atomic
 	rpcServer *mrpc.CloseableServer // created at start time, need to be closed
+	webListen net.Listener
+	webServer *http.Server
 }
 
 func (ns *NameServer) Start() error {
   var err error = nil
   fmt.Printf("%+v\n",ns)
   ns.rpcServer,err = mrpc.CloseableRPC(ns.listenAddr,mrpc.NewNameServiceService(ns), "NameService")
+  if err != nil { return err }
   ns.rpcServer.Start()
+  go func() {
+    ns.webServer.Serve(ns.webListen)
+  }()
   return err
 }
 
@@ -55,12 +68,18 @@ func (ns *NameServer) Close() error {
   if err != nil { retError = err }
   err = ns.rpcServer.Close()
   if err != nil { retError = err }
+  err = ns.webListen.Close()
+  if err != nil { retError = err }
   return retError
 }
 
 func (ns *NameServer) WaitClosed() error {
   ns.rpcServer.WaitClosed()
   return nil
+}
+
+func (ns *NameServer) HttpAddr() string  {
+  return ns.webServer.Addr
 }
 
 func (ns *NameServer) GetInode(nodeid uint64) (node *maggiefs.Inode, err error) {

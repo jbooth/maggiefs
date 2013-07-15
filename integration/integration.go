@@ -152,10 +152,12 @@ func NewSingleNodeCluster(nncfg *NNConfig, ds []*DSConfig, format bool) (*Single
 	}
 	cl.LeaseServer = nls.leaseServer
 	cl.NameServer = nls.nameserver
+	fmt.Println("Starting name client")
 	cl.Names, err = NewNameClient(nncfg.NameBindAddr)
 	if err != nil {
 	 return cl,err
 	}
+	fmt.Println("starting lease client")
 	cl.Leases, err = leaseserver.NewLeaseClient(nncfg.LeaseBindAddr)
 	 if err != nil {
     return cl, err
@@ -169,6 +171,7 @@ func NewSingleNodeCluster(nncfg *NNConfig, ds []*DSConfig, format bool) (*Single
   // start dataservers
   cl.DataNodes = make([]*dataserver.DataServer, len(ds))
 	for idx,dscfg := range ds {
+	 fmt.Println("Starting DS with cfg %+v\n",dscfg)
 	 cl.DataNodes[idx],err = dataserver.NewDataServer(dscfg.VolumeRoots,dscfg.DataClientBindAddr,dscfg.NameDataBindAddr, dscfg.WebBindAddr, cl.Names,dc)
 	 if err != nil {
 	   return cl,err
