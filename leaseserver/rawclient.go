@@ -2,6 +2,7 @@ package leaseserver
 
 import (
 	"encoding/gob"
+  "github.com/jbooth/maggiefs/maggiefs"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -10,8 +11,8 @@ import (
 type rawclient struct {
 	id 				 uint64
 	c          *net.TCPConn
-	reqcounter uint32
-	notifier   chan uint64
+	reqcounter uint64
+	notifier   chan maggiefs.NotifyEvent
 	requests   chan queuedRequest
 	responses  chan response
 	closeMux   chan bool
@@ -41,7 +42,7 @@ func newRawClient(addr string) (*rawclient, error) {
 	if err != nil {
 		return nil,err
 	}
-	ret := &rawclient{binary.LittleEndian.Uint64(idBuff),c, 0, make(chan uint64, 100), make(chan queuedRequest), make(chan response), make(chan bool)}
+	ret := &rawclient{binary.LittleEndian.Uint64(idBuff),c, 0, make(chan maggiefs.NotifyEvent, 100), make(chan queuedRequest), make(chan response), make(chan bool)}
 	// read client id
 	
 	go ret.mux()
@@ -59,17 +60,24 @@ func (c *rawclient) doRequest(r request) (response, error) {
 	return resp, nil
 }
 
+func (c *rawclient) sendRequestNoResponse(r request) {
+  q := queuedRequest{r, nil}
+  c.requests <- q
+}
+
 func (c *rawclient) mux() {
-	responseChans := make(map[uint32]chan response)
+	responseChans := make(map[uint64]chan response)
 	reqEncoder := gob.NewEncoder(c.c)
 	for {
 		select {
 		case req := <-c.requests:
 			// register response channel
-			c.reqcounter++
-			req.r.Reqno = c.reqcounter
 			//fmt.Printf("storing respChan %+v under reqno %d\n",req.whenDone,req.r.Reqno)
-			responseChans[req.r.Reqno] = req.whenDone
+			if req.whenDone != nil {
+  			c.reqcounter++
+	   		req.r.Reqno = c.reqcounter
+  			responseChans[req.r.Reqno] = req.whenDone
+			}
 			// write the req to socket
 			err := reqEncoder.Encode(req.r)
 			if err != nil {
@@ -79,7 +87,8 @@ func (c *rawclient) mux() {
 		case resp := <-c.responses:
 			if resp.Status == STATUS_NOTIFY {
 			  // this is a notification so forward to the notification chan
-			  c.notifier <- resp.Inodeid  
+			  fmt.Printf("Got notify resp %+v",resp)
+			  c.notifier <- NotifyEvent{ inodeid: resp.Inodeid, ackid: resp.Reqno, c: c }  
 			} else {
 				// response to a request, forward to it's response chan
 				k := resp.Reqno

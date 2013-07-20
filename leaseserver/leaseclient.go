@@ -3,6 +3,7 @@ package leaseserver
 import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"time"
+	"fmt"
 )
 
 type LeaseClient struct {
@@ -49,7 +50,7 @@ func (lc LeaseClient) ReadLease(nodeid uint64) (l maggiefs.ReadLease, err error)
 // returns a chan which will contain an event every time any inode in the system is changed
 // used for cache coherency
 // the fuse client runs a goroutine reading all changes from this chan
-func (lc LeaseClient) GetNotifier() chan uint64 {
+func (lc LeaseClient) GetNotifier() chan maggiefs.NotifyEvent {
 	return lc.c.notifier
 }
 
@@ -64,6 +65,26 @@ func (lc LeaseClient) WaitAllReleased(nodeid uint64) error {
     if err != nil { return err }
   }
   return nil
+}
+
+
+type NotifyEvent struct {
+  inodeid uint64
+  ackid uint64
+  c *rawclient
+}
+
+func (n NotifyEvent) Ack() error {
+  // send ack message to server
+  
+  req := request {OP_ACKNOWLEDGE,n.ackid,n.inodeid,n.ackid}
+  fmt.Printf("Sending ack %+v\n",req)
+  n.c.sendRequestNoResponse(req)
+  return nil
+} 
+
+func (n NotifyEvent) Inodeid() uint64 {
+  return n.inodeid
 }
 
 type Lease struct {

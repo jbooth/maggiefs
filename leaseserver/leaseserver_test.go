@@ -54,17 +54,24 @@ func TestCommit(t *testing.T) {
       break
   }
   fmt.Println("committing")
-  err := wl.Release()
-  if err != nil { panic(err) }
+  go func() {
+    err := wl.Release()
+    if err != nil { panic(err) }
+    fmt.Println("done committing")
+  }()
   fmt.Println("waiting for notification")
   threeSecondTimeout = time.After(time.Duration(3*1e9))
   select {
-    case <- ls2.GetNotifier():
+    case n := <- ls2.GetNotifier():
+      fmt.Println("Got notification %+v\n",n)
+      n.Ack()
+      fmt.Println("Sent Ack")
       break
     case <- threeSecondTimeout:
       fmt.Println("timed out waiting for commit notification!")
       t.Fail()
   }
+  fmt.Println("releasing readlease")
   rl.Release()
 }
 
