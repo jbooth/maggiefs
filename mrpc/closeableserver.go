@@ -19,9 +19,9 @@ func CloseableRPC(listenAddr string, impl interface{}, name string) (*CloseableS
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("listening on %s\n",listenAddr)
+	fmt.Printf("listening on %s\n", listenAddr)
 	rpcServer := rpc.NewServer()
-	rpcServer.RegisterName(name,impl)
+	rpcServer.RegisterName(name, impl)
 	onAccept := func(conn *net.TCPConn) {
 		buf := bufio.NewWriter(conn)
 		codec := &gobServerCodec{conn, gob.NewDecoder(conn), gob.NewEncoder(buf), buf}
@@ -29,11 +29,11 @@ func CloseableRPC(listenAddr string, impl interface{}, name string) (*CloseableS
 	}
 	ret := NewCloseServer(listener, onAccept)
 	return ret, nil
-} 
+}
 
 type Service interface {
-	// asynchronously starts service, does not return until service ready to respond 
-	Start() error 
+	// asynchronously starts service, does not return until service ready to respond
+	Start() error
 	// requests stop
 	Close() error
 	// waits till actually stopped
@@ -61,39 +61,33 @@ func (r *CloseableServer) Start() error {
 
 // blocking accept loop
 func (r *CloseableServer) Accept() {
+  sockIdCounter := 0
 	for {
 		conn, err := r.listen.AcceptTCP()
 		if err != nil {
 			// stop accepting, shut down
-			fmt.Printf("Error accepting, stopping acceptor: %s\n",err.Error())
+			fmt.Printf("Error accepting, stopping acceptor: %s\n", err.Error())
 			r.listen.Close()
 			r.done <- true
 			return
 		}
 		conn.SetNoDelay(true)
-		file, err := conn.File()
-		if err != nil {
-			// throw out connection
+		r.l.Lock()
+		if r.stopRequest { // double check after locking
+			// close before shutting down
+			r.listen.Close()
 			conn.Close()
+			r.done <- true
+			return
 		} else {
-			// going to store connection
-			r.l.Lock()
-			if r.stopRequest { // double check after locking
-				// close before shutting down
-				r.listen.Close()
-				conn.Close()
-				r.done <- true
-				return
-			} else {
-				// store reference and serve requests
-				r.conns[int(file.Fd())] = conn
-				r.onAccept(conn)
-			}
-			r.l.Unlock()
+			// store reference and serve requests
+			sockIdCounter += 1
+			r.conns[sockIdCounter] = conn
+			r.onAccept(conn)
 		}
+		r.l.Unlock()
 	}
 }
-
 
 func (r *CloseableServer) Close() error {
 	r.l.Lock()
@@ -118,14 +112,18 @@ type gobServerCodec struct {
 }
 
 func (c *gobServerCodec) ReadRequestHeader(r *rpc.Request) error {
-	err := c.dec.Decode(r)	
-	if err != nil { fmt.Println(err.Error()) }
+	err := c.dec.Decode(r)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 	return err
 }
 
 func (c *gobServerCodec) ReadRequestBody(body interface{}) error {
 	err := c.dec.Decode(body)
-	if err != nil { fmt.Println(err.Error()) }
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 	return err
 }
 func (c *gobServerCodec) WriteResponse(r *rpc.Response, body interface{}) (err error) {

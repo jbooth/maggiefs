@@ -10,9 +10,6 @@ import (
 
 
 func TestAddInodeToCluster(t *testing.T) {
-	fmt.Println("setting up cluster")
-	initCluster()
-	defer teardownCluster()
 	fmt.Println("Adding node to cluster")
 	ino := maggiefs.NewInode(0, maggiefs.FTYPE_REG, 0755, uint32(os.Getuid()), uint32(os.Getgid()))
 	id, err := testCluster.Names.AddInode(ino)
@@ -29,8 +26,6 @@ func TestAddInodeToCluster(t *testing.T) {
 }
 
 func TestAddBlock(t *testing.T) {
-	initCluster()
-	defer teardownCluster()
 	fmt.Println("Adding node to cluster")
 	ino := maggiefs.NewInode(0, maggiefs.FTYPE_REG, 0755, uint32(os.Getuid()), uint32(os.Getgid()))
 	id, err := testCluster.Names.AddInode(ino)

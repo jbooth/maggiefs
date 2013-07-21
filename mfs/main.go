@@ -86,7 +86,7 @@ func main() {
 			usage(err)
 			return
 		}
-		services, err := integration.NewClient(cfg.NameAddr, cfg.LeaseAddr)
+		services, err := integration.NewClient(cfg.NameAddr, cfg.LeaseAddr,1)
 		if err != nil {
 			usage(err)
 			return

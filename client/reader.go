@@ -58,12 +58,12 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		// read bytes
 		fmt.Printf("reader.go reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
 		err = r.datas.Read(block, p[offset:], posInBlock, numBytesFromBlock)
-		nRead += numBytesFromBlock
-		position += uint64(numBytesFromBlock)
-		offset += numBytesFromBlock
 		if err != nil && err != io.EOF {
 			return nRead,fmt.Errorf("reader.go error reading from block %+v : %s",block,err.Error())
 		}
+		nRead += numBytesFromBlock
+		position += uint64(numBytesFromBlock)
+		offset += numBytesFromBlock
 		fmt.Printf("reader.go finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
 	}
 	// sometimes the length can be more bytes than there are in the file, so always just give that back

@@ -58,7 +58,7 @@ type Client struct {
 	Datas  *dataserver.DataClient // TODO generalize this to maggiefs.DataService
 }
 
-func NewClient(nameAddr string, leaseAddr string) (*Client, error) {
+func NewClient(nameAddr string, leaseAddr string, connsPerDn int) (*Client, error) {
 	ret := &Client{}
 	var err error
 	ret.Leases, err = leaseserver.NewLeaseClient(leaseAddr)
@@ -69,7 +69,7 @@ func NewClient(nameAddr string, leaseAddr string) (*Client, error) {
 	if err != nil {
 		return ret, nil
 	}
-	ret.Datas, err = dataserver.NewDataClient(ret.Names, 3)
+	ret.Datas, err = dataserver.NewDataClient(ret.Names, connsPerDn)
 	return ret, err
 }
 

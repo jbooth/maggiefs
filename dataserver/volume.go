@@ -232,15 +232,16 @@ func (v *volume) BlockReport() ([]maggiefs.Block, error) {
 
 func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 	f, err := os.OpenFile(v.resolvePath(id),os.O_RDWR,0)
-	fmt.Printf("operating on file : %s\n",f.Name())
 	defer f.Close()
 	if err != nil {
+	  fmt.Printf("Err opening file: %s\n",err.Error())
 		return err
 	}
+	fmt.Printf("operating on file : %s\n",f.Name())
 	return op(f)
 }
 
-func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
+func (v *volume) serveRead(client *os.File, req RequestHeader) (err error) {
 	fmt.Println("serving read")
 	err = v.withFile(req.Blk.Id, func(file *os.File) error {
 		fmt.Printf("Serving read to file %s\n",file.Name())
@@ -254,7 +255,6 @@ func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
 			return err
 		}
 		sendPos := int64(req.Pos)
-		sockFile, _ := client.File()
 		stat, _ := file.Stat()
 		// send only the bytes we have, then we'll send zeroes for the rest
 		sendLength := uint64(req.Length)
@@ -266,7 +266,7 @@ func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
 			zerosLength = int(uint32(req.Length) - uint32(sendLength))
 		}
 		fmt.Printf("sending data from pos %d length %d\n",sendPos,sendLength)
-		err = SendFile(file, sockFile, sendPos, int(sendLength))
+		err = SendFile(file, client, sendPos, int(sendLength))
 		if err != nil {
 			return err
 		}
@@ -292,7 +292,7 @@ func (v *volume) serveRead(client *net.TCPConn, req RequestHeader) (err error) {
 	return err
 }
 
-func (v *volume) serveWrite(client *net.TCPConn, req RequestHeader, datas *DataClient) error {
+func (v *volume) serveWrite(client *os.File, req RequestHeader, datas *DataClient) error {
 	resp := ResponseHeader{STAT_OK}
 
 	// should we check block.Version here?  skipping for now
@@ -316,22 +316,14 @@ func (v *volume) serveWrite(client *net.TCPConn, req RequestHeader, datas *DataC
 		fmt.Printf("volumes after removing self %+v\n", req.Blk.Volumes)
 		// prepare to splice
 		outOffset := int64(req.Pos)
-		inFile, err := client.File()
-		if err != nil {
-			return err
-		}
 		// check if we have other dataservers in pipeline
 		if len(req.Blk.Volumes) > 0 {
-			err = datas.withConn(pickVol(req.Blk.Volumes), func(d *dnConn) error {
+			err := datas.withConn(pickVol(req.Blk.Volumes), func(d *connFile) error {
 				// forward request minus us in the replication chain
-				req.WriteTo(d.c)
+				req.WriteTo(d.f)
 				// tee/splice
-				teeFile, err := d.c.File()
-				if err != nil {
-					return err
-				}
-				tees := []*os.File{teeFile}
-				err = SpliceAdv(inFile, nil, file, &outOffset, tees, int(req.Length))
+				tees := []*os.File{d.f}
+				err := SpliceAdv(client, nil, file, &outOffset, tees, int(req.Length))
 				if err != nil {
 					err = fmt.Errorf("Error splicing on volume %d : %s",v.id,err.Error())
 				}
@@ -341,7 +333,7 @@ func (v *volume) serveWrite(client *net.TCPConn, req RequestHeader, datas *DataC
 			return err
 		}
 		// just us, so splice to file and return
-		err = SpliceAdv(inFile, nil, file, &outOffset, nil, int(req.Length))
+		err := SpliceAdv(client, nil, file, &outOffset, nil, int(req.Length))
 		return err
 	})
 	

@@ -122,6 +122,7 @@ func SpliceAdv(in *os.File, inOff *int64, out *os.File, outOff *int64, teeFiles 
 			buff = buff[0:numTransfer]
 		}
 		_, err = io.ReadFull(in, buff)
+		//fmt.Printf("Doing splice of %d, first 5 %x\n",numTransfer,buff[:5])
 		if err != nil {
 			return fmt.Errorf("SpliceAdv: Error reading from in file : %s", err.Error())
 		}

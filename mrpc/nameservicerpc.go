@@ -47,7 +47,6 @@ func (s *NameServiceService) StatFs(request *NameServiceStatFsRequest, response 
 }
 
 func init() {
-	fmt.Println("nsrpc init")
 	gob.RegisterName("NameServiceAddInodeRequest", &NameServiceAddInodeRequest{})
 }
 

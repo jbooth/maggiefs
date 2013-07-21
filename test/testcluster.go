@@ -9,6 +9,10 @@ var (
 	testCluster *integration.SingleNodeCluster
 )
 
+func init() {
+  initCluster()
+}
+
 func initCluster() {
 	os.RemoveAll("/tmp/testcluster")
 	var err error
@@ -20,13 +24,4 @@ func initCluster() {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func teardownCluster() {
-	testCluster.Close()
-	err := testCluster.WaitClosed()
-	if err != nil {
-		panic(err)
-	}
-	return
 }

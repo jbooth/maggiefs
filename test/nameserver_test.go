@@ -13,9 +13,6 @@ import (
 	"time"
 )
 func TestAddInode(t *testing.T) {
-	fmt.Println("setting up")
-	initCluster()
-	defer teardownCluster()
 	ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
 	id,err := testCluster.Names.AddInode(ino)
 	if err != nil {
@@ -30,9 +27,6 @@ func TestAddInode(t *testing.T) {
 }
 
 func TestSetInode(t *testing.T) {
-	fmt.Println("setting up")
-	initCluster()
-	defer teardownCluster()
 	ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
 	id,err := testCluster.Names.AddInode(ino)
 	if err != nil {
@@ -51,10 +45,6 @@ func TestSetInode(t *testing.T) {
 }
 
 func TestLink(t *testing.T) {
-	
-	fmt.Println("testing link")
-	initCluster()
-	defer teardownCluster()
 	ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
 	id,err := testCluster.Names.AddInode(ino)
 	if err != nil {
@@ -89,9 +79,6 @@ func TestLink(t *testing.T) {
 }
 
 func TestUnlink(t *testing.T) {
-		fmt.Println("testing link")
-	initCluster()
-	defer teardownCluster()
 	ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
 	id,err := testCluster.Names.AddInode(ino)
 	if err != nil {
@@ -136,9 +123,6 @@ func TestUnlink(t *testing.T) {
 
 
 func TestGetInodeJson(t *testing.T) {
-  fmt.Println("setting up")
-  initCluster()
-  defer teardownCluster()
   ino := maggiefs.NewInode(0,maggiefs.FTYPE_REG,0755,uint32(os.Getuid()),uint32(os.Getgid()))
   id,err := testCluster.Names.AddInode(ino)
   if err != nil {

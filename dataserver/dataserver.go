@@ -125,24 +125,30 @@ func (ds *DataServer) WaitClosed() error {
 func (ds *DataServer) serveClientData() {
 	for {
 		tcpConn, err := ds.dataIface.AcceptTCP()
-		tcpConn.SetNoDelay(true)
 		if err != nil {
 			fmt.Printf("Error accepting client on listen addr, shutting down: %s\n", err.Error())
 			return
 		}
 		tcpConn.SetNoDelay(true)
-		go ds.serveClientConn(tcpConn)
+		fmt.Printf("Accepted new conn to DS at addr %s\n",ds.dataIface.Addr().String())
+		connFile,err := newConnFile(tcpConn)
+		if err != nil {
+		  fmt.Printf("Error getting file from connected client %s: %s shutting down\n",tcpConn.RemoteAddr().String(),err.Error())
+		  return
+		}
+		go ds.serveClientConn(connFile)
 	}
 }
 
-func (ds *DataServer) serveClientConn(conn *net.TCPConn) {
-	defer conn.Close()
+
+
+func (ds *DataServer) serveClientConn(conn *connFile) {
+	defer conn.f.Close()
 	for {
-		fmt.Printf("DATASERVER CLIENT CONN READING HEADER from sock %s, remote %s \n",conn.LocalAddr().String(),conn.RemoteAddr().String())
 		req := RequestHeader{}
-		_, err := req.ReadFrom(conn)
+		_, err := req.ReadFrom(conn.f)
 		if err != nil {
-			fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr().String(), err.Error())
+			fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr, err.Error())
 			return
 		}
 		// figure out which if our volumes
@@ -157,32 +163,32 @@ func (ds *DataServer) serveClientConn(conn *net.TCPConn) {
 		if volForBlock == 0 {
 			// return error and reloop
 			resp := &ResponseHeader{STAT_BADVOLUME}
-			_, err := resp.WriteTo(conn)
+			_, err := resp.WriteTo(conn.f)
 			if err != nil {
-				fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr().String(), err.Error())
+				fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr, err.Error())
 				return
 			}
 		} else {
 			vol := ds.volumes[volForBlock]
 			if req.Op == OP_READ {
 				fmt.Println("serving read")
-				err = vol.serveRead(conn, req)
+				err = vol.serveRead(conn.f, req)
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr().String(), err.Error())
+					fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr, err.Error())
 					return
 				}
 			} else if req.Op == OP_WRITE {
-				err = vol.serveWrite(conn, req,ds.dc)
+				err = vol.serveWrite(conn.f, req,ds.dc)
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr().String(), err.Error())
+					fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr, err.Error())
 					return
 				}
 			} else {
 				// unrecognized req, send err response
 				resp := &ResponseHeader{STAT_BADOP}
-				_, err := resp.WriteTo(conn)
+				_, err := resp.WriteTo(conn.f)
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr().String(), err.Error())
+					fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr, err.Error())
 					return
 				}
 			}
