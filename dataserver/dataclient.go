@@ -53,8 +53,9 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 		// read resp bytes
 		numRead := 0
 		for uint32(numRead) < length {
-			fmt.Printf("Reading %d bytes from socket %s\n", length, d.RemoteAddr)
+			fmt.Printf("Reading %d bytes from socket %s\n", length - uint32(numRead), d.RemoteAddr)
 			n, err := d.f.Read(p[numRead:int(length)])
+			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
 			if err != nil {
 				return err
 			}
@@ -201,10 +202,10 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c *connFile) error) (er
 		select {
 		case ch <- conn:
 			// successfully added back to freelist
-			fmt.Printf("Added conn back to pool for host %s\n", host.String())
+			fmt.Printf("Added conn back to pool for host %s, local %s\n", host.String(), conn.LocalAddr)
 		default:
 			// freelist full, dispose of that trash
-			fmt.Printf("Closing conn for host %s\n", host.String())
+			fmt.Printf("Closing conn for host %s, local %s\n", host.String(), conn.LocalAddr)
 			_ = conn.f.Close()
 		}
 	}

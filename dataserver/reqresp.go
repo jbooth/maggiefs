@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"syscall"
 )
 
 const (
@@ -28,12 +29,16 @@ type connFile struct {
 // returns a new connFile representing this tcpConn.  Conn is closed.
 func newConnFile(conn *net.TCPConn) (*connFile,error) {
   defer conn.Close()
+  conn.SetNoDelay(true)
+  conn.SetKeepAlive(true)
   localAddr := conn.LocalAddr().String()
   remoteAddr := conn.RemoteAddr().String()
   f,err := conn.File()
   if err != nil {
     return nil,err
   }
+  // set to blocking
+  syscall.SetNonblock(int(f.Fd()),false)
   return &connFile{f,localAddr,remoteAddr},nil
 }
 

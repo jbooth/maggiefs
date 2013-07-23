@@ -56,14 +56,15 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (written uint
 		if err != nil {
 			return 0, err
 		}
+  	fmt.Printf("Added blocks for filewrite to ino %+v\n", inode)
 	}
-	fmt.Printf("Added blocks for filewrite to ino %+v\n", inode)
 	// now write bytes
 	nWritten := 0
 	endOfWritePos := off + uint64(length) - 1
+  startOfWritePos := off + uint64(nWritten)
 	for _, b := range inode.Blocks {
-		fmt.Printf("evaluating block %+v for writeStartPos %d endofWritePos %d\n", b, off+uint64(nWritten), endOfWritePos)
-		if b.StartPos <= off+uint64(nWritten) || endOfWritePos <= b.EndPos {
+		fmt.Printf("evaluating block %+v for writeStartPos %d endofWritePos %d\n", b, startOfWritePos, endOfWritePos)
+		if (b.StartPos <= startOfWritePos && b.EndPos > startOfWritePos) || (b.StartPos < endOfWritePos && endOfWritePos <= b.EndPos) {
 
 			posInBlock := uint64(0)
 			if b.StartPos < off {
@@ -78,7 +79,7 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (written uint
 			fmt.Printf("startIdx %d writeLength %d\n", nWritten, writeLength)
 			startIdx := nWritten
 			endIdx := startIdx + writeLength
-			fmt.Printf("Writing %d bytes to block %+v startIdx %d endIdx %d\n", endIdx-startIdx, b, startIdx, endIdx)
+			fmt.Printf("Writing %d bytes to block %+v pos %d startIdx %d endIdx %d\n", b, posInBlock, startIdx, endIdx)
 			err = w.datas.Write(b, p[startIdx:endIdx], posInBlock)
 			if err != nil {
 				return 0, err

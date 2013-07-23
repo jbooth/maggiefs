@@ -148,7 +148,7 @@ func (ds *DataServer) serveClientConn(conn *connFile) {
 		req := RequestHeader{}
 		_, err := req.ReadFrom(conn.f)
 		if err != nil {
-			fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr, err.Error())
+			fmt.Printf("Err serving conn %s : %s\n", conn.RemoteAddr, err.Error())
 			return
 		}
 		// figure out which if our volumes

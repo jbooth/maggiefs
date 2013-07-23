@@ -68,15 +68,17 @@ func TestWriteRead2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// we wnat to write 2048 * 1000 * 1000 bytes in the way the filesystem does it
-	// so write 65536 bytes, 31250 times
+	// we wnat to write a bunch of bytes the way the fs does it, in chunks of 65536
 
 	bytes := make([]byte, 65536)
-	_, err = rand.Read(bytes)
+	n, err := rand.Read(bytes)
+	if n < len(bytes) {
+	 t.Fatal(fmt.Errorf("Only returned %d bytes in call to rand.Read",n))
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 31250; i++ {
+	for i := 0; i < 5000; i++ {
 		n, err := writer.WriteAt(bytes, uint64(65536*i), uint32(len(bytes)))
 		if err != nil {
 			t.Fatal(err)
@@ -92,16 +94,18 @@ func TestWriteRead2(t *testing.T) {
 	if err != nil {
 		t.Fatal(fmt.Sprintf("Error opening reader %s", err.Error()))
 	}
-	for i := 0; i < 31250; i++ {
-		n, err := reader.ReadAt(bytes, uint64(65536*i), 0, uint32(len(bytes)))
+	for i := 0; i < 5000; i++ {
+		n, err := reader.ReadAt(readBytes, uint64(65536*i), 0, uint32(len(readBytes)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n < uint32(len(bytes)) {
-			t.Fatal(fmt.Sprintf("Only read %d bytes out of %d", n, len(bytes)))
+		if n < uint32(len(readBytes)) {
+			t.Fatal(fmt.Sprintf("Only read %d bytes out of %d", n, len(readBytes)))
 		}
 		for idx := 0; idx < 65536; idx++ {
 			if readBytes[idx] != bytes[idx] {
+			  fmt.Printf("Bytes at beginning:  %x : %x\n",readBytes[:5],bytes[:5])
+			  fmt.Printf("Bytes near offest:  %x : %x\n",readBytes[idx-5:idx+5],bytes[idx-5:idx+5])
 				t.Fatal(fmt.Sprintf("Bytes not equal at offset %d, iteration %d : %x != %x", idx, i, readBytes[idx], bytes[idx]))
 			}
 		}
