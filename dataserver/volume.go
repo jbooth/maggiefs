@@ -271,6 +271,7 @@ func (v *volume) serveRead(client *os.File, req RequestHeader) (err error) {
 			return err
 		}
 		for zerosLength > 0 {
+		  fmt.Println("Sending zeroes")
 			// send some zeroes
 			zerosSend := zerosLength
 			if zerosSend > 65536 {

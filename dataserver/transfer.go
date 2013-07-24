@@ -78,7 +78,7 @@ func SendFile(in *os.File, outFile *os.File, pos int64, length int) (err error) 
 			buff = buff[0:numTransfer]
 		}
 		nRead, err := in.ReadAt(buff, pos)
-		fmt.Printf("Read %d from file while sendfile\n",nRead)
+		fmt.Printf("Read %d from file while sendfile, first 5: %x\n",nRead, buff[:5])
 		if nRead < 4096 {
 			fmt.Printf("less than 4096 sending from pos %d with nSent %d out of %d\n",pos,nSent,length)
 		}

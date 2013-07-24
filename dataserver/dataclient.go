@@ -200,9 +200,9 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c *connFile) error) (er
 	} else {
 		// return	to pool
 		select {
-		case ch <- conn:
+		//case ch <- conn:
 			// successfully added back to freelist
-			fmt.Printf("Added conn back to pool for host %s, local %s\n", host.String(), conn.LocalAddr)
+			//fmt.Printf("Added conn back to pool for host %s, local %s\n", host.String(), conn.LocalAddr)
 		default:
 			// freelist full, dispose of that trash
 			fmt.Printf("Closing conn for host %s, local %s\n", host.String(), conn.LocalAddr)
