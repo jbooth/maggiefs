@@ -72,7 +72,7 @@ func (r *RequestHeader) FromBytes(b []byte) int {
 	r.Pos = binary.LittleEndian.Uint64(b[off:])
 	off += 8
 	r.Length = binary.LittleEndian.Uint32(b[off:])
-	off += 4
+	off += 4  
 	return off
 }
 

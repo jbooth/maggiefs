@@ -131,27 +131,22 @@ func (ds *DataServer) serveClientData() {
 		}
 		tcpConn.SetNoDelay(true)
 		fmt.Printf("Accepted new conn to DS at addr %s\n",ds.dataIface.Addr().String())
-		connFile,err := newConnFile(tcpConn)
-		if err != nil {
-		  fmt.Printf("Error getting file from connected client %s: %s shutting down\n",tcpConn.RemoteAddr().String(),err.Error())
-		  return
-		}
-		go ds.serveClientConn(connFile)
+		go ds.serveClientConn(SockEndpoint(tcpConn))
 	}
 }
 
 
 
-func (ds *DataServer) serveClientConn(conn *connFile) {
-	defer conn.f.Close()
+func (ds *DataServer) serveClientConn(conn Endpoint) {
+	defer conn.Close()
 	for {
 		req := RequestHeader{}
-		_, err := req.ReadFrom(conn.f)
+		_, err := req.ReadFrom(conn)
 		if err != nil {
-			fmt.Printf("Err serving conn %s : %s\n", conn.RemoteAddr, err.Error())
+			fmt.Printf("Err serving conn %s : %s\n", conn.String(), err.Error())
 			return
 		}
-		// figure out which if our volumes
+		// figure out which of our volumes
 		volForBlock := uint32(0)
 		for volId, _ := range ds.volumes {
 			for _, blockVolId := range req.Blk.Volumes {
@@ -163,32 +158,32 @@ func (ds *DataServer) serveClientConn(conn *connFile) {
 		if volForBlock == 0 {
 			// return error and reloop
 			resp := &ResponseHeader{STAT_BADVOLUME}
-			_, err := resp.WriteTo(conn.f)
+			_, err := resp.WriteTo(conn)
 			if err != nil {
-				fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr, err.Error())
+				fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
 				return
 			}
 		} else {
 			vol := ds.volumes[volForBlock]
 			if req.Op == OP_READ {
 				fmt.Println("serving read")
-				err = vol.serveRead(conn.f, req)
+				err = vol.serveRead(conn, req)
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr, err.Error())
+					fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
 					return
 				}
 			} else if req.Op == OP_WRITE {
-				err = vol.serveWrite(conn.f, req,ds.dc)
+				err = vol.serveWrite(conn, req,ds.dc)
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr, err.Error())
+					fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
 					return
 				}
 			} else {
 				// unrecognized req, send err response
 				resp := &ResponseHeader{STAT_BADOP}
-				_, err := resp.WriteTo(conn.f)
+				_, err := resp.WriteTo(conn)
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", conn.RemoteAddr, err.Error())
+					fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
 					return
 				}
 			}

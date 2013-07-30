@@ -105,11 +105,12 @@ func TestWriteRead2(t *testing.T) {
 		for idx := 0; idx < 65536; idx++ {
 			if readBytes[idx] != bytes[idx] {
 			  fmt.Printf("Bytes at beginning:  %x : %x\n",readBytes[:5],bytes[:5])
-			  fmt.Printf("Bytes near offest:  %x : %x\n",readBytes[idx-5:idx+5],bytes[idx-5:idx+5])
+			  //fmt.Printf("Bytes near offest:  %x : %x\n",readBytes[idx-5:idx+5],bytes[idx-5:idx+5])
 				t.Fatal(fmt.Sprintf("Bytes not equal at offset %d, iteration %d : %x != %x", idx, i, readBytes[idx], bytes[idx]))
 			}
 		}
 	}
+	fmt.Println("Done TestReadWrite")
 }
 
 func TestShortRead(t *testing.T) {
@@ -156,4 +157,5 @@ func TestShortRead(t *testing.T) {
 			t.Fatal(fmt.Sprintf("Bytes not equal at offset %d : %x != %x", idx, readBytes[idx], bytes[idx]))
 		}
 	}
+	fmt.Println("Done TestShortRead")
 }

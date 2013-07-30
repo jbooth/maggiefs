@@ -30,12 +30,12 @@ func pickVol(vols []uint32) uint32 {
 
 // read some bytes
 func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint32) (err error) {
-	return dc.withConn(pickVol(blk.Volumes), func(d *connFile) error {
+	return dc.withConn(pickVol(blk.Volumes), func(d Endpoint) error {
 		// send req
 		header := RequestHeader{OP_READ, blk, pos, length}
-		fmt.Printf("data client writing read header to %s, local addr %s\n", d.RemoteAddr, d.LocalAddr)
+		fmt.Printf("data client writing read header to %s\n", d)
 		fmt.Printf("Reading length %d to slice of length %d\n", length, len(p))
-		_, err = header.WriteTo(d.f)
+		_, err = header.WriteTo(d)
 		if err != nil {
 			return fmt.Errorf("Error writing header to dn : %s", err.Error())
 		}
@@ -43,7 +43,7 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 		// read resp header
 		resp := &ResponseHeader{}
 		fmt.Println("reading response header")
-		_, err = resp.ReadFrom(d.f)
+		_, err = resp.ReadFrom(d)
 		if err != nil {
 			return fmt.Errorf("Error reading header from dn : %s", err.Error())
 		}
@@ -53,8 +53,8 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 		// read resp bytes
 		numRead := 0
 		for uint32(numRead) < length {
-			fmt.Printf("Reading %d bytes from socket %s\n", length - uint32(numRead), d.RemoteAddr)
-			n, err := d.f.Read(p[numRead:int(length)])
+			fmt.Printf("Reading %d bytes from socket %s\n", length - uint32(numRead), d)
+			n, err := d.Read(p[numRead:int(length)])
 			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
 			if err != nil {
 				return err
@@ -70,19 +70,19 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 // if generation id doesn't match prev generation id, we have an error
 
 func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64) (err error) {
-	return dc.withConn(pickVol(blk.Volumes), func(d *connFile) error {
+	return dc.withConn(pickVol(blk.Volumes), func(d Endpoint) error {
 		// send req header
 		header := &RequestHeader{OP_WRITE, blk, pos, uint32(len(p))}
 		if d == nil {
 			fmt.Println("nil dnconn!")
 		}
-		header.WriteTo(d.f)
+		header.WriteTo(d)
 		fmt.Printf("wrote header, writing bytes first 5: %x\n", p[:5])
 		// send req bytes
 		numWritten := 0
 		for numWritten < len(p) {
 			fmt.Printf("Writing bytes from pos %d, first byte %x\n", numWritten, p[numWritten])
-			n, err := d.f.Write(p[numWritten:])
+			n, err := d.Write(p[numWritten:])
 			if err != nil {
 				return err
 			}
@@ -91,7 +91,7 @@ func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64) (err error
 		}
 		// read resp header
 		resp := &ResponseHeader{}
-		_, err := resp.ReadFrom(d.f)
+		_, err := resp.ReadFrom(d)
 		if resp.Stat != STAT_OK {
 			return fmt.Errorf("Error code %d from DN", resp.Stat)
 		}
@@ -101,11 +101,7 @@ func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64) (err error
 	return nil
 }
 
-type dnConn struct {
-	c *net.TCPConn
-}
-
-func (dc *DataClient) withConn(volId uint32, f func(d *connFile) error) error {
+func (dc *DataClient) withConn(volId uint32, f func(d Endpoint) error) error {
 	dc.volLock.RLock()
 	raddr, exists := dc.volMap[volId]
 	dc.volLock.RUnlock()
@@ -146,17 +142,17 @@ func (dc *DataClient) refreshDNs() error {
 
 // pool impl
 type connPool struct {
-	pool           map[*net.TCPAddr]chan *connFile
+	pool           map[*net.TCPAddr]chan Endpoint
 	l              *sync.RWMutex
 	maxPerKey      int
 	destroyOnError bool
 }
 
 func newConnPool(maxPerKey int, destroyOnError bool) *connPool {
-	return &connPool{make(map[*net.TCPAddr]chan *connFile), &sync.RWMutex{}, maxPerKey, destroyOnError}
+	return &connPool{make(map[*net.TCPAddr]chan Endpoint), &sync.RWMutex{}, maxPerKey, destroyOnError}
 }
 
-func (p *connPool) withConn(host *net.TCPAddr, with func(c *connFile) error) (err error) {
+func (p *connPool) withConn(host *net.TCPAddr, with func(c Endpoint) error) (err error) {
 	fmt.Printf("Doing something with conn to host %s\n", host.String())
 	// get chan
 	p.l.RLock()
@@ -167,14 +163,14 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c *connFile) error) (er
 		p.l.Lock()
   	ch,exists = p.pool[host]	
   	if ! exists {
-  	  ch = make(chan *connFile, p.maxPerKey)
+  	  ch = make(chan Endpoint, p.maxPerKey)
 		  p.pool[host] = ch
 		}
 		p.l.Unlock()
 	}
 
 	// get object
-	var conn *connFile
+	var conn Endpoint
 	select {
 	case conn = <-ch:
 		fmt.Printf("Got conn from pool for %s \n", host.String())
@@ -185,34 +181,34 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c *connFile) error) (er
 		conn, err = p.dial(host)
 		if err != nil {
 			if conn != nil {
-				_ = conn.f.Close()
+				_ = conn.Close()
 			}
 			return err
 		}
 	}
-  fmt.Printf("Operating on host %s, conn local addr %s \n",host.String(),conn.LocalAddr)
+  fmt.Printf("Operating on host %s, conn %s \n",host.String(),conn)
 	// do our stuff
 	err = with(conn)
 	if err != nil {
 		// don't re-use conn on error, might be crap left in the pipe
-		conn.f.Close()
+		conn.Close()
 		return err
 	} else {
 		// return	to pool
 		select {
-		//case ch <- conn:
+		case ch <- conn:
 			// successfully added back to freelist
-			//fmt.Printf("Added conn back to pool for host %s, local %s\n", host.String(), conn.LocalAddr)
+			fmt.Printf("Added conn back to pool for host %s, local %s\n", host.String(), conn)
 		default:
 			// freelist full, dispose of that trash
-			fmt.Printf("Closing conn for host %s, local %s\n", host.String(), conn.LocalAddr)
-			_ = conn.f.Close()
+			fmt.Printf("Closing conn for host %s, local %s\n", host.String(), conn)
+			_ = conn.Close()
 		}
 	}
 	return err
 }
 
-func (p *connPool) dial(host *net.TCPAddr) (*connFile, error) {
+func (p *connPool) dial(host *net.TCPAddr) (Endpoint, error) {
 	fmt.Printf("Dialing %s\n",host.String())
 	conn, err := net.DialTCP("tcp", nil, host)
 	if err != nil {
@@ -220,6 +216,5 @@ func (p *connPool) dial(host *net.TCPAddr) (*connFile, error) {
 	}
 	conn.SetNoDelay(true)
 	fmt.Printf("Connected to host %s with local conn %s\n",conn.RemoteAddr().String(),conn.LocalAddr().String())
-	f,err := newConnFile(conn)
-	return f,err
+	return SockEndpoint(conn),nil
 }

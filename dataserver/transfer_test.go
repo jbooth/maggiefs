@@ -10,43 +10,43 @@ import (
   "sync"
 )
 
-func TestSendfile(t *testing.T) {
-  f,err := ioutil.TempFile("/tmp","testSendFile")
-  if err != nil {
-    t.Fatal(err)
-  }
-  defer os.Remove(fmt.Sprintf("/tmp/%s",f.Name()))
-  
-  sock1,sock2,err := socketPair()
-  if err != nil {
-    t.Fatal(err)
-  }
-  // 10mb random data
-  data := make([]byte,1024*1024*2)
-  rand.Read(data)
-  _,err = f.Write(data)
-  if err != nil {
-  	t.Fatal(err)
-  }
-  go func() {
-    SendFile(f,sock1,0,len(data))  
-  }()
-  data2 := make([]byte,1024*1024*2)
-  numRead := 0
-  for ; numRead < len(data2) ; {
-	  n,err := sock2.Read(data2[numRead:])
-    if err != nil {
-      t.Fatal(err)
-    }
-    numRead += n
-  }
-  for idx,b := range data {
-    if b != data2[idx] {
-      t.Fatalf("bytes not equal at idx %d : %d != %d",idx,b,data2[idx])
-    }
-  }
-  return
-}
+//func TestSendfile(t *testing.T) {
+//  f,err := ioutil.TempFile("/tmp","testSendFile")
+//  if err != nil {
+//    t.Fatal(err)
+//  }
+//  defer os.Remove(fmt.Sprintf("/tmp/%s",f.Name()))
+//  
+//  sock1,sock2,err := socketPair()
+//  if err != nil { 
+//    t.Fatal(err)
+//  }
+//  // 10mb random data
+//  data := make([]byte,1024*1024*2)
+//  rand.Read(data)
+//  _,err = f.Write(data)
+//  if err != nil {
+//  	t.Fatal(err)
+//  }
+//  go func() {
+//    SendFile(f,sock1,0,len(data))  
+//  }()
+//  data2 := make([]byte,1024*1024*2)
+//  numRead := 0
+//  for ; numRead < len(data2) ; {
+//	  n,err := sock2.Read(data2[numRead:])
+//    if err != nil {
+//      t.Fatal(err)
+//    }
+//    numRead += n
+//  }
+//  for idx,b := range data {
+//    if b != data2[idx] {
+//      t.Fatalf("bytes not equal at idx %d : %d != %d",idx,b,data2[idx])
+//    }
+//  }
+//  return
+//}
 
 // we splice from a socket to a file, while teeing to another socket, then validate all bytes after
 func TestSpliceAndTee(t *testing.T) {
@@ -91,12 +91,10 @@ func TestSpliceAndTee(t *testing.T) {
   
   go func() {
   	defer wg.Done()
-  	fmt.Println("Splicing")
 		// splice from inLocal to file f and socket outLocal 
   	//func SpliceAdv(in *os.File, inOff *int64, out *os.File, outOff *int64, teeFiles []*os.File, length int) 
-  	teeFiles := []*os.File{outLocal}
   	fmt.Println("Splicing")
-  	err := SpliceAdv(inLocal,nil,f,nil,teeFiles,len(bytesIn))
+  	err := SpliceWithTee(inLocal,nil,f,nil,outLocal,len(bytesIn))
   	fmt.Println("Splice done")
   	if err != nil {
   		panic(err)
