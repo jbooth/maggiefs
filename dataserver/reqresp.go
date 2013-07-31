@@ -4,9 +4,6 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"encoding/binary"
 	"io"
-	"net"
-	"os"
-	"syscall"
 )
 
 const (
@@ -18,29 +15,6 @@ const (
 	STAT_BADVOLUME = uint8(3)
 	STAT_BADOP = uint8(4)
 )
-
-// used to represent sockets that we want to do FD-based operations on, attaches addr information for debugging
-type connFile struct {
-  f *os.File
-  LocalAddr string
-  RemoteAddr string
-}
-
-// returns a new connFile representing this tcpConn.  Conn is closed.
-func newConnFile(conn *net.TCPConn) (*connFile,error) {
-  defer conn.Close()
-  conn.SetNoDelay(true)
-  conn.SetKeepAlive(true)
-  localAddr := conn.LocalAddr().String()
-  remoteAddr := conn.RemoteAddr().String()
-  f,err := conn.File()
-  if err != nil {
-    return nil,err
-  }
-  // set to blocking
-  syscall.SetNonblock(int(f.Fd()),false)
-  return &connFile{f,localAddr,remoteAddr},nil
-}
 
 type RequestHeader struct {
 	Op     uint8

@@ -260,9 +260,9 @@ func (v *volume) serveRead(client Endpoint, req RequestHeader) (err error) {
 			zerosLength = int(uint32(req.Length) - uint32(sendLength))
 		}
 		// send header
-		_,err := resp.WriteTo(client)
+		_, err := resp.WriteTo(client)
 		if err != nil {
-		  return err
+			return err
 		}
 		// send data
 		fmt.Printf("sending data from pos %d length %d\n", sendPos, sendLength)
@@ -296,7 +296,6 @@ func (v *volume) serveRead(client Endpoint, req RequestHeader) (err error) {
 }
 
 func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClient) error {
-	resp := ResponseHeader{STAT_OK}
 
 	// should we check block.Version here?  skipping for now
 	err := v.withFile(req.Blk.Id, func(file *os.File) error {
@@ -316,35 +315,50 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 				break
 			}
 		}
-		fmt.Printf("volumes after removing self %+v\n", req.Blk.Volumes)
-		// prepare to splice
+		fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
+		// prepare to transfer
 		outOffset := int64(req.Pos)
 		fileWriter := NewSectionWriter(file, outOffset, int64(req.Length))
 		// check if we have other dataservers in pipeline
 		if len(req.Blk.Volumes) > 0 {
-			err := datas.withConn(pickVol(req.Blk.Volumes), func(d Endpoint) error {
+			// setup pipeline to forward write
+			return datas.withConn(pickVol(req.Blk.Volumes), func(d Endpoint) error {
 				// forward request minus us in the replication chain
 				req.WriteTo(d)
 				// tee to net and file
 				teeWriter := io.MultiWriter(d, fileWriter)
+				fmt.Println("Copying with tee to remote..")
 				sent, err := Copy(teeWriter, client, int64(req.Length))
 				if err != nil {
 					return fmt.Errorf("Error sending data on volume %d : %s", v.id, err.Error())
 				}
 				fmt.Printf("Sent %d bytes from client %s to file %s remote ds %s\n", sent, client, file.Name(), d)
-				// TODO read response back so we don't fuck up the sockets
-				return err
+				// confirm response before sending our own
+				remoteResp := &ResponseHeader{}
+				_, err = remoteResp.ReadFrom(d)
+				if remoteResp.Stat != STAT_OK {
+					return fmt.Errorf("Bad Status Response")
+				}
+				return nil
 			})
-			return err
+		} else {
+			// just us, so splice to file and return
+			fmt.Println("Copying just to local")
+			sent, err := Copy(fileWriter, client, int64(req.Length))
+			fmt.Printf("Sent %d bytes from client %s to file %s\n", sent, client, file.Name())
+			if err != nil {
+				return fmt.Errorf("Error sending to conn %s : %s", client, err)
+			}
 		}
-		// just us, so splice to file and return
-		sent, err := Copy(fileWriter, client, int64(req.Length))
-		fmt.Printf("Sent %d bytes from client %s to file %s\n", sent, client, file.Name())
-		return err
+		return nil
 	})
 
-	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
 	// send response
+	resp := ResponseHeader{STAT_OK}
+	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
+	if err != nil {
+	  resp.Stat = STAT_ERR
+	}
 	resp.WriteTo(client)
 	return err
 }

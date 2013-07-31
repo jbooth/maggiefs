@@ -77,16 +77,19 @@ func returnBuff(b []byte) {
 }
 
 func Copy(dst io.Writer, src io.Reader, n int64) (int64,error) {
+
   buff := getBuff()
   defer returnBuff(buff)
   nWritten := int64(0)
-  for {
+  for nWritten < n {
     r,err := src.Read(buff)
     if r > 0 {
+      //fmt.Printf("Read %d bytes, total read so far %d out of %d\n",r,nWritten+int64(r),n)
       w,e2 := dst.Write(buff[0:r])
       if w > 0 {
         nWritten += int64(w)
       }
+      //fmt.Printf("Wrote %d, total written so far %d out of %d\n",w,nWritten,n)
       if e2 != nil {
         return nWritten,e2
       }
@@ -95,7 +98,7 @@ func Copy(dst io.Writer, src io.Reader, n int64) (int64,error) {
       }
     }
     if err == io.EOF {
-      break
+      return nWritten,nil
     }
     if err != nil {
       return nWritten,err
@@ -116,10 +119,9 @@ type SectionWriter struct {
 }
 
 func (s *SectionWriter) Write(p []byte) (n int, err error) {
-    // don't do this we allow sparse blocks
-//  if s.off >= s.limit {
-//    return 0, io.EOF
-//  }
+  if s.off >= s.limit {
+    return 0, io.EOF
+  }
   if max := s.limit - s.off; int64(len(p)) > max {
     p = p[0:max]
   }
