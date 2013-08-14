@@ -8,6 +8,7 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
 	"github.com/jbooth/maggiefs/nameserver"
+  "github.com/jbooth/maggiefs/conf"
 	"net/rpc"
 	"os"
 )
@@ -110,7 +111,7 @@ func NewNameClient(addr string) (maggiefs.NameService, error) {
 }
 
 // returns a started nameserver -- we must start lease server in order to boot up nameserver, so
-func NewNameServer(cfg *NNConfig, format bool) (*NameLeaseServer, error) {
+func NewNameServer(cfg *conf.NNConfig, format bool) (*NameLeaseServer, error) {
 	nls := &NameLeaseServer{}
 	var err error = nil
 	fmt.Println("creating lease server")
@@ -143,7 +144,7 @@ func NewNameServer(cfg *NNConfig, format bool) (*NameLeaseServer, error) {
 //}
 
 // TODO refactor to use NewConfSet
-func NewSingleNodeCluster(nncfg *NNConfig, ds []*DSConfig, format bool) (*SingleNodeCluster, error) {
+func NewSingleNodeCluster(nncfg *conf.NNConfig, ds []*conf.DSConfig, format bool) (*SingleNodeCluster, error) {
 	cl := &SingleNodeCluster{}
 
 	nls, err := NewNameServer(nncfg, format)
@@ -180,8 +181,8 @@ func NewSingleNodeCluster(nncfg *NNConfig, ds []*DSConfig, format bool) (*Single
 	return cl,nil
 }
 
-func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*NNConfig, []*DSConfig) {
-	nncfg := &NNConfig{}
+func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*conf.NNConfig, []*conf.DSConfig) {
+	nncfg := &conf.NNConfig{}
 	nncfg.LeaseBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
 	startPort++
 	nncfg.NameBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
@@ -190,9 +191,9 @@ func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort
 	startPort++
 	nncfg.NNHomeDir = nameHome
 	nncfg.ReplicationFactor = replicationFactor
-	dscfg := make([]*DSConfig, len(volRoots))
+	dscfg := make([]*conf.DSConfig, len(volRoots))
 	for idx, dnVolRoots := range volRoots {
-		thisDscfg := &DSConfig{}
+		thisDscfg := &conf.DSConfig{}
 		thisDscfg.DataClientBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
 		startPort++
 		thisDscfg.NameDataBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
