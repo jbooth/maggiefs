@@ -7,6 +7,7 @@ import (
 	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/dataserver"
 	"github.com/jbooth/maggiefs/integration"
+  "github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"os"
 	"strconv"
@@ -65,7 +66,7 @@ func main() {
 		}
 		baseDir := args[3]
 		mountPoint := args[4]
-		nncfg,dscfg,err := integration.NewConfSet2(numDNs, volsPerDn, uint32(replicationFactor), baseDir)
+		nncfg,dscfg,err := conf.NewConfSet2(numDNs, volsPerDn, uint32(replicationFactor), baseDir)
 		if err != nil {
 		  usage(err)
 		  return
@@ -80,7 +81,7 @@ func main() {
 		client.Loop()
 		cluster.Close()
 	case "dataserver":
-		cfg := &integration.DSConfig{}
+		cfg := &conf.DSConfig{}
 		err := cfg.ReadConfig(args[0])
 		if err != nil {
 			usage(err)
@@ -112,7 +113,7 @@ func main() {
 		ds.WaitClosed()
 
 	case "nameserver":
-		cfg := &integration.NNConfig{}
+		cfg := &conf.NNConfig{}
 		err := cfg.ReadConfig(args[0])
 		if err != nil {
 			usage(err)
