@@ -16,6 +16,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$LEVELDB_HOME
 
 Now run 
 
+go get github.com/jbooth/maggiefs/mfs 
 go install github.com/jbooth/maggiefs/mfs 
 
 and you'll have the maggiefs binary installed
