@@ -45,96 +45,116 @@ func main() {
 	}
 	fmt.Println(args)
 	cmd := args[0]
+	// pop first instr
 	args = args[1:]
 
 	switch cmd {
 	case "singlenode":
-		numDNs, err := strconv.Atoi(args[0])
-		if err != nil {
-			usage(err)
-			return
-		}
-		volsPerDn, err := strconv.Atoi(args[1])
-		if err != nil {
-			usage(err)
-			return
-		}
-		replicationFactor, err := strconv.Atoi(args[2])
-		if err != nil {
-			usage(err)
-			return
-		}
-		baseDir := args[3]
-		mountPoint := args[4]
-		nncfg,dscfg,err := conf.NewConfSet2(numDNs, volsPerDn, uint32(replicationFactor), baseDir)
-		if err != nil {
-		  usage(err)
-		  return
-		}
-		cluster, err := integration.NewSingleNodeCluster(nncfg,dscfg,true)
-		if err != nil {
-			usage(err)
-			return
-		}
-		cluster.Start()
-		client, err := newMountedClient(cluster.Leases, cluster.Names, cluster.Datas, mountPoint)
-		client.Loop()
-		cluster.Close()
+    singlenode(args)
 	case "dataserver":
-		cfg := &conf.DSConfig{}
-		err := cfg.ReadConfig(args[0])
-		if err != nil {
-			usage(err)
-			return
-		}
-		services, err := integration.NewClient(cfg.NameAddr, cfg.LeaseAddr,1)
-		if err != nil {
-			usage(err)
-			return
-		}
-		ds, err := dataserver.NewDataServer(cfg.VolumeRoots, cfg.DataClientBindAddr, cfg.NameDataBindAddr, cfg.WebBindAddr, services.Names, services.Datas)
-		if err != nil {
-			usage(err)
-			return
-		}
-		ds.Start()
-		if len(args) > 1 {
-			mountPoint := args[1]
-
-			// start client
-			client, err := newMountedClient(services.Leases, services.Names, services.Datas, mountPoint)
-			if err != nil {
-				usage(err)
-				return
-			}
-			client.Loop()
-			ds.Close()
-		}
-		ds.WaitClosed()
-
+		dataserver(args)
 	case "nameserver":
-		cfg := &conf.NNConfig{}
-		err := cfg.ReadConfig(args[0])
-		if err != nil {
-			usage(err)
-			return
-		}
-		fmt.Printf("%+v\n", cfg)
-		format := (len(args) > 1 && args[1] == "-format")
-		ns, err := integration.NewNameServer(cfg, format)
-		if err != nil {
-			usage(err)
-			return
-		}
-		ns.Start()
-		ns.WaitClosed()
+    nameserver(args)
 	default:
 		usage(nil)
 		return
 
 	}
+	case "genconf"
+	  switch
 }
 
+func nameserver(args []string) {
+      cfg := &conf.NNConfig{}
+    err := cfg.ReadConfig(args[0])
+    if err != nil {
+      usage(err)
+      return
+    }
+    fmt.Printf("%+v\n", cfg)
+    format := (len(args) > 1 && args[1] == "-format")
+    ns, err := integration.NewNameServer(cfg, format)
+    if err != nil {
+      usage(err)
+      return
+    }
+    ns.Start()
+    ns.WaitClosed()
+}
+
+func singlenode(args []string) {
+      numDNs, err := strconv.Atoi(args[0])
+    if err != nil {
+      usage(err)
+      return
+    }
+    volsPerDn, err := strconv.Atoi(args[1])
+    if err != nil {
+      usage(err)
+      return
+    }
+    replicationFactor, err := strconv.Atoi(args[2])
+    if err != nil {
+      usage(err)
+      return
+    }
+    baseDir := args[3]
+    mountPoint := args[4]
+    nncfg,dscfg,err := conf.NewConfSet2(numDNs, volsPerDn, uint32(replicationFactor), baseDir)
+    if err != nil {
+      usage(err)
+      return
+    }
+    cluster, err := integration.NewSingleNodeCluster(nncfg,dscfg,true)
+    if err != nil {
+      usage(err)
+      return
+    }
+    cluster.Start()
+    client, err := newMountedClient(cluster.Leases, cluster.Names, cluster.Datas, mountPoint)
+    client.Loop()
+    cluster.Close()
+}
+
+func dataserver(args []string) {
+  cfg := &conf.DSConfig{}
+    err := cfg.ReadConfig(args[0])
+    if err != nil {
+      usage(err)
+      return
+    }
+    services, err := integration.NewClient(cfg.NameAddr, cfg.LeaseAddr,1)
+    if err != nil {
+      usage(err)
+      return
+    }
+    ds, err := dataserver.NewDataServer(cfg.VolumeRoots, cfg.DataClientBindAddr, cfg.NameDataBindAddr, cfg.WebBindAddr, services.Names, services.Datas)
+    if err != nil {
+      usage(err)
+      return
+    }
+    ds.Start()
+    if len(args) > 1 {
+      mountPoint := args[1]
+
+      // start client
+      client, err := newMountedClient(services.Leases, services.Names, services.Datas, mountPoint)
+      if err != nil {
+        usage(err)
+        return
+      }
+      client.Loop()
+      ds.Close()
+    }
+    ds.WaitClosed()
+}
+
+func gendataconf(args []string) {
+  nameHost := args[0]
+  volRoots := args[1:]
+  cfg := conf.DefaultDSConf(nameHost,volRoots)
+  
+}
 type mountedClient struct {
 	ms         fuse.MountState
 	mountPoint string

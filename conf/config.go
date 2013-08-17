@@ -1,8 +1,24 @@
 package conf
 
-import (
-	"encoding/json"
-	"os"
+import "fmt"
+
+const (
+  DEFAULT_LEASESERVER_PORT=1101
+  DEFAULT_NAMESERVER_PORT=1102
+  DEFAULT_NAMEWEB_PORT=1103
+  
+  DEFAULT_DATA_PORT=1104
+  DEFAULT_NAMEDATA_PORT=1105
+  DEFAULT_DATAWEB_PORT=1106
+)
+
+var (
+  DEFAULT_LEASEADDR = fmt.Sprintf("0.0.0.0:%d",DEFAULT_LEASESERVER_PORT)
+  DEFAULT_NAMEADDR = fmt.Sprintf("0.0.0.0:%d",DEFAULT_NAMESERVER_PORT)
+  DEFAULT_NAMEWEB_ADDR = fmt.Sprintf("0.0.0.0:%d",DEFAULT_NAMEWEB_PORT)
+  DEFAULT_DATA_ADDR = fmt.Sprintf("0.0.0.0:%d",DEFAULT_DATA_PORT)
+  DEFAULT_NAMEDATA_ADDR = fmt.Sprintf("0.0.0.0:%d",DEFAULT_NAMEDATA_PORT)
+  DEFAULT_DATAWEB_ADDR = fmt.Sprintf("0.0.0.0:%d",DEFAULT_DATAWEB_PORT)
 )
 
 type DSConfig struct {
@@ -14,27 +30,18 @@ type DSConfig struct {
 	VolumeRoots        []string `json: volumeRoots`        // list of paths to the roots of the volumes we're exposing
 }
 
-func (ds *DSConfig) ReadConfig(file string) error {
-	f, err := os.Open(file)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	d := json.NewDecoder(f)
-	return d.Decode(ds)
+func DefaultDSConfig(nameHost string,volRoots []string) *DSConfig {
+  return &DSConfig{
+    fmt.Sprintf("%s:%d",nameHost,DEFAULT_LEASESERVER_PORT),
+    fmt.Sprintf("%s:%d",nameHost,DEFAULT_NAMESERVER_PORT),
+    DEFAULT_DATA_ADDR,
+    DEFAULT_NAMEDATA_ADDR,
+    DEFAULT_DATAWEB_ADDR,
+    volRoots,
+  }
 }
 
-func (ds *DSConfig) Write(file string) error {
-	f, err := os.Create(file)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	err = json.NewEncoder(f).Encode(ds)
-	return err
-}
-
-type NNConfig struct {
+type NSConfig struct {
 	NameBindAddr      string `json: nameBindAddr`      // host:port of namenode
 	LeaseBindAddr     string `json: leaseBindAddr`     // host:port for lease service
 	WebBindAddr       string `json: webBindAddr`       // host:port for web interface
@@ -42,29 +49,21 @@ type NNConfig struct {
 	ReplicationFactor uint32 `json: replicationFactor` // number of replicas for each block
 }
 
+func DefaultNSConfig(nameHome string) *NSConfig {
+  return &NSConfig {
+    DEFAULT_NAMEADDR,
+    DEFAULT_LEASEADDR,
+    DEFAULT_NAMEWEB_ADDR,
+    nameHome,
+    3,
+  }
+}
+
 type FSConfig struct {
+  
 	BlockLength uint32 `json: blockLength`
 }
 
-func (cfg *NNConfig) ReadConfig(file string) error {
-	f, err := os.Open(file)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	d := json.NewDecoder(f)
-	return d.Decode(cfg)
-}
-
-func (cfg *NNConfig) Write(file string) error {
-	f, err := os.Create(file)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	err = json.NewEncoder(f).Encode(cfg)
-	return err
-}
 
 type ClientConfig struct {
 	LeaseAddr string

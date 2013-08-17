@@ -8,8 +8,8 @@ import (
 
 
 
-func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*NNConfig, []*DSConfig) {
-  nncfg := &NNConfig{}
+func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*NSConfig, []*DSConfig) {
+  nncfg := &NSConfig{}
   nncfg.LeaseBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
   startPort++
   nncfg.NameBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
@@ -36,7 +36,7 @@ func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort
   return nncfg, dscfg
 }
 
-func NewConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*NNConfig, []*DSConfig, error) {
+func NewConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*NSConfig, []*DSConfig, error) {
   err := os.Mkdir(baseDir, 0777)
   if err != nil {
     return nil, nil, err
