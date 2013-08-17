@@ -14,4 +14,8 @@ export CGO_CFLAGS="-I/$LEVELDB_HOME"
 export CGO_LDFLAGS="-L/$LEVELDB_HOME"  
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$LEVELDB_HOME  
 
-Now go install github.com/jbooth/maggiefs/mfs and you'll have the maggiefs binary installed
+Now run 
+
+go install github.com/jbooth/maggiefs/mfs 
+
+and you'll have the maggiefs binary installed
