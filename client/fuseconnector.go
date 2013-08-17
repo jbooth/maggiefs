@@ -3,8 +3,8 @@ package client
 import (
 	"bytes"
 	"fmt"
-	"github.com/hanwen/go-fuse/fuse"
-	"github.com/hanwen/go-fuse/raw"
+	"github.com/jbooth/go-fuse/fuse"
+	"github.com/jbooth/go-fuse/raw"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"io"
 	"log"

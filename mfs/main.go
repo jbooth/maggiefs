@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/hanwen/go-fuse/fuse"
+	"github.com/jbooth/go-fuse/fuse"
 	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/dataserver"
