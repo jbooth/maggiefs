@@ -110,7 +110,7 @@ func NewNameClient(addr string) (maggiefs.NameService, error) {
 }
 
 // returns a started nameserver -- we must start lease server in order to boot up nameserver, so
-func NewNameServer(cfg *conf.NNConfig, format bool) (*NameLeaseServer, error) {
+func NewNameServer(cfg *conf.NSConfig, format bool) (*NameLeaseServer, error) {
 	nls := &NameLeaseServer{}
 	var err error = nil
 	fmt.Println("creating lease server")
@@ -143,7 +143,7 @@ func NewNameServer(cfg *conf.NNConfig, format bool) (*NameLeaseServer, error) {
 //}
 
 // TODO refactor to use NewConfSet
-func NewSingleNodeCluster(nncfg *conf.NNConfig, ds []*conf.DSConfig, format bool) (*SingleNodeCluster, error) {
+func NewSingleNodeCluster(nncfg *conf.NSConfig, ds []*conf.DSConfig, format bool) (*SingleNodeCluster, error) {
 	cl := &SingleNodeCluster{}
 
 	nls, err := NewNameServer(nncfg, format)
