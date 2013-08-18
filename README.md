@@ -14,15 +14,30 @@ To Install
 
 The mfs binary is responsible for running the nameserver and dataserver processes, as well as the client.
 
-To install, first set up your $GOPATH according to [standard go project conventions](http://golang.org/doc/code.html).  Then run:
+To install, first set up your $GOPATH according to [standard go project conventions](http://golang.org/doc/code.html).
+
+mfs has a dependency on the leveldb library, version 1.9.0.  If you're using ubuntu 13.04, it should be available using:
+
+apt-get libleveldb-dev
+
+If your package manager doesn't have a recent enough version of levelDB, follow the [mfs levelDB installation instructions](doc/leveldb.md) to set up go to build against a downloaded version of the library.
+
+Finally, run:
 
 go get github.com/jbooth/maggiefs/mfs  
 go install github.com/jbooth/maggiefs/mfs 
 
-Assuming your $GOPATH/bin path is on your $PATH, you'll now be able to execute the mfs binary from your shell.
+And you'll have the mfs binary in $GOPATH/bin.
 
 To Run
 ==
+
+The mfs binary has 4 operation modes (and a couple utilities).
+
+mfs singlenode
+=
+
+mfs singlenode runs a mock cluster by building out directories under a temp directory.  It's primarily used for testing.  
 
 
 
