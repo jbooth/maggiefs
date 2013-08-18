@@ -27,7 +27,7 @@ type NameData struct {
   counterLock *sync.Mutex
   counterdb *levigo.DB // counterName -> uint64
 }
-const STRIPE_SIZE = 1024 // must be power of 2
+const STRIPE_SIZE = 1023 // must be power of 2 - 1
 
 const dir_inodb = "inodes"
 const dir_counters = "counters"
