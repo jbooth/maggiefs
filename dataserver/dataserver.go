@@ -130,7 +130,6 @@ func (ds *DataServer) serveClientData() {
 			return
 		}
 		tcpConn.SetNoDelay(true)
-		fmt.Printf("Accepted new conn to DS at addr %s\n",ds.dataIface.Addr().String())
 		go ds.serveClientConn(SockEndpoint(tcpConn))
 	}
 }
@@ -166,7 +165,6 @@ func (ds *DataServer) serveClientConn(conn Endpoint) {
 		} else {
 			vol := ds.volumes[volForBlock]
 			if req.Op == OP_READ {
-				fmt.Println("serving read")
 				err = vol.serveRead(conn, req)
 				if err != nil {
 					fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
@@ -230,13 +228,11 @@ func (ds *DataServer) TruncBlock(blk maggiefs.Block, volId uint32, newSize uint3
 }
 
 func (ds *DataServer) BlockReport(volId uint32) (blocks []maggiefs.Block, err error) {
-	fmt.Println("doing block report\n")
 	vol, exists := ds.volumes[volId]
 	if !exists {
 		fmt.Printf("No volume for volID %d on dnId %d \n", volId, ds.info.DnId)
 		return nil, fmt.Errorf("No volume for volID %d", volId)
 	}
-	fmt.Printf("delegating to volid %d\n", vol.id)
 	return vol.BlockReport()
 }
 

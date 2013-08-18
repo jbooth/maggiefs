@@ -156,7 +156,6 @@ func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
 }
 
 func (v *volume) AddBlock(blk maggiefs.Block) error {
-	fmt.Printf("Adding block to vol %d\n", v.id)
 	// TODO should blow up here if blk already exists
 	// create file representing block
 	f, err := os.Create(v.resolvePath(blk.Id))
@@ -205,7 +204,6 @@ func (v *volume) TruncBlock(blk maggiefs.Block, newSize uint32) error {
 }
 
 func (v *volume) BlockReport() ([]maggiefs.Block, error) {
-	fmt.Printf("doing block report in volume %d\n", v.id)
 	ret := make([]maggiefs.Block, 0, 0)
 	it := v.blockData.NewIterator(readOpts)
 	defer it.Close()
@@ -213,7 +211,6 @@ func (v *volume) BlockReport() ([]maggiefs.Block, error) {
 	for it = it; it.Valid(); it.Next() {
 		blk := maggiefs.Block{}
 		blk.FromBytes(it.Value())
-		fmt.Printf("got block %+v\n", blk)
 		ret = append(ret, blk)
 	}
 	return ret, it.GetError()
@@ -238,14 +235,12 @@ func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 		fmt.Printf("Err opening file: %s\n", err.Error())
 		return err
 	}
-	fmt.Printf("operating on file : %s\n", f.Name())
 	return op(f)
 }
 
 func (v *volume) serveRead(client Endpoint, req RequestHeader) (err error) {
-	fmt.Println("serving read")
 	err = v.withFile(req.Blk.Id, func(file *os.File) error {
-		fmt.Printf("Serving read to file %s\n", file.Name())
+//		fmt.Printf("Serving read to file %s\n", file.Name())
 		// check off
 		resp := ResponseHeader{STAT_OK}
 		sendPos := int64(req.Pos)
@@ -265,15 +260,12 @@ func (v *volume) serveRead(client Endpoint, req RequestHeader) (err error) {
 			return err
 		}
 		// send data
-		fmt.Printf("sending data from pos %d length %d\n", sendPos, sendLength)
-		sent, err := Copy(client, io.NewSectionReader(file, sendPos, int64(sendLength)), int64(sendLength))
-		fmt.Printf("Sent %d", sent)
-		//		err = SendFile(file, client, sendPos, int(sendLength))
+//		fmt.Printf("sending data from pos %d length %d\n", sendPos, sendLength)
+		_, err = Copy(client, io.NewSectionReader(file, sendPos, int64(sendLength)), int64(sendLength))
 		if err != nil {
 			return err
 		}
 		for zerosLength > 0 {
-			fmt.Println("Sending zeroes")
 			// send some zeroes
 			zerosSend := zerosLength
 			if zerosSend > 65536 {
@@ -299,7 +291,7 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 
 	// should we check block.Version here?  skipping for now
 	err := v.withFile(req.Blk.Id, func(file *os.File) error {
-		fmt.Printf("vol %d pipelining write to following vol IDs %+v\n", v.id, req.Blk.Volumes)
+//		fmt.Printf("vol %d pipelining write to following vol IDs %+v\n", v.id, req.Blk.Volumes)
 		// remove ourself from pipeline remainder
 		for idx, volId := range req.Blk.Volumes {
 			if volId == v.id {
@@ -315,7 +307,7 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 				break
 			}
 		}
-		fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
+//		fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
 		// prepare to transfer
 		outOffset := int64(req.Pos)
 		fileWriter := NewSectionWriter(file, outOffset, int64(req.Length))
@@ -327,12 +319,11 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 				req.WriteTo(d)
 				// tee to net and file
 				teeWriter := io.MultiWriter(d, fileWriter)
-				fmt.Println("Copying with tee to remote..")
-				sent, err := Copy(teeWriter, client, int64(req.Length))
+				_, err := Copy(teeWriter, client, int64(req.Length))
 				if err != nil {
 					return fmt.Errorf("Error sending data on volume %d : %s", v.id, err.Error())
 				}
-				fmt.Printf("Sent %d bytes from client %s to file %s remote ds %s\n", sent, client, file.Name(), d)
+//				fmt.Printf("Sent %d bytes from client %s to file %s remote ds %s\n", sent, client, file.Name(), d)
 				// confirm response before sending our own
 				remoteResp := &ResponseHeader{}
 				_, err = remoteResp.ReadFrom(d)
@@ -343,9 +334,9 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 			})
 		} else {
 			// just us, so splice to file and return
-			fmt.Println("Copying just to local")
-			sent, err := Copy(fileWriter, client, int64(req.Length))
-			fmt.Printf("Sent %d bytes from client %s to file %s\n", sent, client, file.Name())
+//			fmt.Println("Copying just to local")
+			_, err := Copy(fileWriter, client, int64(req.Length))
+//			fmt.Printf("Sent %d bytes from client %s to file %s\n", sent, client, file.Name())
 			if err != nil {
 				return fmt.Errorf("Error sending to conn %s : %s", client, err)
 			}
@@ -355,7 +346,7 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 
 	// send response
 	resp := ResponseHeader{STAT_OK}
-	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
+//	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
 	if err != nil {
 	  resp.Stat = STAT_ERR
 	}

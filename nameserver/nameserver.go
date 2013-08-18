@@ -52,7 +52,6 @@ type NameServer struct {
 
 func (ns *NameServer) Start() error {
   var err error = nil
-  fmt.Printf("%+v\n",ns)
   ns.rpcServer,err = mrpc.CloseableRPC(ns.listenAddr,mrpc.NewNameServiceService(ns), "NameService")
   if err != nil { return err }
   ns.rpcServer.Start()
@@ -95,7 +94,6 @@ func (ns *NameServer) SetInode(node *maggiefs.Inode) (err error) {
 }
 
 func (ns *NameServer) Link(parent uint64, child uint64, name string, force bool) (err error) {
-	fmt.Println("linking, acquiring treelock")
 	ns.dirTreeLock.Lock()
 	defer ns.dirTreeLock.Unlock()
 	var parentSuccess = false
@@ -104,28 +102,27 @@ func (ns *NameServer) Link(parent uint64, child uint64, name string, force bool)
 	
 		// try to link to parent
 		_, err := ns.nd.Mutate(parent, func(i *maggiefs.Inode) error {
-			fmt.Printf("Checking if name %s exists on inode %+v, looking to link child %d\n",name,i,child)
+			//fmt.Printf("Checking if name %s exists on inode %+v, looking to link child %d\n",name,i,child)
 			dentry, childExists := i.Children[name]
 			if childExists {
 				prevChildId = dentry.Inodeid
-				fmt.Printf("Link: other child exists for name %s, childID: %d\n",name,prevChildId)
+				//fmt.Printf("Link: other child exists for name %s, childID: %d\n",name,prevChildId)
 				return nil
 			} else {
-				fmt.Printf("Link: setting %d [%s] -> %d\n",i.Inodeid,name,child)
+				//fmt.Printf("Link: setting %d [%s] -> %d\n",i.Inodeid,name,child)
 				now := time.Now().Unix()
 				i.Children[name] = maggiefs.Dentry{child, now}
 				i.Ctime = now
 				parentSuccess = true
 				prevChildId = 0
 			}
-			fmt.Println("returning")
 			return nil
 		})
 		if err != nil {
 			fmt.Printf("Link: returning  %d [%s] -> %d : %s\n",parent,name,child,err.Error())
 			return fmt.Errorf("Link: returning  %d [%s] -> %d : %s",parent,name,child,err.Error())
 		}
-		fmt.Printf("Link() checking if force situation, prevChildId: %d\n",prevChildId)
+		//fmt.Printf("Link() checking if force situation, prevChildId: %d\n",prevChildId)
 		// if name already exists, handle
 		if prevChildId > 0 {
 			if force {
@@ -139,7 +136,6 @@ func (ns *NameServer) Link(parent uint64, child uint64, name string, force bool)
 		}
 	}
 	// now increment numLinks on child
-	fmt.Println("Updating child")
 	_, err = ns.nd.Mutate(child, func(i *maggiefs.Inode) error {
 		i.Nlink++
 		i.Ctime = time.Now().Unix()
@@ -244,12 +240,10 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.
 		EndPos:   endPos,
 		Volumes:  volIds,
 	}
-	fmt.Printf("nameserver adding block")
 	newId, err := ns.nd.AddBlock(b, i.Inodeid)
 	b.Id = newId
-	fmt.Printf("nameserver addblock returning new block %+v\n",b)
+	//fmt.Printf("nameserver addblock returning new block %+v\n",b)
 	if err != nil {
-		fmt.Printf("NOPE we lied, returning err %s\n",err.Error())
 		return maggiefs.Block{}, err
 	}
 

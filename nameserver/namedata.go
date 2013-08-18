@@ -190,7 +190,6 @@ func (nd *NameData) GetIncrCounter(counterName string, incr uint64) (uint64,erro
   nd.counterLock.Lock()
   defer nd.counterLock.Unlock()
   key := []byte(counterName)
-  fmt.Printf("%s %+v\n",key,key)
   valBytes,err := nd.counterdb.Get(ReadOpts,key)
   if err != nil {
     return 0,err
