@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"time"
 )
