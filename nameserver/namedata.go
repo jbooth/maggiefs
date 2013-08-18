@@ -27,7 +27,7 @@ type NameData struct {
   counterLock *sync.Mutex
   counterdb *levigo.DB // counterName -> uint64
 }
-const STRIPE_SIZE = 1023 // must be power of 2 - 1
+const STRIPE_SIZE = 1024 
 
 const dir_inodb = "inodes"
 const dir_counters = "counters"
@@ -111,8 +111,8 @@ func (nd *NameData) GetInode(inodeid uint64) (*maggiefs.Inode,error) {
 
 // seta an inode
 func (nd *NameData) SetInode(i *maggiefs.Inode) (err error) {
-  nd.inodeStripeLock[i.Inodeid & STRIPE_SIZE].Lock()
-  defer nd.inodeStripeLock[i.Inodeid & STRIPE_SIZE].Unlock()
+  nd.inodeStripeLock[i.Inodeid % STRIPE_SIZE].Lock()
+  defer nd.inodeStripeLock[i.Inodeid % STRIPE_SIZE].Unlock()
   key := make([]byte,8)
   binary.LittleEndian.PutUint64(key,i.Inodeid)
   // do the write and send OK
@@ -143,8 +143,8 @@ func (nd *NameData) DelInode(nodeid uint64) error {
 }
 
 func (nd *NameData) Mutate(inodeid uint64, f func(i *maggiefs.Inode) (error)) (*maggiefs.Inode,error) {
-  nd.inodeStripeLock[inodeid & STRIPE_SIZE].Lock()
-  defer nd.inodeStripeLock[inodeid & STRIPE_SIZE].Unlock()
+  nd.inodeStripeLock[inodeid % STRIPE_SIZE].Lock()
+  defer nd.inodeStripeLock[inodeid % STRIPE_SIZE].Unlock()
   i,err := nd.GetInode(inodeid)
   if err != nil { return nil,err }
   err = f(i)
