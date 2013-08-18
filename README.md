@@ -34,13 +34,13 @@ To Run
 
 The mfs binary has 4 operation modes (and a couple utilities).
 
-# mfs singlenode #
+###### mfs singlenode ######
 mfs singlenode runs a mock cluster by building out directories under a temp directory.  It's primarily used for testing.  
 
 
 
 
-# mfs dataserver #
+###### mfs dataserver ######
 For dataservers, we tend to run a client and mount somewhere on that machine as part of the same process, to facilitate certain optimizations for local data.
 
 go get 
