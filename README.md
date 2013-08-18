@@ -34,14 +34,17 @@ To Run
 
 The mfs binary has 4 operation modes (and a couple utilities).
 
-###### mfs singlenode ######
-mfs singlenode runs a mock cluster by building out directories under a temp directory.  It's primarily used for testing.  
+###### mfs singlenode [numDatanodes] [volumesPerDN] [replicationFactor] [baseDir for data] [mountPoint] 
 
+mfs singlenode runs a mock cluster by building out directories under a temp directory.  It's useful for testing or test-driving.  If you wanted to run a mock cluster with 3 DNs, 1 volume each and a replicationFactor of 2, you could run:
 
+mfs singlenode 3 1 2 /tmp/maggiefsData /tmp/maggiefsMount
 
+###### mfs nameserver [configPath]  ######
+Runs nameserver
 
-###### mfs dataserver ######
+###### mfs dataserver [configPath] [localMountPoint] ######
 For dataservers, we tend to run a client and mount somewhere on that machine as part of the same process, to facilitate certain optimizations for local data.
 
-go get 
-
+###### mfs client [nameHost] [leaseHost] [localMountPoint] ######
+To run standalone client to existing cluster
