@@ -28,31 +28,44 @@ public class MaggieFileSystem extends FileSystem {
 	private URI name;
 	private FileSystem raw;
 	// used by us
+	private String mountPath;
 	private Path mountPoint;
 	private String nameHost;
 	private int namePort;
 	  
+	static {
+	    Configuration.addDefaultResource("hdfs-default.xml");
+	}
 	  public MaggieFileSystem() {
-	    workingDir = new Path(System.getProperty("user.dir")).makeQualified(this);
 	  }
 	  
-	  private Path makeAbsolute(Path f) {
-	    if (f.isAbsolute()) {
-	      return f;
-	    } else {
-	      return new Path(workingDir, f);
-	    }
-	  }
-	  
-	  /** Adds the mountpoint in front of the path */
+	  /** Adds the mountpoint in front of the path, changes scheme to file */
 	  private Path lookup(Path path) {
-	    checkPath(path);
-	    if (!path.isAbsolute()) {
-	      path = new Path(getWorkingDirectory(), path);
-	    }
-	    return new Path(this.mountPoint,path);
+		
+		System.out.println("Looking up path " + path);
+		String p = path.toUri().getPath();
+		p = this.mountPath + p;
+		Path ret = new Path("file",null,p);
+	    System.out.println("Ret: " + ret);
+	    return ret;
 	  }
 
+	  /* Strips off our mountPoint prefix, ensures scheme is mfs */
+	  private FileStatus dereference(FileStatus s) {
+		  return new FileStatus(s.getLen(), s.isDir(), s.getReplication(),
+                  s.getBlockSize(), s.getModificationTime(), s.getAccessTime(),
+                  s.getPermission(), s.getOwner(), s.getGroup(), 
+                  dereference(s.getPath()));
+	  }
+	  
+	  private Path dereference(Path p) {
+		  String path = p.toUri().getPath();
+		  
+		  if (path.startsWith(mountPath)) {
+			  path = path.replace(mountPath,"/");
+		  }
+		  return new Path("mfs",nameHost + ":" + namePort, path);
+	  }
 	  public URI getUri() { return name; }
 	  
 	  public void initialize(URI uri, Configuration conf) throws IOException {
@@ -63,9 +76,11 @@ public class MaggieFileSystem extends FileSystem {
 	    if (! uri.getPath().startsWith("/")) {
 	    	throw new RuntimeException("Mountpoint must be absolute!");
 	    }
-	    this.mountPoint = new Path(uri.getPath());
+	    this.mountPoint = new Path("file",null,uri.getPath());
+	    this.mountPath = uri.getPath() + "/";
 	    this.nameHost = uri.getHost();
 	    this.namePort = uri.getPort();
+	    this.workingDir = new Path(System.getProperty("user.dir")).makeQualified(this);
 	  }
 	  
 	  @Override
@@ -89,6 +104,8 @@ public class MaggieFileSystem extends FileSystem {
 		return raw.create(lookup(arg0),arg1,arg2,arg3,arg4,arg5,arg6);
 	}
 
+	@SuppressWarnings("deprecation")
+	@Deprecated
 	@Override
 	public boolean delete(Path arg0) throws IOException {
 		return raw.delete(lookup(arg0));
@@ -101,7 +118,7 @@ public class MaggieFileSystem extends FileSystem {
 
 	@Override
 	public FileStatus getFileStatus(Path arg0) throws IOException {
-		return raw.getFileStatus(lookup(arg0));
+		return dereference(raw.getFileStatus(lookup(arg0)));
 	}
 
 	@Override
@@ -111,8 +128,16 @@ public class MaggieFileSystem extends FileSystem {
 
 	@Override
 	public FileStatus[] listStatus(Path arg0) throws IOException {
-		return raw.listStatus(lookup(arg0));
+		
+		FileStatus[] rawFiles = raw.listStatus(lookup(arg0));
+		FileStatus[] ret = new FileStatus[rawFiles.length];
+		for (int i = 0 ; i < ret.length ; i++) {
+			ret[i] = dereference(rawFiles[i]);
+		}
+		return ret;
 	}
+	
+	
 
 	@Override
 	public boolean mkdirs(Path arg0, FsPermission arg1) throws IOException {
