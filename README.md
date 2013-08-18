@@ -18,14 +18,14 @@ To install, first set up your $GOPATH according to [standard go project conventi
 
 mfs has a dependency on the leveldb library, version 1.9.0.  If you're using ubuntu 13.04, it should be available using:
 
-apt-get libleveldb-dev
+  apt-get libleveldb-dev
 
 If your package manager doesn't have a recent enough version of levelDB, follow the [mfs levelDB installation instructions](doc/leveldb.md) to set up go to build against a downloaded version of the library.
 
 Finally, run:
 
-go get github.com/jbooth/maggiefs/mfs  
-go install github.com/jbooth/maggiefs/mfs 
+  go get github.com/jbooth/maggiefs/mfs  
+  go install github.com/jbooth/maggiefs/mfs 
 
 And you'll have the mfs binary in $GOPATH/bin.
 
@@ -38,7 +38,7 @@ The mfs binary has 4 operation modes (and a couple utilities).
 
 mfs singlenode runs a mock cluster by building out directories under a temp directory.  It's useful for testing or test-driving.  If you wanted to run a mock cluster with 3 DNs, 1 volume each and a replicationFactor of 2, you could run:
 
-mfs singlenode 3 1 2 /tmp/maggiefsData /tmp/maggiefsMount
+  mfs singlenode 3 1 2 /tmp/maggiefsData /tmp/maggiefsMount
 
 ###### mfs nameserver [configPath]  ######
 Runs nameserver
