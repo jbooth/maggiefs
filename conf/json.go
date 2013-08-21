@@ -16,14 +16,18 @@ func (cfg *NSConfig) ReadConfig(file string) error {
   return d.Decode(cfg)
 }
 
-func (cfg *NSConfig) Write(file string) error {
+
+func (cfg *NSConfig) Write(out io.Writer) error {
+  return json.NewEncoder(out).Encode(cfg)
+}
+
+func (cfg *NSConfig) Writef(file string) error {
   f, err := os.Create(file)
   if err != nil {
     return err
   }
   defer f.Close()
-  err = json.NewEncoder(f).Encode(cfg)
-  return err
+  return cfg.Write(f)
 }
 
 
@@ -38,12 +42,15 @@ func (ds *DSConfig) ReadConfig(file string) error {
   return d.Decode(ds)
 }
 
-func (ds *DSConfig) Write(file string) error {
+func (ds *DSConfig) Write(out io.Writer) error {
+	return json.NewEncoder(f).Encode(ds)
+}
+
+func (ds *DSConfig) Writef(file string) error {
   f, err := os.Create(file)
   if err != nil {
     return err
   }
   defer f.Close()
-  err = json.NewEncoder(f).Encode(ds)
-  return err
+  return ds.Write(f)
 }

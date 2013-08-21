@@ -55,9 +55,13 @@ func main() {
 		runDataserver(args)
 	case "nameserver":
 		runNameserver(args)
-	case "genconf":
-		usage(nil)
+	case "nameconfig":
+		conf.DefaultNSConfig(args[0]).Write(os.Stdout)
 		return
+	case "dataconfig":
+		// args are nameHost, vol1, vol2, volN...
+		conf.DefaultDSConfig(args[0], args[1:]).Write(os.Stdout)
+		// TODO actually set up configured homedir rather than just printing
 	default:
 		usage(nil)
 		return
@@ -150,13 +154,6 @@ func runDataserver(args []string) {
 	ds.WaitClosed()
 }
 
-//func gendataconf(args []string) {
-//	nameHost := args[0]
-//	volRoots := args[1:]
-//	cfg := conf.DefaultDSConf(nameHost, volRoots)
-//
-//}
-
 type mountedClient struct {
 	ms         fuse.MountState
 	mountPoint string
@@ -177,16 +174,3 @@ func newMountedClient(leases maggiefs.LeaseService, names maggiefs.NameService, 
 	err = mountState.Mount(mountPoint, opts)
 	return mountState, err
 }
-
-//  fmt.Println(baseDir)
-//  leases := maggiefs.NewLocalLeases()
-//  datas := maggiefs.NewLocalDatas(baseDir)
-//  names := maggiefs.NewMemNames(datas)
-//  mfs := client.NewMaggieFuse(leases,names,datas)
-//  fmt.Println(mfs)
-//  mountState := fuse.NewMountState(mfs)
-//  mountState.Debug = true
-//  err := mountState.Mount("/tmp/maggiefs",nil)
-//  if (err != nil) { fmt.Println(err) }
-//  fmt.Println("Mounted")
-//  mountState.Loop()
