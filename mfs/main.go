@@ -57,11 +57,13 @@ func main() {
 		runNameserver(args)
 	case "nameconfig":
 		conf.DefaultNSConfig(args[0]).Write(os.Stdout)
+		// TODO format
 		return
 	case "dataconfig":
 		// args are nameHost, vol1, vol2, volN...
 		conf.DefaultDSConfig(args[0], args[1:]).Write(os.Stdout)
 		// TODO actually set up configured homedir rather than just printing
+		return
 	default:
 		usage(nil)
 		return
