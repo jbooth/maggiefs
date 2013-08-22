@@ -1,4 +1,4 @@
-package integration
+package client
 
 import (
   "github.com/jbooth/maggiefs/maggiefs"
