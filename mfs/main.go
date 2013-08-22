@@ -31,11 +31,18 @@ func usage(err error) {
 	fmt.Fprintf(os.Stderr, "mfs singlenode numDNs volsPerDn replicationFactor baseDir mountPoint\n")
 }
 
-//
-//func doNameNode(pathToProps string) {
-//  cfg,err := integration.NewName
-//}
+// flags
+var (
+	debug bool	
+)
 
+// set flags
+func init() {
+	flag.BoolVar(&debug, "debug", false, "print debug info about which fuse operations we're doing and their errors")
+}
+
+
+// run
 func main() {
 	flag.Parse()
 	args := flag.Args()
@@ -56,11 +63,17 @@ func main() {
 	case "nameserver":
 		runNameserver(args)
 	case "nameconfig":
+		// args are:  
+		//   1)  path to build the config under
 		conf.DefaultNSConfig(args[0]).Write(os.Stdout)
 		// TODO format
 		return
 	case "dataconfig":
-		// args are nameHost, vol1, vol2, volN...
+		// args are
+			// 1) host of namenode
+			// 2) path to DN homedir on the datanode
+			// 2) []paths to DN volumeRoots on the datanode 
+		
 		conf.DefaultDSConfig(args[0], args[1:]).Write(os.Stdout)
 		// TODO actually set up configured homedir rather than just printing
 		return
