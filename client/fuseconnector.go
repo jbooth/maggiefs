@@ -43,6 +43,9 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 		nil,
 		log.New(os.Stderr, "maggie-fuse", 0),
 	}
+//	nc := NewNameCache(names,leases)
+//	m.leases = nc
+//	m.names = nc
 	//
 	go func() {
 		fuseNotify := &raw.NotifyInvalInodeOut{}
@@ -641,7 +644,7 @@ func (m *MaggieFuse) Read(header *raw.InHeader, input *raw.ReadIn, buf []byte) (
 		nRead += n
 		if err != nil {
 			if err == io.EOF {
-				fmt.Printf("returning data numbytes %d val %s\n", nRead, string(buf[0:int(nRead)]))
+				fmt.Printf("Hit EOF: returning data numbytes %d val %s\n", nRead, string(buf[0:int(nRead)]))
 				return &fuse.ReadResultData{buf[0:int(nRead)]}, fuse.OK
 			} else {
 				fmt.Printf("Error reading %s\n", err.Error())
@@ -650,7 +653,7 @@ func (m *MaggieFuse) Read(header *raw.InHeader, input *raw.ReadIn, buf []byte) (
 		}
 	}
 	// read from map fd -> file
-	fmt.Printf("returning data %s\n", string(buf))
+	//fmt.Printf("returning data %s\n", string(buf))
 	return &fuse.ReadResultData{buf}, fuse.OK
 }
 

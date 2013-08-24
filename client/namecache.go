@@ -20,6 +20,24 @@ type NameCache struct {
   mapmap map[uint64] map[uint64] *centry  
 }
 
+func NewNameCache(names maggiefs.NameService, leases maggiefs.LeaseService) *NameCache {
+	nc := &NameCache {
+		names,
+		leases,
+		10,
+		512,
+		256,
+		make(chan uint64),
+		make(map[uint64]*sync.Mutex),
+		make(map[uint64] map[uint64]*centry),
+	}
+	for i := uint64(0) ; i < 10 ; i++ {
+		nc.stripelock[i] = new(sync.Mutex)
+		nc.mapmap[i] = make(map[uint64]*centry)
+	}
+	return nc
+}
+
 type centry struct {
   i *maggiefs.Inode
   rl maggiefs.ReadLease

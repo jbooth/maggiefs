@@ -11,6 +11,8 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"os"
 	"strconv"
+	"runtime/pprof"
+	"log"
 )
 
 // usage:
@@ -33,12 +35,14 @@ func usage(err error) {
 
 // flags
 var (
-	debug bool	
+	debug bool	= false
+	profile string = ""
 )
 
 // set flags
 func init() {
 	flag.BoolVar(&debug, "debug", false, "print debug info about which fuse operations we're doing and their errors")
+	flag.StringVar(&profile, "profile", "", "file to write profiling information to")
 }
 
 
@@ -46,6 +50,16 @@ func init() {
 func main() {
 	flag.Parse()
 	args := flag.Args()
+	if profile != "" {
+			  fmt.Printf("pprof file: %s\n",profile)
+        f, err := os.Create(profile)
+        if err != nil {
+            log.Fatal(err)
+        }
+        pprof.StartCPUProfile(f)
+        defer pprof.StopCPUProfile()
+	}
+	
 	if len(args) < 1 {
 		usage(nil)
 		return
@@ -65,13 +79,20 @@ func main() {
 	case "nameconfig":
 		// args are:  
 		//   1)  path to build the config under
+		
+		//namePath = 
+		//err := os.Mkdir(
+		// steps:
+			// format 
+			// write config
 		conf.DefaultNSConfig(args[0]).Write(os.Stdout)
 		// TODO format
 		return
 	case "dataconfig":
+	  // writes a DN config 
+	  
 		// args are
 			// 1) host of namenode
-			// 2) path to DN homedir on the datanode
 			// 2) []paths to DN volumeRoots on the datanode 
 		
 		conf.DefaultDSConfig(args[0], args[1:]).Write(os.Stdout)
