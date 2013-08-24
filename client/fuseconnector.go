@@ -43,9 +43,9 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 		nil,
 		log.New(os.Stderr, "maggie-fuse", 0),
 	}
-//	nc := NewNameCache(names,leases)
-//	m.leases = nc
-//	m.names = nc
+	nc := NewNameCache(names,leases)
+	m.leases = nc
+	m.names = nc
 	//
 	go func() {
 		fuseNotify := &raw.NotifyInvalInodeOut{}
@@ -181,7 +181,7 @@ func fillAttrOut(out *raw.AttrOut, i *maggiefs.Inode) {
 	// raw.AttrOut
 	out.AttrValid = uint64(0)
 	out.AttrValidNsec = uint32(100)
-	fmt.Printf("Filled attrOut %v with inode %v\n",out,i)
+	//fmt.Printf("Filled attrOut %v with inode %v\n",out,i)
 }
 
 func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.GetAttrIn) (code fuse.Status) {
@@ -667,10 +667,10 @@ func (m *MaggieFuse) Release(header *raw.InHeader, input *raw.ReleaseIn) {
 
 func (m *MaggieFuse) Write(header *raw.InHeader, input *raw.WriteIn, data []byte) (written uint32, code fuse.Status) {
 	writer := m.openFiles.get(input.Fh).w
-	fmt.Printf("Got writer %+v\n", writer)
+	//fmt.Printf("Got writer %+v\n", writer)
 	written = uint32(0)
 	for written < input.Size {
-		fmt.Printf("Writing from offset %d len %d\n", input.Offset+uint64(written), input.Size-written)
+		//fmt.Printf("Writing from offset %d len %d\n", input.Offset+uint64(written), input.Size-written)
 		n, err := writer.WriteAt(data, input.Offset+uint64(written), input.Size-written)
 		written += n
 		if err != nil {

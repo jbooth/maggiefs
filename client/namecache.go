@@ -4,6 +4,7 @@ import (
   "github.com/jbooth/maggiefs/maggiefs"
   "sync"
   "time"
+  "fmt"
 )
 
 // wrapper for nameservice and leaseservice that caches inodes
@@ -14,7 +15,7 @@ type NameCache struct {
   numBuckets int  // number of hash buckets we use
   maxPerBucket int  // high water mark for each bucket -- when we hit this, we clean up until at minPerBucket
   minPerBucket int
-  notifier chan uint64
+  notifier chan maggiefs.NotifyEvent
   // cache
   stripelock map[uint64] *sync.Mutex
   mapmap map[uint64] map[uint64] *centry  
@@ -27,7 +28,7 @@ func NewNameCache(names maggiefs.NameService, leases maggiefs.LeaseService) *Nam
 		10,
 		512,
 		256,
-		make(chan uint64),
+		leases.GetNotifier(),
 		make(map[uint64]*sync.Mutex),
 		make(map[uint64] map[uint64]*centry),
 	}
@@ -55,9 +56,11 @@ func (nc *NameCache) withLock(nodeid uint64, f func (m map[uint64] *centry)) {
 // name cache methods
 func (nc *NameCache) invalidate(nodeid uint64) {
   nc.withLock(nodeid, func(m map[uint64] *centry) {
-    c := m[nodeid]
-    c.rl.Release()
-    delete(m,nodeid)
+    c,exists := m[nodeid]
+    if exists {
+	    c.rl.Release()
+  	  delete(m,nodeid)
+    }
   })
 }
 
@@ -103,7 +106,7 @@ func (nc *NameCache) ReadLease(nodeid uint64) (l maggiefs.ReadLease, err error) 
   return nc.leases.ReadLease(nodeid)
 }
 
-func (nc *NameCache) GetNotifier() (chan uint64) {
+func (nc *NameCache) GetNotifier() (chan maggiefs.NotifyEvent) {
   return nc.notifier
 }
 
@@ -115,7 +118,19 @@ func (nc *NameCache) WaitAllReleased(nodeid uint64) error {
 // name service methods
 
 func (nc *NameCache)   GetInode(nodeid uint64) (i *maggiefs.Inode, err error) {
-  return nil,nil
+	i = nc.getIfCached(nodeid)
+	if i != nil {
+		return i,nil
+	}
+	i,err = nc.names.GetInode(nodeid)
+	if err != nil {
+		return nil,err
+	}
+	if i != nil {
+		nc.setInCache(i)
+		return i,nil
+	}
+  return nil,fmt.Errorf("Inode not found: %d",nodeid)
 }
 
 func (nc *NameCache)   StatFs() (stat maggiefs.FsStat, err error) {
@@ -124,7 +139,13 @@ func (nc *NameCache)   StatFs() (stat maggiefs.FsStat, err error) {
 
   // persists a new inode to backing store
 func (nc *NameCache)   AddInode(node *maggiefs.Inode) (id uint64, err error) {
-  return nc.names.AddInode(node)
+	newId,err := nc.names.AddInode(node)
+	if err != nil {
+		return newId,err
+	}
+	node.Inodeid = newId
+	nc.setInCache(node)
+  return newId,err
 }
   // sets an existing inode, write lease should be held for this
 func (nc *NameCache)   SetInode(node *maggiefs.Inode) (err error) {
@@ -146,7 +167,7 @@ func (nc *NameCache)   Truncate(nodeid uint64, newSize uint64) (err error) {
   // Links the given child to the given parent, with the given name.  returns error E_EXISTS if force is false and parent already has a child of that name
 func (nc *NameCache)   Link(parent uint64, child uint64, name string, force bool) (err error) {
   err = nc.names.Link(parent,child,name,force)
-  nc.invalidate(parent)
+  nc.invalidate(parent) 
   nc.invalidate(child) // not sure if this actually necessary but hey
   return err
 }
