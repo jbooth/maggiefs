@@ -77,6 +77,15 @@ func returnBuff(b []byte) {
 }
 
 func Copy(dst io.Writer, src io.Reader, n int64) (int64, error) {
+	// If the writer has a ReadFrom method, use it to do the copy.
+	// Avoids an allocation and a copy.
+	if rt, ok := dst.(ReaderFrom); ok {
+		return rt.ReadFrom(src)
+	}
+	// Similarly, if the reader has a WriteTo method, use it to do the copy.
+	if wt, ok := src.(WriterTo); ok {
+		return wt.WriteTo(dst)
+	}
 
 	buff := getBuff()
 	defer returnBuff(buff)
@@ -111,7 +120,7 @@ func Copy(dst io.Writer, src io.Reader, n int64) (int64, error) {
 }
 
 func NewSectionWriter(w io.WriterAt, off int64, length int64) io.Writer {
-	return &SectionWriter{w, off, off+length}
+	return &SectionWriter{w, off, off + length}
 }
 
 // SectionReader implements Write on a section
