@@ -48,15 +48,15 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		// if we're being asked to read past end of block, we just return early
 		posInBlock := uint64(position) - block.StartPos
 		numBytesFromBlock := uint32(block.Length()) - uint32(posInBlock)
-		if numBytesFromBlock > length {
-		  numBytesFromBlock = length
+		if numBytesFromBlock > length - nRead{
+		  numBytesFromBlock = length - nRead
 		}
 		if posInBlock == block.Length() {
 			// bail out and fill in with 0s
 			break
 		}
 		// read bytes
-		fmt.Printf("reader.go reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
+		//fmt.Printf("reader.go reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
 		err = r.datas.Read(block, p[offset:], posInBlock, numBytesFromBlock)
 		if err != nil && err != io.EOF {
 			return nRead,fmt.Errorf("reader.go error reading from block %+v : %s",block,err.Error())
@@ -64,7 +64,7 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		nRead += numBytesFromBlock
 		position += uint64(numBytesFromBlock)
 		offset += numBytesFromBlock
-		fmt.Printf("reader.go finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
+		//fmt.Printf("reader.go finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
 	}
 	// sometimes the length can be more bytes than there are in the file, so always just give that back
 	return length,nil
@@ -73,7 +73,7 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 func blockForPos(position uint64, inode *maggiefs.Inode) (blk maggiefs.Block, err error) {
 	for i := 0; i < len(inode.Blocks); i++ {
 		blk := inode.Blocks[i]
-		fmt.Printf("Checking block %+v to see if position %d fits\n",blk,position)
+		//fmt.Printf("Checking block %+v to see if position %d fits\n",blk,position)
 		if position >= blk.StartPos && position < blk.EndPos {
 			return blk, nil
 		}

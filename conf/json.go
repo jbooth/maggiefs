@@ -3,6 +3,7 @@ package conf
 import (
   "os"
   "encoding/json"
+  "io"
 )
 
 
@@ -43,7 +44,7 @@ func (ds *DSConfig) ReadConfig(file string) error {
 }
 
 func (ds *DSConfig) Write(out io.Writer) error {
-	return json.NewEncoder(f).Encode(ds)
+	return json.NewEncoder(out).Encode(ds)
 }
 
 func (ds *DSConfig) Writef(file string) error {

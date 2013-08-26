@@ -43,6 +43,9 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 		nil,
 		log.New(os.Stderr, "maggie-fuse", 0),
 	}
+	nc := NewNameCache(names,leases)
+	m.leases = nc
+	m.names = nc
 	//
 	go func() {
 		fuseNotify := &raw.NotifyInvalInodeOut{}
@@ -178,7 +181,7 @@ func fillAttrOut(out *raw.AttrOut, i *maggiefs.Inode) {
 	// raw.AttrOut
 	out.AttrValid = uint64(0)
 	out.AttrValidNsec = uint32(100)
-	fmt.Printf("Filled attrOut %v with inode %v\n",out,i)
+	//fmt.Printf("Filled attrOut %v with inode %v\n",out,i)
 }
 
 func (m *MaggieFuse) GetAttr(out *raw.AttrOut, header *raw.InHeader, input *raw.GetAttrIn) (code fuse.Status) {
@@ -641,7 +644,7 @@ func (m *MaggieFuse) Read(header *raw.InHeader, input *raw.ReadIn, buf []byte) (
 		nRead += n
 		if err != nil {
 			if err == io.EOF {
-				fmt.Printf("returning data numbytes %d val %s\n", nRead, string(buf[0:int(nRead)]))
+				fmt.Printf("Hit EOF: returning data numbytes %d val %s\n", nRead, string(buf[0:int(nRead)]))
 				return &fuse.ReadResultData{buf[0:int(nRead)]}, fuse.OK
 			} else {
 				fmt.Printf("Error reading %s\n", err.Error())
@@ -650,7 +653,7 @@ func (m *MaggieFuse) Read(header *raw.InHeader, input *raw.ReadIn, buf []byte) (
 		}
 	}
 	// read from map fd -> file
-	fmt.Printf("returning data %s\n", string(buf))
+	//fmt.Printf("returning data %s\n", string(buf))
 	return &fuse.ReadResultData{buf}, fuse.OK
 }
 
@@ -664,10 +667,10 @@ func (m *MaggieFuse) Release(header *raw.InHeader, input *raw.ReleaseIn) {
 
 func (m *MaggieFuse) Write(header *raw.InHeader, input *raw.WriteIn, data []byte) (written uint32, code fuse.Status) {
 	writer := m.openFiles.get(input.Fh).w
-	fmt.Printf("Got writer %+v\n", writer)
+	//fmt.Printf("Got writer %+v\n", writer)
 	written = uint32(0)
 	for written < input.Size {
-		fmt.Printf("Writing from offset %d len %d\n", input.Offset+uint64(written), input.Size-written)
+		//fmt.Printf("Writing from offset %d len %d\n", input.Offset+uint64(written), input.Size-written)
 		n, err := writer.WriteAt(data, input.Offset+uint64(written), input.Size-written)
 		written += n
 		if err != nil {

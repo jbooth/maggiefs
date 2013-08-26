@@ -9,8 +9,11 @@ import (
 	"github.com/jbooth/maggiefs/dataserver"
 	"github.com/jbooth/maggiefs/integration"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"log"
 	"os"
+	"runtime/pprof"
 	"strconv"
+	"runtime"
 )
 
 // usage:
@@ -33,19 +36,43 @@ func usage(err error) {
 
 // flags
 var (
-	debug bool
+	debug        bool   = false
+	cpuprofile   string = ""
+	blockprofile string = ""
 )
 
 // set flags
 func init() {
 	flag.BoolVar(&debug, "debug", false, "print debug info about which fuse operations we're doing and their errors")
+	flag.StringVar(&cpuprofile, "cpuprofile", "", "file to write CPU profiling information to")
+	flag.StringVar(&blockprofile, "blockprofile", "", "file to write block profiling information to")
 }
 
 // run
 func main() {
 	flag.Parse()
 	args := flag.Args()
-	if len(args) < 1 {
+	if cpuprofile != "" {
+		fmt.Printf("cpuprof file: %s\n", cpuprofile)
+		f, err := os.Create(cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+	if blockprofile != "" {
+		f, err := os.Create(blockprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		runtime.SetBlockProfileRate(1)
+		defer func() {
+			pprof.Lookup("block").WriteTo(f, 0)
+		}()
+	}
+
+	if len(args) < 1 {	
 		usage(nil)
 		return
 	}
@@ -62,6 +89,7 @@ func main() {
 	case "nameserver":
 		runNameserver(args)
 	case "nameconfig":
+    // sets up dn home
 		// args are:
 		//   1)  path to build the config under
 		nameConfig(args)
@@ -199,10 +227,10 @@ func newMountedClient(leases maggiefs.LeaseService, names maggiefs.NameService, 
 	}
 	mountState := fuse.NewMountState(mfs)
 
-	mountState.Debug = true
+	mountState.Debug = debug
 	opts := &fuse.MountOptions{
 		MaxBackground: 12,
-		//Options: []string {"max_read=131072", "max_readahead=131072","max_write=131072"},
+		//Options: []string {"ac_attr_timeout=0"},//,"attr_timeout=0","entry_timeout=0"},
 	}
 	err = mountState.Mount(mountPoint, opts)
 	return mountState, err
