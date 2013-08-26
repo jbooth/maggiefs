@@ -33,14 +33,13 @@ func usage(err error) {
 
 // flags
 var (
-	debug bool	
+	debug bool
 )
 
 // set flags
 func init() {
 	flag.BoolVar(&debug, "debug", false, "print debug info about which fuse operations we're doing and their errors")
 }
-
 
 // run
 func main() {
@@ -63,19 +62,17 @@ func main() {
 	case "nameserver":
 		runNameserver(args)
 	case "nameconfig":
-		// args are:  
+		// args are:
 		//   1)  path to build the config under
-		conf.DefaultNSConfig(args[0]).Write(os.Stdout)
-		// TODO format
+		nameConfig(args)
 		return
 	case "dataconfig":
+		// writes a dataconfig to std out
 		// args are
-			// 1) host of namenode
-			// 2) path to DN homedir on the datanode
-			// 2) []paths to DN volumeRoots on the datanode 
-		
+		// 1) host of namenode
+		// 2) []paths to DN volumeRoots on the datanode
+
 		conf.DefaultDSConfig(args[0], args[1:]).Write(os.Stdout)
-		// TODO actually set up configured homedir rather than just printing
 		return
 	default:
 		usage(nil)
@@ -167,6 +164,27 @@ func runDataserver(args []string) {
 		ds.Close()
 	}
 	ds.WaitClosed()
+}
+
+func nameConfig(args []string) {
+	nameHome := args[0]
+	dataDir := fmt.Sprintf("%s/data", nameHome)
+
+	err := os.Mkdir(nameHome, 0755)
+	if err != nil {
+		fmt.Printf("Error making namehome %s : %s\n", nameHome, err.Error())
+		return
+	}
+
+	err = Format(dataDir, uint32(os.Getuid()), uint32(os.Getgid()))
+	if err != nil {
+		fmt.Printf("Error formatting namedir %s : %s", dataDir, err.Error())
+	}
+	cfg := conf.DefaultNSConfig(nameHome)
+	err = cfg.Write(	fmt.Sprintf("%s/nameserver.conf",nameHome))
+	if err != nil {
+		panic(err)
+	}
 }
 
 type mountedClient struct {
