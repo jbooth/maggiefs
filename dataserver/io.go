@@ -79,11 +79,11 @@ func returnBuff(b []byte) {
 func Copy(dst io.Writer, src io.Reader, n int64) (int64, error) {
 	// If the writer has a ReadFrom method, use it to do the copy.
 	// Avoids an allocation and a copy.
-	if rt, ok := dst.(ReaderFrom); ok {
+	if rt, ok := dst.(io.ReaderFrom); ok {
 		return rt.ReadFrom(src)
 	}
 	// Similarly, if the reader has a WriteTo method, use it to do the copy.
-	if wt, ok := src.(WriterTo); ok {
+	if wt, ok := src.(io.WriterTo); ok {
 		return wt.WriteTo(dst)
 	}
 
