@@ -7,6 +7,7 @@ import (
 	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/dataserver"
+	"github.com/jbooth/maggiefs/nameserver"
 	"github.com/jbooth/maggiefs/integration"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"log"
@@ -204,12 +205,12 @@ func nameConfig(args []string) {
 		return
 	}
 
-	err = Format(dataDir, uint32(os.Getuid()), uint32(os.Getgid()))
+	err = nameserver.Format(dataDir, uint32(os.Getuid()), uint32(os.Getgid()))
 	if err != nil {
 		fmt.Printf("Error formatting namedir %s : %s", dataDir, err.Error())
 	}
 	cfg := conf.DefaultNSConfig(nameHome)
-	err = cfg.Write(	fmt.Sprintf("%s/nameserver.conf",nameHome))
+	err = cfg.Writef(	fmt.Sprintf("%s/nameserver.conf",nameHome))
 	if err != nil {
 		panic(err)
 	}
