@@ -1,15 +1,15 @@
 package nameserver
 
 import (
-  "github.com/jbooth/maggiefs/maggiefs"
-  "github.com/jbooth/maggiefs/mrpc"
-  "net"
-	"net/rpc"
+	"fmt"
+	"github.com/jbooth/maggiefs/maggiefs"
+	"github.com/jbooth/maggiefs/mrpc"
+	"net"
 	"net/http"
+	"net/rpc"
+	"os"
 	"sync"
 	"time"
-	"fmt"
-	"os"
 )
 
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
@@ -22,7 +22,7 @@ func NewNameServer(ls maggiefs.LeaseService, nameAddr string, webAddr string, da
 	if format {
 		err = Format(dataDir, uint32(os.Getuid()), uint32(os.Getgid()))
 		if err != nil {
-			return nil,err
+			return nil, err
 		}
 	}
 	ns.nd, err = NewNameData(dataDir)
@@ -31,11 +31,11 @@ func NewNameServer(ls maggiefs.LeaseService, nameAddr string, webAddr string, da
 	}
 	ns.rm = newReplicationManager(replicationFactor)
 	ns.dirTreeLock = &sync.Mutex{}
-	ns.webListen,err = net.Listen("tcp",webAddr)
+	ns.webListen, err = net.Listen("tcp", webAddr)
 	if err != nil {
-	  return nil,err
+		return nil, err
 	}
-	ns.webServer = newNameWebServer(&ns,webAddr)
+	ns.webServer = newNameWebServer(&ns, webAddr)
 	return &ns, nil
 }
 
@@ -43,42 +43,50 @@ type NameServer struct {
 	ls          maggiefs.LeaseService
 	nd          *NameData
 	rm          *replicationManager
-	listenAddr      string
-	dirTreeLock *sync.Mutex // used so all dir tree operations (link/unlink) are atomic
-	rpcServer *mrpc.CloseableServer // created at start time, need to be closed
-	webListen net.Listener
-	webServer *http.Server
+	listenAddr  string
+	dirTreeLock *sync.Mutex           // used so all dir tree operations (link/unlink) are atomic
+	rpcServer   *mrpc.CloseableServer // created at start time, need to be closed
+	webListen   net.Listener
+	webServer   *http.Server
 }
 
 func (ns *NameServer) Start() error {
-  var err error = nil
-  ns.rpcServer,err = mrpc.CloseableRPC(ns.listenAddr,mrpc.NewNameServiceService(ns), "NameService")
-  if err != nil { return err }
-  ns.rpcServer.Start()
-  go func() {
-    ns.webServer.Serve(ns.webListen)
-  }()
-  return err
+	var err error = nil
+	ns.rpcServer, err = mrpc.CloseableRPC(ns.listenAddr, mrpc.NewNameServiceService(ns), "NameService")
+	if err != nil {
+		return err
+	}
+	ns.rpcServer.Start()
+	go func() {
+		ns.webServer.Serve(ns.webListen)
+	}()
+	return err
 }
 
 func (ns *NameServer) Close() error {
-  var retError error = nil
-  err := ns.nd.Close() 
-  if err != nil { retError = err }
-  err = ns.rpcServer.Close()
-  if err != nil { retError = err }
-  err = ns.webListen.Close()
-  if err != nil { retError = err }
-  return retError
+	var retError error = nil
+	err := ns.nd.Close()
+	if err != nil {
+		retError = err
+	}
+	err = ns.rpcServer.Close()
+	if err != nil {
+		retError = err
+	}
+	err = ns.webListen.Close()
+	if err != nil {
+		retError = err
+	}
+	return retError
 }
 
 func (ns *NameServer) WaitClosed() error {
-  ns.rpcServer.WaitClosed()
-  return nil
+	ns.rpcServer.WaitClosed()
+	return nil
 }
 
-func (ns *NameServer) HttpAddr() string  {
-  return ns.webServer.Addr
+func (ns *NameServer) HttpAddr() string {
+	return ns.webServer.Addr
 }
 
 func (ns *NameServer) GetInode(nodeid uint64) (node *maggiefs.Inode, err error) {
@@ -99,7 +107,7 @@ func (ns *NameServer) Link(parent uint64, child uint64, name string, force bool)
 	var parentSuccess = false
 	var prevChildId = uint64(0)
 	for !parentSuccess {
-	
+
 		// try to link to parent
 		_, err := ns.nd.Mutate(parent, func(i *maggiefs.Inode) error {
 			//fmt.Printf("Checking if name %s exists on inode %+v, looking to link child %d\n",name,i,child)
@@ -119,8 +127,8 @@ func (ns *NameServer) Link(parent uint64, child uint64, name string, force bool)
 			return nil
 		})
 		if err != nil {
-			fmt.Printf("Link: returning  %d [%s] -> %d : %s\n",parent,name,child,err.Error())
-			return fmt.Errorf("Link: returning  %d [%s] -> %d : %s",parent,name,child,err.Error())
+			fmt.Printf("Link: returning  %d [%s] -> %d : %s\n", parent, name, child, err.Error())
+			return fmt.Errorf("Link: returning  %d [%s] -> %d : %s", parent, name, child, err.Error())
 		}
 		//fmt.Printf("Link() checking if force situation, prevChildId: %d\n",prevChildId)
 		// if name already exists, handle
@@ -178,28 +186,28 @@ func (ns *NameServer) doUnlink(parent uint64, name string) (err error) {
 	}
 	// garbage collect if necessary
 	if child.Nlink <= 0 {
-		go ns.del(child.Inodeid) 
+		go ns.del(child.Inodeid)
 	}
 	return nil
 }
 
 // called to clean up an inode after it's been unlinked all the way
-// invoked as a goroutine typically, 
+// invoked as a goroutine typically,
 func (ns *NameServer) del(inodeid uint64) {
 	// wait until no clients have this file open (posix convention)
 	err := ns.ls.WaitAllReleased(inodeid)
 	if err != nil {
-		fmt.Printf("error waiting all released for node %d : %s\n",inodeid,err.Error())
+		fmt.Printf("error waiting all released for node %d : %s\n", inodeid, err.Error())
 	}
 	// truncating to 0 bytes will remove all blocks
-	err = ns.Truncate(inodeid,0)
+	err = ns.Truncate(inodeid, 0)
 	if err != nil {
-		fmt.Printf("error truncating node %d : %s\n",inodeid,err.Error())
+		fmt.Printf("error truncating node %d : %s\n", inodeid, err.Error())
 	}
 	// now clean up the inode itself
 	err = ns.nd.DelInode(inodeid)
 	if err != nil {
-		fmt.Printf("error deleting node %d from node store : %s\n",inodeid,err.Error())
+		fmt.Printf("error deleting node %d from node store : %s\n", inodeid, err.Error())
 	}
 }
 
@@ -259,7 +267,7 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 		delset := make([]maggiefs.Block, 0, 0)
 		var truncBlock *maggiefs.Block = nil
 		var truncLength uint32 = 0
-		
+
 		for idx := len(inode.Blocks) - 1; idx >= 0; idx-- {
 			blk := inode.Blocks[idx]
 			if blk.EndPos > newSize {
@@ -267,7 +275,7 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 				if blk.StartPos >= newSize {
 					// delete
 					delset = append(delset, blk)
-					inode.Blocks = inode.Blocks[:len(inode.Blocks) - 1]
+					inode.Blocks = inode.Blocks[:len(inode.Blocks)-1]
 				} else {
 					// truncate
 					truncLength = uint32(newSize - blk.StartPos)
@@ -275,14 +283,16 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 				}
 			}
 		}
-		for _,rmblk := range delset {
+		for _, rmblk := range delset {
 			err = ns.rm.RmBlock(rmblk)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 		}
 		if truncBlock != nil {
-			err = ns.rm.TruncBlock(*truncBlock,truncLength)
+			err = ns.rm.TruncBlock(*truncBlock, truncLength)
 		}
-		
+
 	}
 	inode.Length = newSize
 	return ns.nd.SetInode(inode)
@@ -292,7 +302,7 @@ func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
 	// TODO confirm not duplicate datanode
 	client, err := rpc.Dial("tcp", nameDataAddr)
 	if err != nil {
-		err = fmt.Errorf("Error connecting to client %d at %s : %s",dnId,nameDataAddr,err.Error())
+		err = fmt.Errorf("Error connecting to client %d at %s : %s", dnId, nameDataAddr, err.Error())
 		fmt.Println(err)
 		return err
 	}
@@ -301,11 +311,11 @@ func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
 }
 
 func (ns *NameServer) NextVolId() (id uint32, err error) {
-  ret,err := ns.nd.GetIncrCounter(COUNTER_VOLID,1)
-  return uint32(ret),err
+	ret, err := ns.nd.GetIncrCounter(COUNTER_VOLID, 1)
+	return uint32(ret), err
 }
 
 func (ns *NameServer) NextDnId() (id uint32, err error) {
-  ret,err := ns.nd.GetIncrCounter(COUNTER_DNID,1)
-  return uint32(ret),err	
+	ret, err := ns.nd.GetIncrCounter(COUNTER_DNID, 1)
+	return uint32(ret), err
 }

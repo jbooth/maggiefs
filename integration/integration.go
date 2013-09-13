@@ -3,12 +3,12 @@ package integration
 
 import (
 	"fmt"
+	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/dataserver"
 	"github.com/jbooth/maggiefs/leaseserver"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
 	"github.com/jbooth/maggiefs/nameserver"
-  "github.com/jbooth/maggiefs/conf"
 	"net/rpc"
 )
 
@@ -110,7 +110,7 @@ func NewNameClient(addr string) (maggiefs.NameService, error) {
 }
 
 // returns a started nameserver -- we must start lease server in order to boot up nameserver, so
-func NewNameServer(cfg *conf.NSConfig, format bool) (*NameLeaseServer, error) {
+func NewNameServer(cfg *conf.MasterConfig, format bool) (*NameLeaseServer, error) {
 	nls := &NameLeaseServer{}
 	var err error = nil
 	fmt.Println("creating lease server")
@@ -143,7 +143,7 @@ func NewNameServer(cfg *conf.NSConfig, format bool) (*NameLeaseServer, error) {
 //}
 
 // TODO refactor to use NewConfSet
-func NewSingleNodeCluster(nncfg *conf.NSConfig, ds []*conf.DSConfig, format bool) (*SingleNodeCluster, error) {
+func NewSingleNodeCluster(nncfg *conf.MasterConfig, ds []*conf.PeerConfig, format bool) (*SingleNodeCluster, error) {
 	cl := &SingleNodeCluster{}
 
 	nls, err := NewNameServer(nncfg, format)
@@ -155,28 +155,27 @@ func NewSingleNodeCluster(nncfg *conf.NSConfig, ds []*conf.DSConfig, format bool
 	fmt.Println("Starting name client")
 	cl.Names, err = NewNameClient(nncfg.NameBindAddr)
 	if err != nil {
-	 return cl,err
+		return cl, err
 	}
 	fmt.Println("starting lease client")
 	cl.Leases, err = leaseserver.NewLeaseClient(nncfg.LeaseBindAddr)
-	 if err != nil {
-    return cl, err
-  }
-  // start data client
-  dc, err := dataserver.NewDataClient(cl.Names, 1)
-  if err != nil {
-    return cl, fmt.Errorf("error building dataclient : %s", err.Error())
-  }
-  cl.Datas = dc
-  // start dataservers
-  cl.DataNodes = make([]*dataserver.DataServer, len(ds))
-	for idx,dscfg := range ds {
-	 fmt.Println("Starting DS with cfg %+v\n",dscfg)
-	 cl.DataNodes[idx],err = dataserver.NewDataServer(dscfg.VolumeRoots,dscfg.DataClientBindAddr,dscfg.NameDataBindAddr, dscfg.WebBindAddr, cl.Names,dc)
-	 if err != nil {
-	   return cl,err
-	 }
+	if err != nil {
+		return cl, err
 	}
-	return cl,nil
+	// start data client
+	dc, err := dataserver.NewDataClient(cl.Names, 1)
+	if err != nil {
+		return cl, fmt.Errorf("error building dataclient : %s", err.Error())
+	}
+	cl.Datas = dc
+	// start dataservers
+	cl.DataNodes = make([]*dataserver.DataServer, len(ds))
+	for idx, dscfg := range ds {
+		fmt.Println("Starting DS with cfg %+v\n", dscfg)
+		cl.DataNodes[idx], err = dataserver.NewDataServer(dscfg.VolumeRoots, dscfg.DataClientBindAddr, dscfg.NameDataBindAddr, dscfg.WebBindAddr, cl.Names, dc)
+		if err != nil {
+			return cl, err
+		}
+	}
+	return cl, nil
 }
-

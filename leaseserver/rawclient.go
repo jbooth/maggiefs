@@ -1,15 +1,15 @@
 package leaseserver
 
 import (
-	"encoding/gob"
-  "github.com/jbooth/maggiefs/maggiefs"
 	"encoding/binary"
+	"encoding/gob"
 	"fmt"
+	"github.com/jbooth/maggiefs/maggiefs"
 	"net"
 )
 
 type rawclient struct {
-	id 				 uint64
+	id         uint64
 	c          *net.TCPConn
 	reqcounter uint64
 	notifier   chan maggiefs.NotifyEvent
@@ -29,7 +29,7 @@ func newRawClient(addr string) (*rawclient, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("connecting to %s\n",addr)
+	fmt.Printf("connecting to %s\n", addr)
 	c, err := net.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
 		return nil, err
@@ -37,14 +37,14 @@ func newRawClient(addr string) (*rawclient, error) {
 	fmt.Println("connected")
 	c.SetNoDelay(true)
 	c.SetKeepAlive(true)
-	idBuff := make([]byte,8,8)
-	_,err = c.Read(idBuff)
+	idBuff := make([]byte, 8, 8)
+	_, err = c.Read(idBuff)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
-	ret := &rawclient{binary.LittleEndian.Uint64(idBuff),c, 0, make(chan maggiefs.NotifyEvent, 100), make(chan queuedRequest), make(chan response), make(chan bool)}
+	ret := &rawclient{binary.LittleEndian.Uint64(idBuff), c, 0, make(chan maggiefs.NotifyEvent, 100), make(chan queuedRequest), make(chan response), make(chan bool)}
 	// read client id
-	
+
 	go ret.mux()
 	go ret.readResponses()
 	return ret, nil
@@ -61,8 +61,8 @@ func (c *rawclient) doRequest(r request) (response, error) {
 }
 
 func (c *rawclient) sendRequestNoResponse(r request) {
-  q := queuedRequest{r, nil}
-  c.requests <- q
+	q := queuedRequest{r, nil}
+	c.requests <- q
 }
 
 func (c *rawclient) mux() {
@@ -74,9 +74,9 @@ func (c *rawclient) mux() {
 			// register response channel
 			//fmt.Printf("storing respChan %+v under reqno %d\n",req.whenDone,req.r.Reqno)
 			if req.whenDone != nil {
-  			c.reqcounter++
-	   		req.r.Reqno = c.reqcounter
-  			responseChans[req.r.Reqno] = req.whenDone
+				c.reqcounter++
+				req.r.Reqno = c.reqcounter
+				responseChans[req.r.Reqno] = req.whenDone
 			}
 			// write the req to socket
 			err := reqEncoder.Encode(req.r)
@@ -86,9 +86,9 @@ func (c *rawclient) mux() {
 			}
 		case resp := <-c.responses:
 			if resp.Status == STATUS_NOTIFY {
-			  // this is a notification so forward to the notification chan
-			  fmt.Printf("Got notify resp %+v",resp)
-			  c.notifier <- NotifyEvent{ inodeid: resp.Inodeid, ackid: resp.Reqno, c: c }  
+				// this is a notification so forward to the notification chan
+				fmt.Printf("Got notify resp %+v", resp)
+				c.notifier <- NotifyEvent{inodeid: resp.Inodeid, ackid: resp.Reqno, c: c}
 			} else {
 				// response to a request, forward to it's response chan
 				k := resp.Reqno
@@ -96,7 +96,7 @@ func (c *rawclient) mux() {
 				delete(responseChans, k)
 				respChan <- resp
 				close(respChan)
-			}  
+			}
 		case _ = <-c.closeMux:
 			return
 		}
@@ -107,11 +107,8 @@ func (c *rawclient) mux() {
 func (c *rawclient) readResponses() {
 	respDecoder := gob.NewDecoder(c.c)
 	for {
-    resp := response{}
-    respDecoder.Decode(&resp)
-    c.responses <- resp  
+		resp := response{}
+		respDecoder.Decode(&resp)
+		c.responses <- resp
 	}
 }
-
-
-

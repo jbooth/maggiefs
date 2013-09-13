@@ -73,7 +73,7 @@ func TestWriteRead2(t *testing.T) {
 	bytes := make([]byte, 65536)
 	n, err := rand.Read(bytes)
 	if n < len(bytes) {
-	 t.Fatal(fmt.Errorf("Only returned %d bytes in call to rand.Read",n))
+		t.Fatal(fmt.Errorf("Only returned %d bytes in call to rand.Read", n))
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +90,7 @@ func TestWriteRead2(t *testing.T) {
 
 	// then do that many reads across the file to confirm it's ok
 	readBytes := make([]byte, 65536)
-	reader,err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
+	reader, err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
 	if err != nil {
 		t.Fatal(fmt.Sprintf("Error opening reader %s", err.Error()))
 	}
@@ -104,8 +104,8 @@ func TestWriteRead2(t *testing.T) {
 		}
 		for idx := 0; idx < 65536; idx++ {
 			if readBytes[idx] != bytes[idx] {
-			  fmt.Printf("Bytes at beginning:  %x : %x\n",readBytes[:5],bytes[:5])
-			  //fmt.Printf("Bytes near offest:  %x : %x\n",readBytes[idx-5:idx+5],bytes[idx-5:idx+5])
+				fmt.Printf("Bytes at beginning:  %x : %x\n", readBytes[:5], bytes[:5])
+				//fmt.Printf("Bytes near offest:  %x : %x\n",readBytes[idx-5:idx+5],bytes[idx-5:idx+5])
 				t.Fatal(fmt.Sprintf("Bytes not equal at offset %d, iteration %d : %x != %x", idx, i, readBytes[idx], bytes[idx]))
 			}
 		}

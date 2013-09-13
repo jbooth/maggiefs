@@ -3,10 +3,10 @@
 package mrpc
 
 import (
+	"encoding/gob"
+	"fmt"
+	"github.com/jbooth/maggiefs/maggiefs"
 	"net/rpc"
-  "github.com/jbooth/maggiefs/maggiefs"
-  "encoding/gob"
-  "fmt"
 )
 
 type NameServiceService struct {
@@ -229,7 +229,7 @@ func (_c *NameServiceClient) AddBlock(nodeid uint64, length uint32) (newBlock ma
 	_request := &NameServiceAddBlockRequest{nodeid, length}
 	_response := &NameServiceAddBlockResponse{}
 	err = _c.client.Call(_c.service+".AddBlock", _request, _response)
-	fmt.Printf(" %+v\n",_response)
+	fmt.Printf(" %+v\n", _response)
 	return _response.NewBlock, err
 }
 

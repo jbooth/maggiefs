@@ -61,7 +61,7 @@ func (r *CloseableServer) Start() error {
 
 // blocking accept loop
 func (r *CloseableServer) Accept() {
-  sockIdCounter := 0
+	sockIdCounter := 0
 	for {
 		conn, err := r.listen.AcceptTCP()
 		if err != nil {

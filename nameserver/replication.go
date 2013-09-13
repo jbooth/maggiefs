@@ -11,7 +11,7 @@ import (
 type replicationManager struct {
 	replicationFactor uint32
 	volumes           map[uint32]*volume // maps volumes to their host (host is immutable for a volume, new volumes always get new IDs)
-	l                 *sync. RWMutex
+	l                 *sync.RWMutex
 	dnCheckers        map[uint32]*dnChecker // maps hostnames to the struct responsible for polling them
 }
 
@@ -21,40 +21,39 @@ type volume struct {
 	conn maggiefs.NameDataIface
 }
 
-
 type dnChecker struct {
-  quit chan bool
-  dnInfo *maggiefs.DataNodeInfo
-  dn maggiefs.NameDataIface
+	quit   chan bool
+	dnInfo *maggiefs.DataNodeInfo
+	dn     maggiefs.NameDataIface
 }
 
 // monitors this volume, updating it's stats locally and notifying if DN dies
 func (rm *replicationManager) monitorStat(c *dnChecker) {
-  ticker := time.Tick(60 * time.Second)
-  for {
-    
-    stat,err := c.dn.HeartBeat()
-    if err != nil {
-      // datanode is down, log error, invalidate volumes and return
-      fmt.Println("DATANODE DOWN, NEED TO CODE VALID BEHAVIOR HERE")
-      return
-    }
-    // update stats 
-    rm.l.Lock()
-    for _,volStat := range stat.Volumes {
-      rm.volumes[volStat.VolId] = &volume{volStat,c.dn}
-    }
-    rm.l.Unlock()
-    // wait 60 seconds
-    select {
-      case _ = <- c.quit:
-        // quit signal, return
-        return
-      case _ = <- ticker:
-        // keep on tickin
-        continue
-    }
-  }
+	ticker := time.Tick(60 * time.Second)
+	for {
+
+		stat, err := c.dn.HeartBeat()
+		if err != nil {
+			// datanode is down, log error, invalidate volumes and return
+			fmt.Println("DATANODE DOWN, NEED TO CODE VALID BEHAVIOR HERE")
+			return
+		}
+		// update stats
+		rm.l.Lock()
+		for _, volStat := range stat.Volumes {
+			rm.volumes[volStat.VolId] = &volume{volStat, c.dn}
+		}
+		rm.l.Unlock()
+		// wait 60 seconds
+		select {
+		case _ = <-c.quit:
+			// quit signal, return
+			return
+		case _ = <-ticker:
+			// keep on tickin
+			continue
+		}
+	}
 }
 
 func (rm *replicationManager) dnDead() {
@@ -77,11 +76,11 @@ func (rm *replicationManager) addDn(dn maggiefs.NameDataIface) error {
 	dnInfo := &maggiefs.DataNodeInfo{}
 	dnInfo.DnId = stat.DnId
 	dnInfo.Addr = stat.Addr
-	
-	checker := &dnChecker{make(chan bool,1), dnInfo, dn }
-	rm.dnCheckers[dnInfo.DnId] = checker 
+
+	checker := &dnChecker{make(chan bool, 1), dnInfo, dn}
+	rm.dnCheckers[dnInfo.DnId] = checker
 	rm.l.Unlock()
-	
+
 	return nil
 }
 
@@ -90,16 +89,16 @@ func newReplicationManager(replicationFactor uint32) *replicationManager {
 		replicationFactor: replicationFactor,
 		volumes:           make(map[uint32]*volume),
 		l:                 &sync.RWMutex{},
-		dnCheckers:          make(map[uint32]*dnChecker),
+		dnCheckers:        make(map[uint32]*dnChecker),
 	}
 }
 
 func (rm *replicationManager) Close() {
-  rm.l.Lock()
-  defer rm.l.Unlock()
-  for _,ck := range rm.dnCheckers {
-    ck.quit <- true
-  }
+	rm.l.Lock()
+	defer rm.l.Unlock()
+	for _, ck := range rm.dnCheckers {
+		ck.quit <- true
+	}
 }
 
 func (rm *replicationManager) FsStat() (maggiefs.FsStat, error) {

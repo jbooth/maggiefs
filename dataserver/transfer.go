@@ -100,7 +100,7 @@ func initPipe() (p *pipe, err error) {
 	if e != 0 {
 		return nil, os.NewSyscallError("pipe", e)
 	}
-	fmt.Printf("Got new pipe, read fd %d, write fd %d\n",pp[0],pp[1])
+	fmt.Printf("Got new pipe, read fd %d, write fd %d\n", pp[0], pp[1])
 	return &pipe{os.NewFile(uintptr(pp[0]), "|0"), os.NewFile(uintptr(pp[1]), "|1"), 0}, nil
 
 }

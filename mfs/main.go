@@ -7,14 +7,14 @@ import (
 	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/dataserver"
-	"github.com/jbooth/maggiefs/nameserver"
 	"github.com/jbooth/maggiefs/integration"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"github.com/jbooth/maggiefs/nameserver"
 	"log"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"strconv"
-	"runtime"
 )
 
 // usage:
@@ -73,7 +73,7 @@ func main() {
 		}()
 	}
 
-	if len(args) < 1 {	
+	if len(args) < 1 {
 		usage(nil)
 		return
 	}
@@ -90,7 +90,7 @@ func main() {
 	case "nameserver":
 		runNameserver(args)
 	case "nameconfig":
-    // sets up dn home
+		// sets up dn home
 		// args are:
 		//   1)  path to build the config under
 		nameConfig(args)
@@ -101,7 +101,7 @@ func main() {
 		// 1) host of namenode
 		// 2) []paths to DN volumeRoots on the datanode
 
-		conf.DefaultDSConfig(args[0], args[1:]).Write(os.Stdout)
+		conf.DefaultPeerConfig(args[0], args[1:]).Write(os.Stdout)
 		return
 	default:
 		usage(nil)
@@ -111,7 +111,7 @@ func main() {
 }
 
 func runNameserver(args []string) {
-	cfg := &conf.NSConfig{}
+	cfg := &conf.MasterConfig{}
 	err := cfg.ReadConfig(args[0])
 	if err != nil {
 		usage(err)
@@ -163,7 +163,7 @@ func singlenode(args []string) {
 }
 
 func runDataserver(args []string) {
-	cfg := &conf.DSConfig{}
+	cfg := &conf.PeerConfig{}
 	err := cfg.ReadConfig(args[0])
 	if err != nil {
 		usage(err)
@@ -209,8 +209,8 @@ func nameConfig(args []string) {
 	if err != nil {
 		fmt.Printf("Error formatting namedir %s : %s", dataDir, err.Error())
 	}
-	cfg := conf.DefaultNSConfig(nameHome)
-	err = cfg.Writef(	fmt.Sprintf("%s/nameserver.conf",nameHome))
+	cfg := conf.DefaultMasterConfig(nameHome)
+	err = cfg.Writef(fmt.Sprintf("%s/nameserver.conf", nameHome))
 	if err != nil {
 		panic(err)
 	}

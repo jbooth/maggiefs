@@ -54,12 +54,12 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (written uint
 		if err != nil {
 			return 0, err
 		}
-  	//fmt.Printf("Added blocks for filewrite to ino %+v\n", inode)
+		//fmt.Printf("Added blocks for filewrite to ino %+v\n", inode)
 	}
 	// now write bytes
 	nWritten := 0
 	endOfWritePos := off + uint64(length) - 1
-  startOfWritePos := off + uint64(nWritten)
+	startOfWritePos := off + uint64(nWritten)
 	for _, b := range inode.Blocks {
 		//fmt.Printf("evaluating block %+v for writeStartPos %d endofWritePos %d\n", b, startOfWritePos, endOfWritePos)
 		if (b.StartPos <= startOfWritePos && b.EndPos > startOfWritePos) || (b.StartPos < endOfWritePos && endOfWritePos <= b.EndPos) {
@@ -81,9 +81,9 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (written uint
 			if err != nil {
 				return 0, err
 			}
-//			fmt.Printf("Wrote %d bytes to block %+v\n", endIdx-startIdx, b)
+			//			fmt.Printf("Wrote %d bytes to block %+v\n", endIdx-startIdx, b)
 			nWritten += writeLength
-//			fmt.Printf("Wrote %d, nWritten total %d", writeLength, nWritten)
+			//			fmt.Printf("Wrote %d, nWritten total %d", writeLength, nWritten)
 		}
 	}
 	return uint32(nWritten), err
@@ -92,14 +92,14 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (written uint
 // acquires lease, then adds the blocks to the namenode,
 // patching up the referenced inode to match
 func (w *InodeWriter) addBlocksForFileWrite(inode *maggiefs.Inode, off uint64, length uint32) error {
-//	fmt.Printf("Adding/extending blocks for write at off %d length %d\n", off, length)
+	//	fmt.Printf("Adding/extending blocks for write at off %d length %d\n", off, length)
 	newEndPos := off + uint64(length)
 	if newEndPos > inode.Length {
 		// if we have a last block and it's less than max length,
 		// extend last block to max block length first
-//		fmt.Printf("Adding/extending blocks for file write to inode %+v\n", inode)
+		//		fmt.Printf("Adding/extending blocks for file write to inode %+v\n", inode)
 		if inode.Blocks != nil && len(inode.Blocks) > 0 {
-			idx := int(len(inode.Blocks)-1)
+			idx := int(len(inode.Blocks) - 1)
 			lastBlock := inode.Blocks[idx]
 			if lastBlock.Length() < BLOCKLENGTH {
 				extendLength := BLOCKLENGTH - lastBlock.Length()
@@ -114,7 +114,7 @@ func (w *InodeWriter) addBlocksForFileWrite(inode *maggiefs.Inode, off uint64, l
 		}
 		// and add new blocks as necessary
 		for newEndPos > inode.Length {
-//			fmt.Printf("New end pos %d still greater than inode length %d\n", newEndPos, inode.Length)
+			//			fmt.Printf("New end pos %d still greater than inode length %d\n", newEndPos, inode.Length)
 			newBlockLength := newEndPos - inode.Length
 			if newBlockLength > BLOCKLENGTH {
 				newBlockLength = BLOCKLENGTH

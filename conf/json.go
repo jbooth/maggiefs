@@ -1,57 +1,53 @@
 package conf
 
 import (
-  "os"
-  "encoding/json"
-  "io"
+	"encoding/json"
+	"io"
+	"os"
 )
 
-
-func (cfg *NSConfig) ReadConfig(file string) error {
-  f, err := os.Open(file)
-  if err != nil {
-    return err
-  }
-  defer f.Close()
-  d := json.NewDecoder(f)
-  return d.Decode(cfg)
+func (cfg *MasterConfig) ReadConfig(file string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	d := json.NewDecoder(f)
+	return d.Decode(cfg)
 }
 
-
-func (cfg *NSConfig) Write(out io.Writer) error {
-  return json.NewEncoder(out).Encode(cfg)
+func (cfg *MasterConfig) Write(out io.Writer) error {
+	return json.NewEncoder(out).Encode(cfg)
 }
 
-func (cfg *NSConfig) Writef(file string) error {
-  f, err := os.Create(file)
-  if err != nil {
-    return err
-  }
-  defer f.Close()
-  return cfg.Write(f)
+func (cfg *MasterConfig) Writef(file string) error {
+	f, err := os.Create(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return cfg.Write(f)
 }
 
-
-
-func (ds *DSConfig) ReadConfig(file string) error {
-  f, err := os.Open(file)
-  if err != nil {
-    return err
-  }
-  defer f.Close()
-  d := json.NewDecoder(f)
-  return d.Decode(ds)
+func (ds *PeerConfig) ReadConfig(file string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	d := json.NewDecoder(f)
+	return d.Decode(ds)
 }
 
-func (ds *DSConfig) Write(out io.Writer) error {
+func (ds *PeerConfig) Write(out io.Writer) error {
 	return json.NewEncoder(out).Encode(ds)
 }
 
-func (ds *DSConfig) Writef(file string) error {
-  f, err := os.Create(file)
-  if err != nil {
-    return err
-  }
-  defer f.Close()
-  return ds.Write(f)
+func (ds *PeerConfig) Writef(file string) error {
+	f, err := os.Create(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return ds.Write(f)
 }

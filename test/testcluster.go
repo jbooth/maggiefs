@@ -1,9 +1,9 @@
 package test
 
 import (
-	"github.com/jbooth/maggiefs/integration"
 	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/conf"
+	"github.com/jbooth/maggiefs/integration"
 	"os"
 )
 
@@ -12,17 +12,17 @@ var (
 )
 
 func init() {
-  initCluster()
+	initCluster()
 }
 
 func initCluster() {
 	os.RemoveAll("/tmp/testcluster")
 	var err error
-	nncfg,dscfg,err := conf.NewConfSet2(4,2,3,"/tmp/testcluster")
+	nncfg, dscfg, err := conf.NewConfSet2(4, 2, 3, "/tmp/testcluster")
 	if err != nil {
-	  panic(err)
+		panic(err)
 	}
-	testCluster, err = integration.NewSingleNodeCluster(nncfg,dscfg,true)
+	testCluster, err = integration.NewSingleNodeCluster(nncfg, dscfg, true)
 	if err != nil {
 		panic(err)
 	}

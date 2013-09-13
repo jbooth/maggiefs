@@ -240,7 +240,7 @@ func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 
 func (v *volume) serveRead(client Endpoint, req RequestHeader) (err error) {
 	err = v.withFile(req.Blk.Id, func(file *os.File) error {
-//		fmt.Printf("Serving read to file %s\n", file.Name())
+		//		fmt.Printf("Serving read to file %s\n", file.Name())
 		// check off
 		resp := ResponseHeader{STAT_OK}
 		sendPos := int64(req.Pos)
@@ -260,7 +260,7 @@ func (v *volume) serveRead(client Endpoint, req RequestHeader) (err error) {
 			return err
 		}
 		// send data
-//		fmt.Printf("sending data from pos %d length %d\n", sendPos, sendLength)
+		//		fmt.Printf("sending data from pos %d length %d\n", sendPos, sendLength)
 		_, err = Copy(client, io.NewSectionReader(file, sendPos, int64(sendLength)), int64(sendLength))
 		if err != nil {
 			return err
@@ -291,7 +291,7 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 
 	// should we check block.Version here?  skipping for now
 	err := v.withFile(req.Blk.Id, func(file *os.File) error {
-//		fmt.Printf("vol %d pipelining write to following vol IDs %+v\n", v.id, req.Blk.Volumes)
+		//		fmt.Printf("vol %d pipelining write to following vol IDs %+v\n", v.id, req.Blk.Volumes)
 		// remove ourself from pipeline remainder
 		for idx, volId := range req.Blk.Volumes {
 			if volId == v.id {
@@ -307,7 +307,7 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 				break
 			}
 		}
-//		fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
+		//		fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
 		// prepare to transfer
 		outOffset := int64(req.Pos)
 		fileWriter := NewSectionWriter(file, outOffset, int64(req.Length))
@@ -323,7 +323,7 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 				if err != nil {
 					return fmt.Errorf("Error sending data on volume %d : %s", v.id, err.Error())
 				}
-//				fmt.Printf("Sent %d bytes from client %s to file %s remote ds %s\n", sent, client, file.Name(), d)
+				//				fmt.Printf("Sent %d bytes from client %s to file %s remote ds %s\n", sent, client, file.Name(), d)
 				// confirm response before sending our own
 				remoteResp := &ResponseHeader{}
 				_, err = remoteResp.ReadFrom(d)
@@ -334,9 +334,9 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 			})
 		} else {
 			// just us, so splice to file and return
-//			fmt.Println("Copying just to local")
+			//			fmt.Println("Copying just to local")
 			_, err := Copy(fileWriter, client, int64(req.Length))
-//			fmt.Printf("Sent %d bytes from client %s to file %s\n", sent, client, file.Name())
+			//			fmt.Printf("Sent %d bytes from client %s to file %s\n", sent, client, file.Name())
 			if err != nil {
 				return fmt.Errorf("Error sending to conn %s : %s", client, err)
 			}
@@ -346,9 +346,9 @@ func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClien
 
 	// send response
 	resp := ResponseHeader{STAT_OK}
-//	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
+	//	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
 	if err != nil {
-	  resp.Stat = STAT_ERR
+		resp.Stat = STAT_ERR
 	}
 	resp.WriteTo(client)
 	return err

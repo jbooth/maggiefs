@@ -22,7 +22,7 @@ type Reader struct {
 
 func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32) (n uint32, err error) {
 	// have to re-get inode every time because it might have changed
-	
+
 	inode, err := r.names.GetInode(r.inodeid)
 	if err != nil {
 		return 0, err
@@ -38,7 +38,7 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 	nRead := uint32(0)
 	for nRead < length {
 		if position == inode.Length {
-			return nRead,io.EOF
+			return nRead, io.EOF
 		}
 		block, err := blockForPos(position, inode)
 		if err != nil {
@@ -48,8 +48,8 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		// if we're being asked to read past end of block, we just return early
 		posInBlock := uint64(position) - block.StartPos
 		numBytesFromBlock := uint32(block.Length()) - uint32(posInBlock)
-		if numBytesFromBlock > length - nRead{
-		  numBytesFromBlock = length - nRead
+		if numBytesFromBlock > length-nRead {
+			numBytesFromBlock = length - nRead
 		}
 		if posInBlock == block.Length() {
 			// bail out and fill in with 0s
@@ -59,7 +59,7 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		//fmt.Printf("reader.go reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
 		err = r.datas.Read(block, p[offset:], posInBlock, numBytesFromBlock)
 		if err != nil && err != io.EOF {
-			return nRead,fmt.Errorf("reader.go error reading from block %+v : %s",block,err.Error())
+			return nRead, fmt.Errorf("reader.go error reading from block %+v : %s", block, err.Error())
 		}
 		nRead += numBytesFromBlock
 		position += uint64(numBytesFromBlock)
@@ -67,7 +67,7 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		//fmt.Printf("reader.go finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
 	}
 	// sometimes the length can be more bytes than there are in the file, so always just give that back
-	return length,nil
+	return length, nil
 }
 
 func blockForPos(position uint64, inode *maggiefs.Inode) (blk maggiefs.Block, err error) {

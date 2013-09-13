@@ -33,8 +33,8 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 	return dc.withConn(pickVol(blk.Volumes), func(d Endpoint) error {
 		// send req
 		header := RequestHeader{OP_READ, blk, pos, length}
-//		fmt.Printf("data client writing read header to %s\n", d)
-//		fmt.Printf("Reading length %d to slice of length %d\n", length, len(p))
+		//		fmt.Printf("data client writing read header to %s\n", d)
+		//		fmt.Printf("Reading length %d to slice of length %d\n", length, len(p))
 		_, err = header.WriteTo(d)
 		if err != nil {
 			return fmt.Errorf("Error writing header to dn : %s", err.Error())
@@ -52,10 +52,10 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 		//fmt.Printf("Entering loop to read %d bytes\n",length)
 		numRead := 0
 		for uint32(numRead) < length {
-//			fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length - uint32(numRead), d, numRead, int(length))
-//			fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
+			//			fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length - uint32(numRead), d, numRead, int(length))
+			//			fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
 			n, err := d.Read(p[numRead:int(length)])
-//			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
+			//			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
 			if err != nil {
 				return err
 			}
@@ -80,7 +80,7 @@ func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64) (err error
 		// send req bytes
 		numWritten := 0
 		for numWritten < len(p) {
-//			fmt.Printf("Writing bytes from pos %d, first byte %x\n", numWritten, p[numWritten])
+			//			fmt.Printf("Writing bytes from pos %d, first byte %x\n", numWritten, p[numWritten])
 			n, err := d.Write(p[numWritten:])
 			if err != nil {
 				return err
@@ -158,10 +158,10 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c Endpoint) error) (err
 	p.l.RUnlock()
 	if !exists {
 		p.l.Lock()
-  	ch,exists = p.pool[host]	
-  	if ! exists {
-  	  ch = make(chan Endpoint, p.maxPerKey)
-		  p.pool[host] = ch
+		ch, exists = p.pool[host]
+		if !exists {
+			ch = make(chan Endpoint, p.maxPerKey)
+			p.pool[host] = ch
 		}
 		p.l.Unlock()
 	}
@@ -182,7 +182,7 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c Endpoint) error) (err
 			return err
 		}
 	}
-  // do our stuff
+	// do our stuff
 	err = with(conn)
 	if err != nil {
 		// don't re-use conn on error, might be crap left in the pipe
@@ -210,5 +210,5 @@ func (p *connPool) dial(host *net.TCPAddr) (Endpoint, error) {
 	}
 	conn.SetNoDelay(true)
 	//fmt.Printf("Connected to host %s with local conn %s\n",conn.RemoteAddr().String(),conn.LocalAddr().String())
-	return SockEndpoint(conn),nil
+	return SockEndpoint(conn), nil
 }

@@ -134,8 +134,6 @@ func (ds *DataServer) serveClientData() {
 	}
 }
 
-
-
 func (ds *DataServer) serveClientConn(conn Endpoint) {
 	defer conn.Close()
 	for {
@@ -171,7 +169,7 @@ func (ds *DataServer) serveClientConn(conn Endpoint) {
 					return
 				}
 			} else if req.Op == OP_WRITE {
-				err = vol.serveWrite(conn, req,ds.dc)
+				err = vol.serveWrite(conn, req, ds.dc)
 				if err != nil {
 					fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
 					return

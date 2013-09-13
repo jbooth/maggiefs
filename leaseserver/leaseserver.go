@@ -107,7 +107,7 @@ func (c *clientConn) notify(nodeid uint64, leaseid uint64, ackId uint64) pending
 		Inodeid: nodeid,
 		Status:  STATUS_NOTIFY,
 	}
-	fmt.Printf("Sending notify %+v\n",r)
+	fmt.Printf("Sending notify %+v\n", r)
 	c.resp <- r
 	// create pending ack
 	ack := pendingAck{c, ackId, make(chan bool, 2)}
@@ -119,7 +119,7 @@ func (c *clientConn) notify(nodeid uint64, leaseid uint64, ackId uint64) pending
 
 // closes all resources and releases all
 func (c *clientConn) closeAndDie() {
-  fmt.Printf("killing conn id %d",c.id)
+	fmt.Printf("killing conn id %d", c.id)
 	close(c.resp)
 	c.ackLock.Lock()
 	defer c.ackLock.Unlock()
@@ -132,21 +132,21 @@ func (c *clientConn) closeAndDie() {
 }
 
 type pendingAck struct {
-	c   *clientConn
+	c     *clientConn
 	ackId uint64
-	ack chan bool
+	ack   chan bool
 }
 
 func (p pendingAck) waitAcknowledged() {
 	// timeout hardcoded for now
-	fmt.Printf("Waiting acknowledged conn id %d ackid %d\n",p.c.id,p.ackId)
+	fmt.Printf("Waiting acknowledged conn id %d ackid %d\n", p.c.id, p.ackId)
 	timeout := time.After(time.Second * 5)
 	select {
 	case <-p.ack:
 		return
 	case <-timeout:
 		// client lease is EXPIRED, KILL IT
-		fmt.Printf("Conn %d timed out waiting for ackid %d\n",p.c.id, p.ackId)
+		fmt.Printf("Conn %d timed out waiting for ackid %d\n", p.c.id, p.ackId)
 		p.c.closeAndDie()
 	}
 	return
@@ -269,7 +269,7 @@ func (ls *LeaseServer) process() {
 			// response finally goes to the original calling client
 			resp, err = ls.releaseLease(qr.req, qr.conn)
 		case OP_ACKNOWLEDGE:
-			fmt.Printf("got ack for client id %d, ackid %d\n",qr.conn.id,qr.req.Leaseid)
+			fmt.Printf("got ack for client id %d, ackid %d\n", qr.conn.id, qr.req.Leaseid)
 			qr.conn.ack(qr.req.Leaseid)
 			// no response
 			continue
