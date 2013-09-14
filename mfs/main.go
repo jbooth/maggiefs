@@ -32,7 +32,7 @@ func usage(err error) {
 	fmt.Fprintf(os.Stderr, "mfs master path/to/config : run a master\n")
 	fmt.Fprintf(os.Stderr, "mfs peer path/to/config : run a peer\n")
 	fmt.Fprintf(os.Stderr, "mfs masterconfig [homedir] : prints default master config to stdout, with homedir set as the master's home\n")
-	fmt.Fprintf(os.Stderr, "mfs peerconfig : prints default peer config to stdout \n")
+	fmt.Fprintf(os.Stderr, "mfs peerconfig [masterHost] [mountPoint] [volRoots..] : prints default peer config to stdout \n")
 	fmt.Fprintf(os.Stderr, "mfs format path/to/NameDataDir: formats a directory for use as the master's homedir \n")
 	fmt.Fprintf(os.Stderr, "mfs singlenode numDNs volsPerDn replicationFactor baseDir mountPoint\n")
 }
@@ -156,7 +156,7 @@ func main() {
 	// this chan gets hit on error or signal
 	errChan := make(chan error)
 
-	// spin off client
+	// spin off fuse mountpoint
 	go func() {
 
 		defer func() {
@@ -181,7 +181,7 @@ func main() {
 		}
 	}()
 
-	// wait for some error to happen, unmount and blow up safely
+	// wait for something to come from either signal handler or the mountpoint, unmount and blow up safely
 	err = <-errChan
 	mount.ms.Unmount()
 	running.Close()
