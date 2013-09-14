@@ -164,7 +164,13 @@ func main() {
 				errChan <- fmt.Errorf("Run time panic: %v", x)
 			}
 		}()
-		mount.ms.Loop()
+		// either run mountpoint service or just wait while master service runs
+		if (mount != nil && mount.ms != nil) {
+			mount.ms.Loop()
+		} else {
+			waitForever = make(chan bool)
+			b := <- waitForever
+		}
 	}()
 
 	// spin off signal handler
