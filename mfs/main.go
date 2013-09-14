@@ -85,7 +85,6 @@ func main() {
 	var running mrpc.Service = nil
 	var mount *mountedClient = nil
 	var err error
-	fmt.Println(args)
 	cmd := args[0]
 	// pop first instr
 	args = args[1:]
@@ -111,7 +110,7 @@ func main() {
 		}
 	case "masterconfig":
 		masterHome := "/tmp/mfsMaster"
-		if len(args) > 1 {
+		if len(args) > 0 {
 			masterHome = args[0]
 		}
 		conf.DefaultMasterConfig(masterHome).Write(os.Stdout)
@@ -170,7 +169,7 @@ func main() {
 
 	// spin off signal handler
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGPIPE)
+	signal.Notify(sig, syscall.SIGTERM, syscall.SIGPIPE)
 	go func() {
 		s := <-sig
 		if s == syscall.SIGPIPE {
@@ -183,9 +182,13 @@ func main() {
 
 	// wait for something to come from either signal handler or the mountpoint, unmount and blow up safely
 	err = <-errChan
-	mount.ms.Unmount()
-	running.Close()
-	running.WaitClosed()
+	if mount != nil && mount.ms != nil {
+		mount.ms.Unmount()
+	}
+	if running != nil {
+		running.Close()
+		running.WaitClosed()
+	}
 	if err != nil {
 		panic(err)
 	}
