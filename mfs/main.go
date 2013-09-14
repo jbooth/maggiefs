@@ -168,7 +168,7 @@ func main() {
 		if (mount != nil && mount.ms != nil) {
 			mount.ms.Loop()
 		} else {
-			waitForever = make(chan bool)
+			waitForever := make(chan bool)
 			b := <- waitForever
 		}
 	}()
