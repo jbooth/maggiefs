@@ -169,7 +169,7 @@ func main() {
 			mount.ms.Loop()
 		} else {
 			waitForever := make(chan bool)
-			b := <- waitForever
+			_ = <- waitForever
 		}
 	}()
 
