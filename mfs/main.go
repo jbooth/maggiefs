@@ -6,14 +6,15 @@ import (
 	"github.com/jbooth/go-fuse/fuse"
 	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/integration"
+	"github.com/jbooth/maggiefs/nameserver"
 	"github.com/jbooth/maggiefs/mrpc"
-	"syscall"
 	"log"
 	"os"
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
+	"syscall"
 )
 
 // usage:
@@ -115,9 +116,16 @@ func main() {
 		}
 		conf.DefaultMasterConfig(masterHome).Write(os.Stdout)
 		return
-		//	case "format":
-		//		format(args)
-		//		return
+	case "format":
+		if len(args) < 1 {
+			usage(fmt.Errorf("Usage: format [NameHome]"))
+			return
+		}
+		err = nameserver.Format(args[0],uint32(os.Getuid()),uint32(os.Getgid()))
+		if err != nil {
+			panic(err)
+		}
+		return
 	case "peerconfig":
 		// writes a dataconfig to std out
 		// args are
@@ -154,17 +162,17 @@ func main() {
 		defer func() {
 			if x := recover(); x != nil {
 				fmt.Printf("run time panic: %v\n", x)
-				errChan <- fmt.Errorf("Run time panic: %v",x)
+				errChan <- fmt.Errorf("Run time panic: %v", x)
 			}
 		}()
 		mount.ms.Loop()
 	}()
 
 	// spin off signal handler
-	sig := make (chan os.Signal, 1)
-	signal.Notify(sig,syscall.SIGINT,syscall.SIGTERM,syscall.SIGQUIT,syscall.SIGPIPE)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGPIPE)
 	go func() {
-		s := <- sig
+		s := <-sig
 		if s == syscall.SIGPIPE {
 			errChan <- fmt.Errorf("SIGPIPE")
 		} else {
