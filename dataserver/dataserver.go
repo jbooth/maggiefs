@@ -109,13 +109,14 @@ func (ds *DataServer) Start() error {
 	return nil
 }
 
-func (ds *DataServer) Close() {
+func (ds *DataServer) Close() error {
 
 	ds.nameDataIface.Close()
 	ds.dataIface.Close()
 	for _, v := range ds.volumes {
 		v.Close()
 	}
+	return nil
 }
 
 func (ds *DataServer) WaitClosed() error {

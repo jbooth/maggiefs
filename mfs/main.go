@@ -4,14 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"github.com/jbooth/go-fuse/fuse"
-	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/conf"
-	"github.com/jbooth/maggiefs/dataserver"
 	"github.com/jbooth/maggiefs/integration"
-	"github.com/jbooth/maggiefs/maggiefs"
-	"github.com/jbooth/maggiefs/nameserver"
+	"github.com/jbooth/maggiefs/mrpc"
+	"syscall"
 	"log"
 	"os"
+	"os/signal"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
@@ -29,25 +28,29 @@ func usage(err error) {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 	}
 	fmt.Fprintf(os.Stderr, "usage: mfs [cmd]\n")
-	fmt.Fprintf(os.Stderr, "mfs namenode path/to/propsFile\n")
-	fmt.Fprintf(os.Stderr, "mfs datanode path/to/propsFile [mountPoint]\n")
-	fmt.Fprintf(os.Stderr, "mfs client namenodeAddr:port leaseAddr:port mountPoint\n")
+	fmt.Fprintf(os.Stderr, "mfs master path/to/config : run a master\n")
+	fmt.Fprintf(os.Stderr, "mfs peer path/to/config : run a peer\n")
+	fmt.Fprintf(os.Stderr, "mfs masterconfig [homedir] : prints default master config to stdout, with homedir set as the master's home\n")
+	fmt.Fprintf(os.Stderr, "mfs peerconfig : prints default peer config to stdout \n")
+	fmt.Fprintf(os.Stderr, "mfs format path/to/NameDataDir: formats a directory for use as the master's homedir \n")
 	fmt.Fprintf(os.Stderr, "mfs singlenode numDNs volsPerDn replicationFactor baseDir mountPoint\n")
 }
 
-// flags
+// main flags
 var (
 	debug        bool   = false
 	cpuprofile   string = ""
 	blockprofile string = ""
 )
 
-// set flags
 func init() {
 	flag.BoolVar(&debug, "debug", false, "print debug info about which fuse operations we're doing and their errors")
 	flag.StringVar(&cpuprofile, "cpuprofile", "", "file to write CPU profiling information to")
 	flag.StringVar(&blockprofile, "blockprofile", "", "file to write block profiling information to")
 }
+
+// running state
+var ()
 
 // run
 func main() {
@@ -77,6 +80,10 @@ func main() {
 		usage(nil)
 		return
 	}
+
+	var running mrpc.Service = nil
+	var mount *mountedClient = nil
+	var err error
 	fmt.Println(args)
 	cmd := args[0]
 	// pop first instr
@@ -84,148 +91,168 @@ func main() {
 
 	switch cmd {
 	case "singlenode":
-		singlenode(args)
-	case "dataserver":
-		runDataserver(args)
-	case "nameserver":
-		runNameserver(args)
-	case "nameconfig":
-		// sets up dn home
-		// args are:
-		//   1)  path to build the config under
-		nameConfig(args)
+		running, mount, err = singlenode(args)
+		if err != nil {
+			usage(err)
+			return
+		}
+	case "peer":
+		running, mount, err = runPeer(args)
+		if err != nil {
+			usage(err)
+			return
+		}
+	case "master":
+		running, err = runMaster(args)
+		if err != nil {
+			usage(err)
+			return
+		}
+	case "masterconfig":
+		masterHome := "/tmp/mfsMaster"
+		if len(args) > 1 {
+			masterHome = args[0]
+		}
+		conf.DefaultMasterConfig(masterHome).Write(os.Stdout)
 		return
-	case "dataconfig":
+		//	case "format":
+		//		format(args)
+		//		return
+	case "peerconfig":
 		// writes a dataconfig to std out
 		// args are
 		// 1) host of namenode
-		// 2) []paths to DN volumeRoots on the datanode
-
-		conf.DefaultPeerConfig(args[0], args[1:]).Write(os.Stdout)
+		// 2) mountPoint
+		// 3) []paths to DN volumeRoots on the datanode
+		var masterHost = "localhost"
+		if len(args) > 0 {
+			masterHost = args[0]
+		}
+		mountPoint := "/tmp/mfsMount"
+		if len(args) > 1 {
+			mountPoint = args[1]
+		}
+		volRoots := make([]string, 0)
+		if len(args) > 2 {
+			volRoots = args[2:]
+		}
+		conf.DefaultPeerConfig(masterHost, mountPoint, volRoots).Write(os.Stdout)
 		return
 	default:
 		usage(nil)
 		return
 
 	}
+	// we didn't run one of the quick exits, so we have a running service and possibly mountpoint
+
+	// this chan gets hit on error or signal
+	errChan := make(chan error)
+
+	// spin off client
+	go func() {
+
+		defer func() {
+			if x := recover(); x != nil {
+				fmt.Printf("run time panic: %v\n", x)
+				errChan <- fmt.Errorf("Run time panic: %v",x)
+			}
+		}()
+		mount.ms.Loop()
+	}()
+
+	// spin off signal handler
+	sig := make (chan os.Signal, 1)
+	signal.Notify(sig,syscall.SIGINT,syscall.SIGTERM,syscall.SIGQUIT,syscall.SIGPIPE)
+	go func() {
+		s := <- sig
+		if s == syscall.SIGPIPE {
+			errChan <- fmt.Errorf("SIGPIPE")
+		} else {
+			// silent quit for other signals
+			errChan <- nil
+		}
+	}()
+
+	// wait for some error to happen, unmount and blow up safely
+	err = <-errChan
+	mount.ms.Unmount()
+	running.Close()
+	running.WaitClosed()
+	if err != nil {
+		panic(err)
+	}
 }
 
-func runNameserver(args []string) {
+func runMaster(args []string) (s mrpc.Service, err error) {
+	if len(args) < 1 {
+		err = fmt.Errorf("Must run master with config:  mfs master [/path/to/config]")
+		return
+	}
 	cfg := &conf.MasterConfig{}
-	err := cfg.ReadConfig(args[0])
+	err = cfg.ReadConfig(args[0])
 	if err != nil {
-		usage(err)
 		return
 	}
-	fmt.Printf("%+v\n", cfg)
-	format := (len(args) > 1 && args[1] == "-format")
-	ns, err := integration.NewNameServer(cfg, format)
-	if err != nil {
-		usage(err)
-		return
-	}
-	ns.Start()
-	ns.WaitClosed()
+	fmt.Printf("Running master with config: \n %+v\n", cfg)
+	s, err = integration.NewNameServer(cfg, false)
+	return
 }
 
-func singlenode(args []string) {
+func singlenode(args []string) (s *integration.SingleNodeCluster, c *mountedClient, err error) {
 	numDNs, err := strconv.Atoi(args[0])
 	if err != nil {
-		usage(err)
 		return
 	}
 	volsPerDn, err := strconv.Atoi(args[1])
 	if err != nil {
-		usage(err)
 		return
 	}
 	replicationFactor, err := strconv.Atoi(args[2])
 	if err != nil {
-		usage(err)
 		return
 	}
 	baseDir := args[3]
 	mountPoint := args[4]
 	nncfg, dscfg, err := conf.NewConfSet2(numDNs, volsPerDn, uint32(replicationFactor), baseDir)
 	if err != nil {
-		usage(err)
 		return
 	}
-	cluster, err := integration.NewSingleNodeCluster(nncfg, dscfg, true)
+	s, err = integration.NewSingleNodeCluster(nncfg, dscfg, true)
 	if err != nil {
-		usage(err)
 		return
 	}
-	cluster.Start()
-	client, err := newMountedClient(cluster.Leases, cluster.Names, cluster.Datas, mountPoint)
-	client.Loop()
-	cluster.Close()
+	err = s.Start()
+	if err != nil {
+		return
+	}
+	c, err = newMountedClient(s.FuseConnector, mountPoint)
+	return
 }
 
-func runDataserver(args []string) {
+func runPeer(args []string) (s *integration.Peer, c *mountedClient, err error) {
 	cfg := &conf.PeerConfig{}
-	err := cfg.ReadConfig(args[0])
+	err = cfg.ReadConfig(args[0])
 	if err != nil {
-		usage(err)
 		return
 	}
-	services, err := integration.NewClient(cfg.NameAddr, cfg.LeaseAddr, 1)
+	s, err = integration.NewPeer(cfg)
 	if err != nil {
-		usage(err)
 		return
 	}
-	ds, err := dataserver.NewDataServer(cfg.VolumeRoots, cfg.DataClientBindAddr, cfg.NameDataBindAddr, cfg.WebBindAddr, services.Names, services.Datas)
+	err = s.Start()
 	if err != nil {
-		usage(err)
 		return
 	}
-	ds.Start()
-	if len(args) > 1 {
-		mountPoint := args[1]
-
-		// start client
-		client, err := newMountedClient(services.Leases, services.Names, services.Datas, mountPoint)
-		if err != nil {
-			usage(err)
-			return
-		}
-		client.Loop()
-		ds.Close()
-	}
-	ds.WaitClosed()
-}
-
-func nameConfig(args []string) {
-	nameHome := args[0]
-	dataDir := fmt.Sprintf("%s/data", nameHome)
-
-	err := os.Mkdir(nameHome, 0755)
-	if err != nil {
-		fmt.Printf("Error making namehome %s : %s\n", nameHome, err.Error())
-		return
-	}
-
-	err = nameserver.Format(dataDir, uint32(os.Getuid()), uint32(os.Getgid()))
-	if err != nil {
-		fmt.Printf("Error formatting namedir %s : %s", dataDir, err.Error())
-	}
-	cfg := conf.DefaultMasterConfig(nameHome)
-	err = cfg.Writef(fmt.Sprintf("%s/nameserver.conf", nameHome))
-	if err != nil {
-		panic(err)
-	}
+	c, err = newMountedClient(s.FuseConnector, cfg.MountPoint)
+	return
 }
 
 type mountedClient struct {
-	ms         fuse.MountState
+	ms         *fuse.MountState
 	mountPoint string
 }
 
-func newMountedClient(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, mountPoint string) (*fuse.MountState, error) {
-	mfs, err := client.NewMaggieFuse(leases, names, datas)
-	if err != nil {
-		return nil, err
-	}
+func newMountedClient(mfs fuse.RawFileSystem, mountPoint string) (*mountedClient, error) {
 	mountState := fuse.NewMountState(mfs)
 
 	mountState.Debug = debug
@@ -233,6 +260,6 @@ func newMountedClient(leases maggiefs.LeaseService, names maggiefs.NameService, 
 		MaxBackground: 12,
 		//Options: []string {"ac_attr_timeout=0"},//,"attr_timeout=0","entry_timeout=0"},
 	}
-	err = mountState.Mount(mountPoint, opts)
-	return mountState, err
+	err := mountState.Mount(mountPoint, opts)
+	return &mountedClient{mountState, mountPoint}, err
 }

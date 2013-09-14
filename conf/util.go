@@ -5,6 +5,7 @@ import (
 	"os"
 )
 
+// used to bootstrap singlenode clusters
 func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*MasterConfig, []*PeerConfig) {
 	nncfg := &MasterConfig{}
 	nncfg.LeaseBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
@@ -13,7 +14,7 @@ func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort
 	startPort++
 	nncfg.WebBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
 	startPort++
-	nncfg.NNHomeDir = nameHome
+	nncfg.NameHome = nameHome
 	nncfg.ReplicationFactor = replicationFactor
 	dscfg := make([]*PeerConfig, len(volRoots))
 	for idx, dnVolRoots := range volRoots {
@@ -33,6 +34,7 @@ func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort
 	return nncfg, dscfg
 }
 
+// used to bootstrap singlenode clusters
 func NewConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*MasterConfig, []*PeerConfig, error) {
 	err := os.Mkdir(baseDir, 0777)
 	if err != nil {

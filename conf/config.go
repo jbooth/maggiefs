@@ -21,6 +21,8 @@ var (
 	DEFAULT_DATAWEB_ADDR  = fmt.Sprintf("0.0.0.0:%d", DEFAULT_DATAWEB_PORT)
 )
 
+// TODO
+// change to masterAddr, namePort, leasePort
 type PeerConfig struct {
 	LeaseAddr          string   `json: leaseAddr`          // addr to connect to for lease service
 	NameAddr           string   `json: nameAddr`           // addr to connect to for nameservice
@@ -28,9 +30,11 @@ type PeerConfig struct {
 	NameDataBindAddr   string   `json: nameDataBindAddr`   // addr we expose for nameDataIface, in "0.0.0.0:PORT" syntax
 	WebBindAddr        string   `json: webBindAddr`        // addr we expose for web interface, in "0.0.0.0:PORT" syntax
 	VolumeRoots        []string `json: volumeRoots`        // list of paths to the roots of the volumes we're exposing
+	MountPoint				 string   `json: mountPoint`				// dir to mount to on the client machine, must exist prior to program run
+	ConnsPerPeer				 int   `json: connsPerPeer`				// number of connections we hold open in pool per other peer to read/write data
 }
 
-func DefaultPeerConfig(nameHost string, volRoots []string) *PeerConfig {
+func DefaultPeerConfig(nameHost string, mountPoint string, volRoots []string) *PeerConfig {
 	return &PeerConfig{
 		fmt.Sprintf("%s:%d", nameHost, DEFAULT_LEASESERVER_PORT),
 		fmt.Sprintf("%s:%d", nameHost, DEFAULT_NAMESERVER_PORT),
@@ -38,6 +42,8 @@ func DefaultPeerConfig(nameHost string, volRoots []string) *PeerConfig {
 		DEFAULT_NAMEDATA_ADDR,
 		DEFAULT_DATAWEB_ADDR,
 		volRoots,
+		mountPoint,
+		2,
 	}
 }
 
@@ -45,7 +51,7 @@ type MasterConfig struct {
 	NameBindAddr      string `json: nameBindAddr`      // host:port of namenode
 	LeaseBindAddr     string `json: leaseBindAddr`     // host:port for lease service
 	WebBindAddr       string `json: webBindAddr`       // host:port for web interface
-	NNHomeDir         string `json: nnHomeDir`         // path to nn home on disk
+	NameHome         string `json: nameHome`         // path to nn home on disk
 	ReplicationFactor uint32 `json: replicationFactor` // number of replicas for each block
 }
 
@@ -60,6 +66,7 @@ func DefaultMasterConfig(nameHome string) *MasterConfig {
 }
 
 type FSConfig struct {
+	ReplicationFactor uint32 `json: replicationFactor`
 	BlockLength uint32 `json: blockLength`
 }
 

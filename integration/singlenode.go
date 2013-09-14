@@ -4,14 +4,18 @@ package integration
 import (
 	"fmt"
 	"github.com/jbooth/maggiefs/conf"
+	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/dataserver"
 	"github.com/jbooth/maggiefs/leaseserver"
 	"github.com/jbooth/maggiefs/maggiefs"
-	"github.com/jbooth/maggiefs/mrpc"
 	"github.com/jbooth/maggiefs/nameserver"
-	"net/rpc"
+	"github.com/jbooth/go-fuse/fuse"
 )
 
+// compile time check for 
+
+
+// Encapsulates a single node, minus mountpoint.  Used for testing.
 type SingleNodeCluster struct {
 	LeaseServer *leaseserver.LeaseServer
 	Leases      maggiefs.LeaseService
@@ -19,6 +23,7 @@ type SingleNodeCluster struct {
 	Names       maggiefs.NameService
 	DataNodes   []*dataserver.DataServer
 	Datas       maggiefs.DataService
+	FuseConnector fuse.RawFileSystem
 }
 
 func (snc *SingleNodeCluster) Start() error {
@@ -26,12 +31,13 @@ func (snc *SingleNodeCluster) Start() error {
 	return nil
 }
 
-func (snc *SingleNodeCluster) Close() {
+func (snc *SingleNodeCluster) Close() error {
 	snc.NameServer.Close()
 	snc.LeaseServer.Close()
 	for _, dn := range snc.DataNodes {
 		dn.Close()
 	}
+	return nil
 }
 
 func (snc *SingleNodeCluster) WaitClosed() error {
@@ -52,87 +58,7 @@ func (snc *SingleNodeCluster) WaitClosed() error {
 	return nil
 }
 
-type Client struct {
-	Leases maggiefs.LeaseService
-	Names  maggiefs.NameService
-	Datas  *dataserver.DataClient // TODO generalize this to maggiefs.DataService
-}
 
-func NewClient(nameAddr string, leaseAddr string, connsPerDn int) (*Client, error) {
-	ret := &Client{}
-	var err error
-	ret.Leases, err = leaseserver.NewLeaseClient(leaseAddr)
-	if err != nil {
-		return ret, err
-	}
-	ret.Names, err = NewNameClient(nameAddr)
-	if err != nil {
-		return ret, nil
-	}
-	ret.Datas, err = dataserver.NewDataClient(ret.Names, connsPerDn)
-	return ret, err
-}
-
-type NameLeaseServer struct {
-	leaseServer *leaseserver.LeaseServer
-	nameserver  *nameserver.NameServer
-}
-
-// no-op, we are started at construction time
-func (n *NameLeaseServer) Start() {
-}
-
-func (n *NameLeaseServer) Close() error {
-	retErr := n.leaseServer.Close()
-	err := n.nameserver.Close()
-	if err != nil {
-		return err
-	}
-	return retErr
-}
-
-func (n *NameLeaseServer) WaitClosed() error {
-	retErr := n.leaseServer.WaitClosed()
-	err := n.nameserver.WaitClosed()
-	if err != nil {
-		return err
-	}
-	return retErr
-}
-
-func NewNameClient(addr string) (maggiefs.NameService, error) {
-	fmt.Printf("nameclient dialing %d for rpc\n", addr)
-	client, err := rpc.Dial("tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("Error dialing nameclient tcp to %s : %s", addr, err.Error())
-	}
-	return mrpc.NewNameServiceClient(client), nil
-}
-
-// returns a started nameserver -- we must start lease server in order to boot up nameserver, so
-func NewNameServer(cfg *conf.MasterConfig, format bool) (*NameLeaseServer, error) {
-	nls := &NameLeaseServer{}
-	var err error = nil
-	fmt.Println("creating lease server")
-	nls.leaseServer, err = leaseserver.NewLeaseServer(cfg.LeaseBindAddr)
-	if err != nil {
-		return nls, err
-	}
-	nls.leaseServer.Start()
-	fmt.Println("creating lease client")
-	leaseService, err := leaseserver.NewLeaseClient(cfg.LeaseBindAddr)
-	if err != nil {
-		return nls, err
-	}
-	fmt.Println("creating name server")
-	nls.nameserver, err = nameserver.NewNameServer(leaseService, cfg.NameBindAddr, cfg.WebBindAddr, cfg.NNHomeDir, cfg.ReplicationFactor, format)
-	if err != nil {
-		fmt.Printf("Error creating nameserver: %s\n\n Nameserver config: %+v\n", err.Error(), cfg)
-		return nls, err
-	}
-	nls.nameserver.Start()
-	return nls, err
-}
 
 //func NewDataServer(cfg *DSConfig) (*dataserver.DataServer, error) {
 //	nameService, err := NewNameClient(cfg.NameAddr)
@@ -177,5 +103,6 @@ func NewSingleNodeCluster(nncfg *conf.MasterConfig, ds []*conf.PeerConfig, forma
 			return cl, err
 		}
 	}
-	return cl, nil
+	cl.FuseConnector,err = client.NewMaggieFuse(cl.Leases,cl.Names,cl.Datas)
+	return cl, err
 }
