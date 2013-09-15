@@ -47,10 +47,11 @@ func NewDataServer(volRoots []string,
 	// form consensus on host across volumes or error
 	var dnInfo maggiefs.DataNodeInfo = maggiefs.DataNodeInfo{}
 	for _, vol := range volumes {
-		if dnInfo.DnId != 0 {
+		// assign if we haven't assigned yet
+		if dnInfo.DnId == 0 {
 			dnInfo = vol.info.DnInfo
 		} else {
-			// compare new to previous
+			// if we already assigned, compare new to previous and make sure we're not inconsistent
 			if !dnInfo.Equals(vol.info.DnInfo) {
 				return nil, errors.New("Incompatible dataNodeInfo across volumes!")
 			}
