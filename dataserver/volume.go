@@ -232,8 +232,7 @@ func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 	f, err := os.OpenFile(v.resolvePath(id), os.O_RDWR, 0)
 	defer f.Close()
 	if err != nil {
-		fmt.Printf("Err opening file: %s\n", err.Error())
-		return err
+		return fmt.Errorf("Err opening file %s : %s", v.resolvePath(id), err.Error())
 	}
 	return op(f)
 }

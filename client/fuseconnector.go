@@ -211,6 +211,7 @@ func (m *MaggieFuse) Open(out *raw.OpenOut, header *raw.InHeader, input *raw.Ope
 	if err != nil {
 		return fuse.EROFS
 	}
+	fmt.Printf("Open got inode: %+v\n",inode)
 
 	if truncate {
 		// clear file before writing
