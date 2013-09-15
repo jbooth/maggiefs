@@ -165,6 +165,11 @@ func (nc *NameCache) Truncate(nodeid uint64, newSize uint64) (err error) {
 
 // Links the given child to the given parent, with the given name.  returns error E_EXISTS if force is false and parent already has a child of that name
 func (nc *NameCache) Link(parent uint64, child uint64, name string, force bool) (err error) {
+	// write lease / release on parent to ensure other caches see the new dentry
+	// TODO could do this on nameservice side and be faster
+	l,err := nc.leases.WriteLease(parent)
+	if err != nil { return err }
+	defer l.Release()
 	err = nc.names.Link(parent, child, name, force)
 	nc.invalidate(parent)
 	nc.invalidate(child) // not sure if this actually necessary but hey
@@ -173,6 +178,12 @@ func (nc *NameCache) Link(parent uint64, child uint64, name string, force bool) 
 
 // Unlinks the child with the given name
 func (nc *NameCache) Unlink(parent uint64, name string) (err error) {
+	// write lease / release on parent to ensure other caches see the new dentry
+	// TODO could do this on nameservice side and be faster
+	l,err := nc.leases.WriteLease(parent)
+	if err != nil { return err }
+	defer l.Release()
+	// perform unlink and invalidate ourselves
 	err = nc.names.Unlink(parent, name)
 	nc.invalidate(parent)
 	return err
