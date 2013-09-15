@@ -10,6 +10,7 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/nameserver"
 	"github.com/jbooth/go-fuse/fuse"
+	"os"
 )
 
 // compile time check for 
@@ -69,10 +70,13 @@ func (snc *SingleNodeCluster) WaitClosed() error {
 //}
 
 // TODO refactor to use NewConfSet
-func NewSingleNodeCluster(nncfg *conf.MasterConfig, ds []*conf.PeerConfig, format bool) (*SingleNodeCluster, error) {
+func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*SingleNodeCluster, error) {
 	cl := &SingleNodeCluster{}
-
-	nls, err := NewNameServer(nncfg, format)
+	nncfg,ds,err := newConfSet2(numDNs, volsPerDn, replicationFactor, baseDir)
+	if err != nil {
+		return nil,err
+	}
+	nls, err := NewNameServer(nncfg, true)
 	if err != nil {
 		return nil, err
 	}
@@ -105,4 +109,72 @@ func NewSingleNodeCluster(nncfg *conf.MasterConfig, ds []*conf.PeerConfig, forma
 	}
 	cl.FuseConnector,err = client.NewMaggieFuse(cl.Leases,cl.Names,cl.Datas)
 	return cl, err
+}
+
+
+// used to bootstrap singlenode clusters
+func newConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*conf.MasterConfig, []*conf.PeerConfig) {
+	nncfg := &conf.MasterConfig{}
+	nncfg.LeaseBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+	startPort++
+	nncfg.NameBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+	startPort++
+	nncfg.WebBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+	startPort++
+	nncfg.NameHome = nameHome
+	nncfg.ReplicationFactor = replicationFactor
+	dscfg := make([]*conf.PeerConfig, len(volRoots))
+	for idx, dnVolRoots := range volRoots {
+		thisDscfg := &conf.PeerConfig{}
+		thisDscfg.DataClientBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+		startPort++
+		thisDscfg.NameDataBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+		startPort++
+		thisDscfg.WebBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+		startPort++
+		thisDscfg.VolumeRoots = dnVolRoots
+		thisDscfg.LeaseAddr = nncfg.LeaseBindAddr
+		thisDscfg.NameAddr = nncfg.NameBindAddr
+		dscfg[idx] = thisDscfg
+
+	}
+	return nncfg, dscfg
+}
+
+// used to bootstrap singlenode clusters
+func newConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*conf.MasterConfig, []*conf.PeerConfig, error) {
+	err := os.Mkdir(baseDir, 0777)
+	if err != nil {
+		return nil, nil, err
+	}
+	nameBase := baseDir + "/name"
+	err = os.Mkdir(nameBase, 0777)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	dataBase := baseDir + "/data"
+	err = os.Mkdir(dataBase, 0777)
+	if err != nil {
+		return nil, nil, err
+	}
+	volRoots := make([][]string, numDNs)
+	for i := 0; i < numDNs; i++ {
+		dnBase := fmt.Sprintf("%s/dn%d", dataBase, i)
+		err = os.Mkdir(dnBase, 0777)
+		if err != nil {
+			return nil, nil, fmt.Errorf("TestCluster: Error trying to create dn base dir %s : %s\n", dnBase, err.Error())
+		}
+		dnRoots := make([]string, volsPerDn)
+		for j := 0; j < volsPerDn; j++ {
+			dnRoots[j] = fmt.Sprintf("%s/vol%d", dnBase, j)
+			err = os.Mkdir(dnRoots[j], 0777)
+			if err != nil {
+				return nil, nil, fmt.Errorf("TestCluster: Error trying to create dir %s : %s\n", dnRoots[j], err.Error())
+			}
+		}
+		volRoots[i] = dnRoots
+	}
+	nnc, dsc := newConfSet(volRoots, nameBase, "0.0.0.0", 11001, replicationFactor, true)
+	return nnc, dsc, nil
 }

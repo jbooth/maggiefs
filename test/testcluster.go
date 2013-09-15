@@ -1,7 +1,6 @@
 package test
 
 import (
-	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/integration"
 	"os"
@@ -26,8 +25,4 @@ func initCluster() {
 	if err != nil {
 		panic(err)
 	}
-	// plug in name cache for tests
-	nc := client.NewNameCache(testCluster.Names, testCluster.Leases)
-	testCluster.Names = nc
-	testCluster.Leases = nc
 }
