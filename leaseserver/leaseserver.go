@@ -120,7 +120,10 @@ func (c *clientConn) notify(nodeid uint64, leaseid uint64, ackId uint64) pending
 // closes all resources and releases all
 func (c *clientConn) closeAndDie() {
 	fmt.Printf("killing conn id %d", c.id)
-	close(c.resp)
+	if c.resp != nil {
+		close(c.resp)
+		c.resp = nil
+	}
 	c.ackLock.Lock()
 	defer c.ackLock.Unlock()
 	// any writes waiting for us to acknowledge, we're never gonna so do it anyways
