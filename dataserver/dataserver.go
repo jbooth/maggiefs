@@ -67,7 +67,7 @@ func NewDataServer(volRoots []string,
 		if err != nil {
 			return nil, err
 		}
-		vol, err := formatVolume(path, maggiefs.VolumeInfo{volId, dnInfo})
+		vol, err := formatVolume(path, &maggiefs.VolumeInfo{volId, dnInfo})
 		if err != nil {
 			return nil, err
 		}

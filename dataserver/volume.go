@@ -54,7 +54,7 @@ func loadVolume(volRoot string) (*volume, error) {
 	d := json.NewDecoder(dnInfoFile)
 	dnInfo := maggiefs.DataNodeInfo{}
 	d.Decode(dnInfo)
-
+	fmt.Printf("Loading existing volume id %d, dnInfo %+v\n",id,dnInfo) 
 	db, err := levigo.Open(volRoot+"/meta", openOpts)
 	if err != nil {
 		db.Close()
@@ -65,10 +65,10 @@ func loadVolume(volRoot string) (*volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &volume{id, volRoot, rootFile, maggiefs.VolumeInfo{id, dnInfo}, db}, nil
+	return &volume{id, volRoot, rootFile, &maggiefs.VolumeInfo{id, dnInfo}, db}, nil
 }
 
-func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
+func formatVolume(volRoot string, vol *maggiefs.VolumeInfo) (*volume, error) {
 	volIdPath := volRoot + "/VOLID"
 	// write vol id
 	volIdFile, err := os.Create(volIdPath)
@@ -132,7 +132,7 @@ type volume struct {
 	id        uint32
 	rootPath  string
 	rootFile  *os.File
-	info      maggiefs.VolumeInfo
+	info      *maggiefs.VolumeInfo
 	blockData *levigo.DB
 }
 
@@ -147,7 +147,8 @@ func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
 	if err != nil {
 		return stat, err
 	}
-	stat.VolumeInfo = v.info
+	fmt.Printf("HeartBeat for volume id %d, dnInfo %+v",v.id,v.info)
+	stat.VolumeInfo = *v.info
 	// these sizes are in blocks of 512
 	stat.Size = sysstat.Blocks * uint64(sysstat.Bsize)
 	stat.Used = (uint64(sysstat.Blocks-sysstat.Bfree) * uint64(sysstat.Bsize))

@@ -22,6 +22,7 @@ masterhost=`head -1 $1`
 echo "installing master to ${masterhost}"
 ssh ${masterhost} /bin/bash --login << EOFMASTER
 ./.bash_profile
+killall mfs
 go clean -i -r github.com/jbooth/maggiefs/mfs
 go get -u github.com/jbooth/maggiefs/mfs
 go install github.com/jbooth/maggiefs/mfs
@@ -40,6 +41,7 @@ do
 echo "installing peer to ${peerhost}"
 ssh ${peerhost} /bin/bash --login << EOFPEER
     ./.bash_profile
+    killall mfs
     go clean -i -r github.com/jbooth/maggiefs/mfs
     go get -u github.com/jbooth/maggiefs/mfs
     go install github.com/jbooth/maggiefs/mfs
