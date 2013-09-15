@@ -131,6 +131,7 @@ func main() {
 			usage(fmt.Errorf("Usage: format [NameHome]"))
 			return
 		}
+		fmt.Println("Formatting directory : ",args[0])
 		err = nameserver.Format(args[0], uint32(os.Getuid()), uint32(os.Getgid()))
 		if err != nil {
 			usage(err)
