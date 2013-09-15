@@ -23,7 +23,7 @@ echo "installing master to ${masterhost}"
 ssh ${masterhost} /bin/bash --login << EOFMASTER
 ./.bash_profile
 go clean -i -r github.com/jbooth/maggiefs/mfs
-go get github.com/jbooth/maggiefs/mfs
+go get -u github.com/jbooth/maggiefs/mfs
 go install github.com/jbooth/maggiefs/mfs
 rm -rf ${masterhome}/data
 mkdir -p ${masterhome}/data
@@ -41,7 +41,7 @@ echo "installing peer to ${peerhost}"
 ssh ${peerhost} /bin/bash --login << EOFPEER
     ./.bash_profile
     go clean -i -r github.com/jbooth/maggiefs/mfs
-    go get github.com/jbooth/maggiefs/mfs
+    go get -u github.com/jbooth/maggiefs/mfs
     go install github.com/jbooth/maggiefs/mfs
     echo "mfs peerconfig -masterAddr ${masterhost} -bindAddr ${peerhost} -mountPoint ${mountPoint} -volRoots ${datahome} "
     mfs peerconfig -masterAddr ${masterhost} -bindAddr ${peerhost} -mountPoint "${mountPoint}" -volRoots "${datahome}" 
