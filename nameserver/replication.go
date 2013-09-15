@@ -138,9 +138,11 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []
 	added := uint32(0)
 	addedDNs := make(map[uint32]bool)
 	ret := make([]maggiefs.VolumeStat, rm.replicationFactor)
+	fmt.Printf("Picking %d volumes out of %d for replication\n",rm.replicationFactor,len(sortedVolumes))
 	for i := 0; i < len(sortedVolumes); i++ {
 		// check if this DN is in our added list
 		v := sortedVolumes[i]
+		fmt.Printf("Evaluating volume %+v\n",v)
 		if _, alreadyAdded := addedDNs[v.DnInfo.DnId]; alreadyAdded {
 			// continue
 		} else {
@@ -154,7 +156,9 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []
 		}
 	}
 	if added < rm.replicationFactor {
-		return nil, fmt.Errorf("Not enough datanodes available for replication factor %d -- only nodes available were %+s", rm.replicationFactor, ret)
+		fmt.Printf("Added (%d) < replicationFactor, added volumes: \n",added)
+		fmt.Printf("%+v\n%+v\n",ret,addedDNs)
+		return nil, fmt.Errorf("Not enough datanodes available for replication factor %d -- only nodes available were %+v", rm.replicationFactor, ret)
 	}
 	return ret, nil
 }

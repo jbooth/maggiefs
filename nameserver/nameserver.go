@@ -299,6 +299,7 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 }
 
 func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
+	fmt.Printf("Got connection from dn id %d, addr %s\n",dnId,nameDataAddr)
 	// TODO confirm not duplicate datanode
 	client, err := rpc.Dial("tcp", nameDataAddr)
 	if err != nil {
