@@ -6,14 +6,15 @@ import (
 	"github.com/jbooth/go-fuse/fuse"
 	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/integration"
-	"github.com/jbooth/maggiefs/nameserver"
 	"github.com/jbooth/maggiefs/mrpc"
+	"github.com/jbooth/maggiefs/nameserver"
 	"log"
 	"os"
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -28,13 +29,13 @@ func usage(err error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 	}
-	fmt.Fprintf(os.Stderr, "usage: mfs [cmd]\n")
-	fmt.Fprintf(os.Stderr, "mfs master path/to/config : run a master\n")
-	fmt.Fprintf(os.Stderr, "mfs peer path/to/config : run a peer\n")
-	fmt.Fprintf(os.Stderr, "mfs masterconfig [homedir] : prints default master config to stdout, with homedir set as the master's home\n")
-	fmt.Fprintf(os.Stderr, "mfs peerconfig [masterHost] [mountPoint] [volRoots..] : prints default peer config to stdout \n")
-	fmt.Fprintf(os.Stderr, "mfs format path/to/NameDataDir: formats a directory for use as the master's homedir \n")
-	fmt.Fprintf(os.Stderr, "mfs singlenode numDNs volsPerDn replicationFactor baseDir mountPoint\n")
+	fmt.Fprintf(os.Stderr, "usage: mfs [-debug] [-cpuprofile <filePath>] [-blockprofile <filePath>] <cmd>\n")
+	fmt.Fprintf(os.Stderr, "mfs master <path/to/config> : run a master\n")
+	fmt.Fprintf(os.Stderr, "mfs peer <path/to/config> : run a peer\n")
+	fmt.Fprintf(os.Stderr, "mfs masterconfig <homedir> : prints defaulted master config to stdout, with homedir set as the master's home\n")
+	fmt.Fprintf(os.Stderr, "mfs peerconfig [options] : prints peer config to stdout, run mfs peerconfig -usage to see options \n")
+	fmt.Fprintf(os.Stderr, "mfs format <path/to/NameDataDir>: formats a directory for use as the master's homedir \n")
+	fmt.Fprintf(os.Stderr, "mfs singlenode <numDNs> <volsPerDn> <replicationFactor> <baseDir> <mountPoint>\n")
 }
 
 // main flags
@@ -108,6 +109,16 @@ func main() {
 			usage(err)
 			return
 		}
+	case "peerconfig":
+		peercfg, err := peerConfig(args)
+		if err != nil {
+			usage(err)
+			return
+		}
+		if peercfg != nil {
+			peercfg.Write(os.Stdout)
+		}
+		return
 	case "masterconfig":
 		masterHome := "/tmp/mfsMaster"
 		if len(args) > 0 {
@@ -120,30 +131,11 @@ func main() {
 			usage(fmt.Errorf("Usage: format [NameHome]"))
 			return
 		}
-		err = nameserver.Format(args[0],uint32(os.Getuid()),uint32(os.Getgid()))
+		err = nameserver.Format(args[0], uint32(os.Getuid()), uint32(os.Getgid()))
 		if err != nil {
-			panic(err)
+			usage(err)
+			return
 		}
-		return
-	case "peerconfig":
-		// writes a dataconfig to std out
-		// args are
-		// 1) host of namenode
-		// 2) mountPoint
-		// 3) []paths to DN volumeRoots on the datanode
-		var masterHost = "localhost"
-		if len(args) > 0 {
-			masterHost = args[0]
-		}
-		mountPoint := "/tmp/mfsMount"
-		if len(args) > 1 {
-			mountPoint = args[1]
-		}
-		volRoots := make([]string, 0)
-		if len(args) > 2 {
-			volRoots = args[2:]
-		}
-		conf.DefaultPeerConfig(masterHost, mountPoint, volRoots).Write(os.Stdout)
 		return
 	default:
 		usage(nil)
@@ -157,7 +149,7 @@ func main() {
 
 	// spin off fuse mountpoint
 	go func() {
-
+		// catch panics and turn into channel send
 		defer func() {
 			if x := recover(); x != nil {
 				fmt.Printf("run time panic: %v\n", x)
@@ -165,17 +157,17 @@ func main() {
 			}
 		}()
 		// either run mountpoint service or just wait while master service runs
-		if (mount != nil && mount.ms != nil) {
+		if mount != nil && mount.ms != nil {
 			mount.ms.Loop()
 		} else {
 			waitForever := make(chan bool)
-			_ = <- waitForever
+			_ = <-waitForever
 		}
 	}()
 
 	// spin off signal handler
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGTERM, syscall.SIGPIPE)
+	signal.Notify(sig, syscall.SIGTERM, syscall.SIGPIPE, syscall.SIGHUP)
 	go func() {
 		s := <-sig
 		if s == syscall.SIGPIPE {
@@ -198,6 +190,40 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// we take the following args:
+// -bindAddr string
+// -nameHost string
+// -mountPoint string
+// -volRoots []string (comma delimited)
+func peerConfig(args []string) (*conf.PeerConfig, error) {
+	flagSet := flag.NewFlagSet("peerconfig", flag.ContinueOnError)
+	var bindAddr, masterHost, mountPoint, volRootsStr string
+	var usage bool
+	volRoots := make([]string, 0)
+	defaultHost, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
+	flagSet.StringVar(&bindAddr, "bindAddr", defaultHost, "The address that we broadcast to the cluster for connection")
+	flagSet.StringVar(&masterHost, "masterAddr", defaultHost, "Address of the master")
+	flagSet.StringVar(&mountPoint, "mountPoint", "/tmp/mfs", "Mountpoint for access to the MFS")
+	flagSet.StringVar(&volRootsStr, "volRoots", "", "Optional comma-delimited list of paths to volumes that we're exporting to MFS")
+	flagSet.BoolVar(&usage, "usage", false, "Prints usage and exits")
+	err = flagSet.Parse(args)
+	if err != nil {
+		return nil, err
+	}
+	if usage {
+		fmt.Println("Usage: mfs peerconfig [options]")
+		flagSet.PrintDefaults()
+		return nil, nil
+	}
+	if volRootsStr != "" {
+		volRoots = strings.Split(volRootsStr, ",")
+	}
+	return conf.DefaultPeerConfig(bindAddr, masterHost, mountPoint, volRoots), nil
 }
 
 func runMaster(args []string) (s mrpc.Service, err error) {

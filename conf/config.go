@@ -12,6 +12,8 @@ const (
 	DEFAULT_DATAWEB_PORT  = 1106
 )
 
+
+
 var (
 	DEFAULT_LEASEADDR     = fmt.Sprintf("0.0.0.0:%d", DEFAULT_LEASESERVER_PORT)
 	DEFAULT_NAMEADDR      = fmt.Sprintf("0.0.0.0:%d", DEFAULT_NAMESERVER_PORT)
@@ -26,21 +28,21 @@ var (
 type PeerConfig struct {
 	LeaseAddr          string   `json: leaseAddr`          // addr to connect to for lease service
 	NameAddr           string   `json: nameAddr`           // addr to connect to for nameservice
-	DataClientBindAddr string   `json: dataClientBindAddr` // addr we expose for data clients in "0.0.0.0:PORT" syntax
-	NameDataBindAddr   string   `json: nameDataBindAddr`   // addr we expose for nameDataIface, in "0.0.0.0:PORT" syntax
-	WebBindAddr        string   `json: webBindAddr`        // addr we expose for web interface, in "0.0.0.0:PORT" syntax
+	DataClientBindAddr string   `json: dataClientBindAddr` // addr we expose for data clients in "x.x.x.x:PORT" syntax.  Must be externally routable as we pass this value to the cluster. 
+	NameDataBindAddr   string   `json: nameDataBindAddr`   // addr we expose for nameDataIface, in "x.x.x.x:PORT" syntax. Must be externally routable as we pass this value to the cluster. 
+	WebBindAddr        string   `json: webBindAddr`        // addr we expose for web interface, in "x.x.x.x:PORT" syntax. Can be '0.0.0.0'. 
 	VolumeRoots        []string `json: volumeRoots`        // list of paths to the roots of the volumes we're exposing
 	MountPoint				 string   `json: mountPoint`				// dir to mount to on the client machine, must exist prior to program run
 	ConnsPerPeer				 int   `json: connsPerPeer`				// number of connections we hold open in pool per other peer to read/write data
 }
 
-func DefaultPeerConfig(nameHost string, mountPoint string, volRoots []string) *PeerConfig {
+func DefaultPeerConfig(bindAddr string, nameHost string, mountPoint string, volRoots []string) *PeerConfig {
 	return &PeerConfig{
 		fmt.Sprintf("%s:%d", nameHost, DEFAULT_LEASESERVER_PORT),
 		fmt.Sprintf("%s:%d", nameHost, DEFAULT_NAMESERVER_PORT),
-		DEFAULT_DATA_ADDR,
-		DEFAULT_NAMEDATA_ADDR,
-		DEFAULT_DATAWEB_ADDR,
+		fmt.Sprintf("%s:%d", bindAddr, DEFAULT_DATA_PORT),
+		fmt.Sprintf("%s:%d", bindAddr, DEFAULT_NAMEDATA_PORT), 
+		DEFAULT_DATAWEB_ADDR, // bind to all for web addr
 		volRoots,
 		mountPoint,
 		2,
