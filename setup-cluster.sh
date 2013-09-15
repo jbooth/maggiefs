@@ -48,6 +48,7 @@ ssh ${peerhost} /bin/bash --login << EOFPEER
     echo "mfs peerconfig -masterAddr ${masterhost} -bindAddr ${peerhost} -mountPoint ${mountPoint} -volRoots ${datahome} "
     mfs peerconfig -masterAddr ${masterhost} -bindAddr ${peerhost} -mountPoint "${mountPoint}" -volRoots "${datahome}" 
     mfs peerconfig -masterAddr ${masterhost} -bindAddr ${peerhost} -mountPoint "${mountPoint}" -volRoots "${datahome}" > ~/peer.cfg
+    rm -rf ${mountPoint}/*
     sudo chmod a+r /etc/fuse.conf
     nohup mfs peer ~/peer.cfg &>~/peer.log &
 EOFPEER

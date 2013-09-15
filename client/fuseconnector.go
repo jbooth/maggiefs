@@ -43,19 +43,19 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 		nil,
 		log.New(os.Stderr, "maggie-fuse", 0),
 	}
-	nc := NewNameCache(names, leases)
+	nc := NewNameCache(names, leases, func(n maggiefs.NotifyEvent) {
+		fuseNotify := &raw.NotifyInvalInodeOut{
+			Ino: n.Inodeid(),
+		}
+		stat := m.inodeNotify(fuseNotify)
+		if stat != fuse.OK {
+			fmt.Printf("fuse got bad stat trying to notify host of change to inode %d\n",n.Inodeid())
+		} else {
+			fmt.Printf("fuse connector notified for inode %d, got value %+v", fuseNotify.Ino, stat)
+		}
+	})
 	m.leases = nc
 	m.names = nc
-	//
-	go func() {
-		fuseNotify := &raw.NotifyInvalInodeOut{}
-		for mfsNotify := range m.changeNotifier {
-			fuseNotify.Ino = mfsNotify.Inodeid()
-			stat := m.inodeNotify(fuseNotify)
-			mfsNotify.Ack()
-			fmt.Printf("notified for inode %d, got value %+v", fuseNotify.Ino, stat)
-		}
-	}()
 	return m, nil
 }
 

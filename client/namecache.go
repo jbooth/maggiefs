@@ -16,12 +16,13 @@ type NameCache struct {
 	maxPerBucket int // high water mark for each bucket -- when we hit this, we clean up until at minPerBucket
 	minPerBucket int
 	notifier     chan maggiefs.NotifyEvent
+	onNotify     func(n maggiefs.NotifyEvent)
 	// cache
 	stripelock map[uint64]*sync.Mutex
 	mapmap     map[uint64]map[uint64]*centry
 }
 
-func NewNameCache(names maggiefs.NameService, leases maggiefs.LeaseService) *NameCache {
+func NewNameCache(names maggiefs.NameService, leases maggiefs.LeaseService, onNotify func(n maggiefs.NotifyEvent)) *NameCache {
 	nc := &NameCache{
 		names,
 		leases,
@@ -29,6 +30,7 @@ func NewNameCache(names maggiefs.NameService, leases maggiefs.LeaseService) *Nam
 		512,
 		256,
 		leases.GetNotifier(),
+		onNotify,
 		make(map[uint64]*sync.Mutex),
 		make(map[uint64]map[uint64]*centry),
 	}
@@ -36,6 +38,14 @@ func NewNameCache(names maggiefs.NameService, leases maggiefs.LeaseService) *Nam
 		nc.stripelock[i] = new(sync.Mutex)
 		nc.mapmap[i] = make(map[uint64]*centry)
 	}
+	// pull notifiers and invalidate our cache and host fs cache
+	go func() {
+		for {
+			notify := <- nc.notifier
+			nc.invalidate(notify.Inodeid()) 
+			nc.onNotify(notify)
+		}
+	}()
 	return nc
 }
 
@@ -117,8 +127,10 @@ func (nc *NameCache) WaitAllReleased(nodeid uint64) error {
 func (nc *NameCache) GetInode(nodeid uint64) (i *maggiefs.Inode, err error) {
 	i = nc.getIfCached(nodeid)
 	if i != nil {
+		fmt.Printf("Namecache returning inode %d from cache\n",nodeid)
 		return i, nil
 	}
+	fmt.Printf("Namecache getting inode %d from master\n",nodeid)
 	i, err = nc.names.GetInode(nodeid)
 	if err != nil {
 		return nil, err
