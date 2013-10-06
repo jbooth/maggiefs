@@ -290,20 +290,3 @@ func runPeer(args []string) (s *integration.Peer, c *mountedClient, err error) {
 	c, err = newMountedClient(s.FuseConnector, cfg.MountPoint)
 	return
 }
-
-type mountedClient struct {
-	ms         *fuse.MountState
-	mountPoint string
-}
-
-func newMountedClient(mfs fuse.RawFileSystem, mountPoint string) (*mountedClient, error) {
-	mountState := fuse.NewMountState(mfs)
-
-	mountState.Debug = debug
-	opts := &fuse.MountOptions{
-		MaxBackground: 12,
-		//Options: []string {"ac_attr_timeout=0"},//,"attr_timeout=0","entry_timeout=0"},
-	}
-	err := mountState.Mount(mountPoint, opts)
-	return &mountedClient{mountState, mountPoint}, err
-}

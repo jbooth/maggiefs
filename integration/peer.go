@@ -10,22 +10,26 @@ import (
 )
 
 // compile time check for mrpc.Service
-var nilPeer mrpc.Service = &Peer{nil,nil}
+var nilPeer mrpc.Service = &Peer{nil,nil,nil}
 
 type Peer struct {
+	
 	Datanode *dataserver.DataServer
 	FuseConnector fuse.RawFileSystem
+	svc mrpc.Service
 }
-func (p *Peer)   
+func (p *Peer) Serve() error {
+	return p.svc.Serve()
+}
+
 // requests stop
 func (p *Peer)	Close() error {
-	p.Datanode.Close()
-	return nil
+	return p.svc.Close()
 }
 
 // waits till actually stopped
 func (p *Peer) WaitClosed() error {
-	return p.Datanode.WaitClosed()
+	return p.svc.WaitClosed()
 }
 
 func NewPeer(cfg *conf.PeerConfig) (*Peer, error) {
@@ -40,6 +44,8 @@ func NewPeer(cfg *conf.PeerConfig) (*Peer, error) {
 			return ret,err
 		}
 		ret.FuseConnector,err = client.NewMaggieFuse(cl.Leases,cl.Names,cl.Datas)
+		
+		ret.svc := mrpc.NewMultiService([]mrpc.Service{Datanode, FuseConnector
 		return ret,err
 } 
 

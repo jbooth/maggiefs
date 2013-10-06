@@ -25,7 +25,7 @@ func CloseableRPC(listenAddr string, impl interface{}, name string) (*CloseableS
 	onAccept := func(conn *net.TCPConn) {
 		buf := bufio.NewWriter(conn)
 		codec := &gobServerCodec{conn, gob.NewDecoder(conn), gob.NewEncoder(buf), buf}
-		go rpcServer.ServeCodec(codec)
+		rpcServer.ServeCodec(codec)
 	}
 	ret := NewCloseServer(listener, onAccept)
 	return ret, nil

@@ -52,7 +52,7 @@ func (c *clientConn) String() string {
 	return fmt.Sprintf("%+v", c)
 }
 
-func (c *clientConn) readRequests() {
+func (c *clientConn) readRequests() error {
 	for {
 		req := request{}
 		err := c.d.Decode(&req)
@@ -62,24 +62,23 @@ func (c *clientConn) readRequests() {
 			// server will then call c.closeAndDie when done
 			req.Op = OP_CLOSE
 			c.req <- queuedServerRequest{req, c}
-			return
+			return err
 		}
 		c.req <- queuedServerRequest{req, c}
 	}
+	return nil
 
 }
 
-func (c *clientConn) sendResponses() {
+func (c *clientConn) sendResponses() error {
 	for {
 		resp, ok := <-c.resp
 		if !ok {
-			fmt.Printf("connection %d closed, sendResponseThread dying\n")
-			return
+			return fmt.Errorf("connection %d closed, sendResponseThread dying\n")
 		}
 		err := c.e.Encode(resp)
 		if err != nil {
-			// should prob signal close here
-			fmt.Printf("error writing to conn %s\n", err)
+			return err
 		}
 	}
 }
@@ -218,9 +217,24 @@ func NewLeaseServer(bindAddr string) (*LeaseServer, error) {
 			fmt.Printf("error wrapping clientConn %s\n", err)
 		}
 		// launch goroutines to serve
-
-		go client.readRequests()
-		go client.sendResponses()
+		go func() {
+			defer func() {
+				if x := recover(); x != nil {
+						fmt.Printf("run time panic on LeaseServ reading requests for client %s : %s, shutting down \n", client.String(),x)
+						client.closeAndDie()
+				}
+			}()
+			client.readRequests()
+		}()
+		go func() {
+			defer func() {
+				if x := recover(); x != nil {
+						fmt.Printf("run time panic on LeaseServ sending responses from client %s, shutting down \n", client.String(),x)
+						client.closeAndDie()
+				}
+			}()
+			client.sendResponses()
+		}()
 	})
 	return ls, err
 }

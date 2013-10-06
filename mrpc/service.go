@@ -17,9 +17,13 @@ type Service interface {
 }
 
 type MultiService struct {
-	clos sync.Cond
+	clos *sync.Cond
 	closed bool
 	servs []Service
+}
+
+func NewMultiService(servs []Service) Service {
+	return &MultiService{ new(sync.Cond), false, servs}
 }
 
 func (ms *MultiService) Serve() error {
