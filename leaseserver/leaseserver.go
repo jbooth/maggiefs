@@ -230,11 +230,9 @@ type queuedServerRequest struct {
 	conn *clientConn
 }
 
-func (ls *LeaseServer) Start() error {
-	fmt.Println("lease server starting")
+func (ls *LeaseServer) Serve() error {
 	go ls.process()
-	ls.server.Start()
-	return nil
+	return ls.server.Serve()
 }
 
 func (ls *LeaseServer) Close() error {

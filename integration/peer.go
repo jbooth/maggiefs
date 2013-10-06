@@ -16,11 +16,7 @@ type Peer struct {
 	Datanode *dataserver.DataServer
 	FuseConnector fuse.RawFileSystem
 }
-
-func (p *Peer)	Start() error {
-	// we start in NewPeer, this is just to fulfill mrpc.Service 
-	return nil
-}
+func (p *Peer)   
 // requests stop
 func (p *Peer)	Close() error {
 	p.Datanode.Close()

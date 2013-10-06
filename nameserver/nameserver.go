@@ -50,20 +50,38 @@ type NameServer struct {
 	webServer   *http.Server
 }
 
-func (ns *NameServer) Start() error {
+func (ns *NameServer) Serve() error {
 	var err error = nil
 	ns.rpcServer, err = mrpc.CloseableRPC(ns.listenAddr, mrpc.NewNameServiceService(ns), "NameService")
 	if err != nil {
 		return err
 	}
-	ns.rpcServer.Start()
+	errChan := make(chan error,3)
 	go func() {
-		ns.webServer.Serve(ns.webListen)
+		defer func() {
+			if x := recover(); x != nil {
+				fmt.Printf("run time panic from nameserver rpc: %v\n", x)
+				errChan <- fmt.Errorf("Run time panic: %v", x)
+			}
+		}()
+		errChan <- ns.rpcServer.Serve()
 	}()
+
+	go func() {
+		defer func() {
+			if x := recover(); x != nil {
+				fmt.Printf("run time panic from nameserver web: %v\n", x)
+				errChan <- fmt.Errorf("Run time panic: %v", x)
+			}
+		}()
+		errChan <- ns.webServer.Serve(ns.webListen)
+	}()
+	err = <- errChan
 	return err
 }
 
 func (ns *NameServer) Close() error {
+	
 	var retError error = nil
 	err := ns.nd.Close()
 	if err != nil {
@@ -299,7 +317,7 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 }
 
 func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
-	fmt.Printf("Got connection from dn id %d, addr %s\n",dnId,nameDataAddr)
+	fmt.Printf("Got connection from dn id %d, addr %s\n", dnId, nameDataAddr)
 	// TODO confirm not duplicate datanode
 	client, err := rpc.Dial("tcp", nameDataAddr)
 	if err != nil {

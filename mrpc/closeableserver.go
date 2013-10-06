@@ -31,59 +31,54 @@ func CloseableRPC(listenAddr string, impl interface{}, name string) (*CloseableS
 	return ret, nil
 }
 
-type Service interface {
-	// asynchronously starts service, does not return until service ready to respond
-	Start() error
-	// requests stop
-	Close() error
-	// waits till actually stopped
-	WaitClosed() error
-}
-
 type CloseableServer struct {
 	conns       map[int]*net.TCPConn
 	listen      *net.TCPListener
-	done        chan bool
 	stopRequest bool
+	closed		bool
+	closeCnd    *sync.Cond
 	l           *sync.Mutex
-	onAccept    func(*net.TCPConn)
+	serveConn    func(*net.TCPConn)
 }
 
-func NewCloseServer(listen *net.TCPListener, onAccept func(*net.TCPConn)) *CloseableServer {
-	return &CloseableServer{make(map[int]*net.TCPConn), listen, make(chan bool), false, new(sync.Mutex), onAccept}
-}
-
-// spins off accept loop
-func (r *CloseableServer) Start() error {
-	go r.Accept()
-	return nil
+// A closeable Server wraps a tcpListener and a serveConn function and spins off the accept loop while
+// implementing Service reliably.
+func NewCloseServer(listen *net.TCPListener, serveConn func(*net.TCPConn)) *CloseableServer {
+	return &CloseableServer{make(map[int]*net.TCPConn), listen, false, false, new(sync.Cond), new(sync.Mutex), serveConn}
 }
 
 // blocking accept loop
-func (r *CloseableServer) Accept() {
+func (r *CloseableServer) Serve() error {
 	sockIdCounter := 0
 	for {
 		conn, err := r.listen.AcceptTCP()
 		if err != nil {
 			// stop accepting, shut down
 			fmt.Printf("Error accepting, stopping acceptor: %s\n", err.Error())
-			r.listen.Close()
-			r.done <- true
-			return
+			r.Close()
+			return err
 		}
 		conn.SetNoDelay(true)
 		r.l.Lock()
 		if r.stopRequest { // double check after locking
 			// close before shutting down
-			r.listen.Close()
 			conn.Close()
-			r.done <- true
-			return
+			r.Close()
+			return nil
 		} else {
 			// store reference and serve requests
 			sockIdCounter += 1
 			r.conns[sockIdCounter] = conn
-			r.onAccept(conn)
+			go func() {
+				defer func() {
+					if x := recover(); x != nil {
+						fmt.Printf("run time panic for service on addr %s : %s\n", r.listen.Addr().String(),x)
+						conn.Close()
+						r.Close()
+					}
+				}()
+				r.serveConn(conn)
+			}()
 		}
 		r.l.Unlock()
 	}
@@ -93,14 +88,23 @@ func (r *CloseableServer) Close() error {
 	r.l.Lock()
 	defer r.l.Unlock()
 	err := r.listen.Close()
-	for _, conn := range r.conns {
-		conn.Close()
+	for id, conn := range r.conns {
+		err1 := conn.Close()
+		if err1 != nil && err == nil {
+			err = err1
+		}
+		delete(r.conns,id)
 	}
+	r.closeCnd.Broadcast()
 	return err
 }
 
 func (r *CloseableServer) WaitClosed() error {
-	<-r.done
+	r.closeCnd.L.Lock()
+	for !r.closed {
+		r.closeCnd.Wait()
+	}
+	r.closeCnd.L.Unlock()
 	return nil
 }
 

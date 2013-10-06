@@ -17,6 +17,7 @@ type DataServer struct {
 	dataIface *net.TCPListener
 	// accepts conn from namenode
 	nameDataIface *mrpc.CloseableServer
+	nameDataAddr string
 	// dataservice for pipelining writes
 	dc *DataClient
 }
@@ -75,7 +76,7 @@ func NewDataServer(volRoots []string,
 		volumes[volId] = vol
 	}
 
-	// start up listeners
+	// bind to listener sockets
 	dataClientBind, err := net.ResolveTCPAddr("tcp", dataClientBindAddr)
 	if err != nil {
 		return nil, err
@@ -86,28 +87,43 @@ func NewDataServer(volRoots []string,
 		return nil, err
 	}
 
-	// start servicing namedata
-	ds = &DataServer{ns, dnInfo, volumes, dataClientListen, nil, dc}
+	ds = &DataServer{ns, dnInfo, volumes, dataClientListen, nil, nameDataBindAddr, dc}
 
 	ds.nameDataIface, err = mrpc.CloseableRPC(nameDataBindAddr, mrpc.NewNameDataIfaceService(ds), "NameDataIface")
 	if err != nil {
 		return ds, err
 	}
-	ds.nameDataIface.Start()
-	// start servicing client data
-	go ds.serveClientData()
-	// register ourselves with namenode, namenode will query us for volumes
-	err = ns.Join(dnInfo.DnId, nameDataBindAddr)
 	return ds, nil
 }
 
-func (ds *DataServer) Start() error {
-	err1 := ds.nameDataIface.Start()
-	if err1 != nil {
-		return err1
+func (ds *DataServer) Serve() error {
+	errChan := make(chan error,3)
+	go func() {
+		defer func() {
+			if x := recover(); x != nil {
+				fmt.Printf("run time panic from nameserver rpc: %v\n", x)
+				errChan <- fmt.Errorf("Run time panic: %v", x)
+			}
+		}()
+		errChan <- ds.nameDataIface.Serve()
+	}()
+
+	go func() {
+		defer func() {
+			if x := recover(); x != nil {
+				fmt.Printf("run time panic from nameserver web: %v\n", x)
+				errChan <- fmt.Errorf("Run time panic: %v", x)
+			}
+		}()
+		errChan <- ds.serveClientData()
+	}()
+	err := ds.ns.Join(ds.info.DnId, ds.nameDataAddr)
+	if err != nil {
+		ds.Close()
+		return err
 	}
-	go ds.serveClientData()
-	return nil
+	err = <- errChan
+	return err
 }
 
 func (ds *DataServer) Close() error {
@@ -124,12 +140,12 @@ func (ds *DataServer) WaitClosed() error {
 	return ds.nameDataIface.WaitClosed()
 }
 
-func (ds *DataServer) serveClientData() {
+func (ds *DataServer) serveClientData() error {
 	for {
 		tcpConn, err := ds.dataIface.AcceptTCP()
 		if err != nil {
 			fmt.Printf("Error accepting client on listen addr, shutting down: %s\n", err.Error())
-			return
+			return err
 		}
 		tcpConn.SetNoDelay(true)
 		go ds.serveClientConn(SockEndpoint(tcpConn))
