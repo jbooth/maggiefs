@@ -1,8 +1,6 @@
 package integration
 
 import (
-
-	"github.com/jbooth/go-fuse/fuse"
 	"github.com/jbooth/maggiefs/dataserver"
 	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/client"
@@ -10,12 +8,12 @@ import (
 )
 
 // compile time check for mrpc.Service
-var nilPeer mrpc.Service = &Peer{nil,nil,nil}
+var peerTypeCheck mrpc.Service = &Peer{nil,nil,nil}
 
 type Peer struct {
 	
 	Datanode *dataserver.DataServer
-	FuseConnector fuse.RawFileSystem
+	Mountpoint *Mount
 	svc mrpc.Service
 }
 func (p *Peer) Serve() error {
@@ -32,7 +30,7 @@ func (p *Peer) WaitClosed() error {
 	return p.svc.WaitClosed()
 }
 
-func NewPeer(cfg *conf.PeerConfig) (*Peer, error) {
+func NewPeer(cfg *conf.PeerConfig, debug bool) (*Peer, error) {
 		
 		cl,err :=  NewClient(cfg)
 		if err != nil {
@@ -43,9 +41,23 @@ func NewPeer(cfg *conf.PeerConfig) (*Peer, error) {
 		if err != nil {
 			return ret,err
 		}
-		ret.FuseConnector,err = client.NewMaggieFuse(cl.Leases,cl.Names,cl.Datas)
+		fuseConnector,err := client.NewMaggieFuse(cl.Leases,cl.Names,cl.Datas)
+		if err != nil {
+			return ret,err
+		}	
+		ret.Mountpoint,err = NewMount(fuseConnector,cfg.MountPoint,false)
 		
-		ret.svc := mrpc.NewMultiService([]mrpc.Service{Datanode, FuseConnector
+		multiServ := NewMultiService()
+
+		err = multiServ.AddService(ret.Datanode)
+		if err != nil {
+			return ret,err
+		}
+		err = multiServ.AddService(ret.Mountpoint)
+		if err != nil {
+			return ret,err
+		}
+		ret.svc = multiServ
 		return ret,err
 } 
 

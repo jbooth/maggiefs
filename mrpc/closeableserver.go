@@ -44,7 +44,7 @@ type CloseableServer struct {
 // A closeable Server wraps a tcpListener and a serveConn function and spins off the accept loop while
 // implementing Service reliably.
 func NewCloseServer(listen *net.TCPListener, serveConn func(*net.TCPConn)) *CloseableServer {
-	return &CloseableServer{make(map[int]*net.TCPConn), listen, false, false, new(sync.Cond), new(sync.Mutex), serveConn}
+	return &CloseableServer{make(map[int]*net.TCPConn), listen, false, false, sync.NewCond(&sync.Mutex{}), new(sync.Mutex), serveConn}
 }
 
 // blocking accept loop
@@ -95,6 +95,7 @@ func (r *CloseableServer) Close() error {
 		}
 		delete(r.conns,id)
 	}
+	r.closed = true
 	r.closeCnd.Broadcast()
 	return err
 }

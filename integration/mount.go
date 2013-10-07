@@ -13,7 +13,7 @@ type Mount struct {
 	closeCnd *sync.Cond
 }
 
-func newMountedClient(mfs fuse.RawFileSystem, mountPoint string, debug bool) (*Mount, error) {
+func NewMount(mfs fuse.RawFileSystem, mountPoint string, debug bool) (*Mount, error) {
 	mountState := fuse.NewMountState(mfs)
 
 	mountState.Debug = debug
@@ -30,6 +30,7 @@ func (m *Mount) Serve() error {
 	defer func() {
 		if x := recover(); x != nil {
 			fmt.Printf("run time panic serving mountpoint %s : %v\n", m.MountPoint, x)
+			m.Close()
 		}
 	}()
 	m.Ms.Loop()
@@ -43,6 +44,7 @@ func (m *Mount) Close() error {
 		}
 	}()
 	err := m.Ms.Unmount()
+	m.closed = true
 	m.closeCnd.Broadcast()
 	return err
 }

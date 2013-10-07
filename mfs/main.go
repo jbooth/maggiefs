@@ -3,10 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/jbooth/go-fuse/fuse"
 	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/integration"
 	"github.com/jbooth/maggiefs/mrpc"
+	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/nameserver"
 	"log"
 	"os"
@@ -84,7 +84,6 @@ func main() {
 	}
 
 	var running mrpc.Service = nil
-	var mount *mountedClient = nil
 	var err error
 	cmd := args[0]
 	// pop first instr
@@ -92,13 +91,13 @@ func main() {
 
 	switch cmd {
 	case "singlenode":
-		running, mount, err = singlenode(args)
+		running, err = singlenode(args)
 		if err != nil {
 			usage(err)
 			return
 		}
 	case "peer":
-		running, mount, err = runPeer(args)
+		running, err = runPeer(args)
 		if err != nil {
 			usage(err)
 			return
@@ -148,7 +147,9 @@ func main() {
 	// this chan gets hit on error or signal
 	errChan := make(chan error)
 
-	// spin off fuse mountpoint
+	
+
+	// spin off service
 	go func() {
 		// catch panics and turn into channel send
 		defer func() {
@@ -157,13 +158,7 @@ func main() {
 				errChan <- fmt.Errorf("Run time panic: %v", x)
 			}
 		}()
-		// either run mountpoint service or just wait while master service runs
-		if mount != nil && mount.ms != nil {
-			mount.ms.Loop()
-		} else {
-			waitForever := make(chan bool)
-			_ = <-waitForever
-		}
+		errChan <- running.Serve()
 	}()
 
 	// spin off signal handler
@@ -181,9 +176,6 @@ func main() {
 
 	// wait for something to come from either signal handler or the mountpoint, unmount and blow up safely
 	err = <-errChan
-	if mount != nil && mount.ms != nil {
-		mount.ms.Unmount()
-	}
 	if running != nil {
 		running.Close()
 		running.WaitClosed()
@@ -242,7 +234,7 @@ func runMaster(args []string) (s mrpc.Service, err error) {
 	return
 }
 
-func singlenode(args []string) (s *integration.SingleNodeCluster, c *mountedClient, err error) {
+func singlenode(args []string) (serv *integration.MultiService, err error) {
 	numDNs, err := strconv.Atoi(args[0])
 	if err != nil {
 		return
@@ -257,36 +249,34 @@ func singlenode(args []string) (s *integration.SingleNodeCluster, c *mountedClie
 	}
 	baseDir := args[3]
 	mountPoint := args[4]
-	nncfg, dscfg, err := conf.NewConfSet2(numDNs, volsPerDn, uint32(replicationFactor), baseDir)
+	serv = integration.NewMultiService()
+
+	s, err := integration.NewSingleNodeCluster(numDNs,volsPerDn,uint32(replicationFactor),baseDir)
 	if err != nil {
 		return
 	}
-	s, err = integration.NewSingleNodeCluster(nncfg, dscfg, true)
+	err = serv.AddService(s)
 	if err != nil {
 		return
 	}
-	err = s.Start()
+	maggieFuse,err := client.NewMaggieFuse(s.Leases,s.Names,s.Datas)
 	if err != nil {
 		return
 	}
-	c, err = newMountedClient(s.FuseConnector, mountPoint)
+	mount,err := integration.NewMount(maggieFuse,mountPoint,debug)
+	if err != nil {
+		return
+	}
+	err = serv.AddService(mount)
 	return
 }
 
-func runPeer(args []string) (s *integration.Peer, c *mountedClient, err error) {
+func runPeer(args []string) (peer mrpc.Service, err error) {
 	cfg := &conf.PeerConfig{}
 	err = cfg.ReadConfig(args[0])
 	if err != nil {
 		return
 	}
-	s, err = integration.NewPeer(cfg)
-	if err != nil {
-		return
-	}
-	err = s.Start()
-	if err != nil {
-		return
-	}
-	c, err = newMountedClient(s.FuseConnector, cfg.MountPoint)
+	peer, err = integration.NewPeer(cfg, debug)
 	return
 }

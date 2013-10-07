@@ -15,7 +15,7 @@ import (
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
 // addresses should be a 0.0.0.0:9999 type address
 func NewNameServer(ls maggiefs.LeaseService, nameAddr string, webAddr string, dataDir string, replicationFactor uint32, format bool) (*NameServer, error) {
-	ns := NameServer{}
+	ns := &NameServer{}
 	var err error = nil
 	ns.ls = ls
 	ns.listenAddr = nameAddr
@@ -35,8 +35,12 @@ func NewNameServer(ls maggiefs.LeaseService, nameAddr string, webAddr string, da
 	if err != nil {
 		return nil, err
 	}
-	ns.webServer = newNameWebServer(&ns, webAddr)
-	return &ns, nil
+	ns.webServer = newNameWebServer(ns, webAddr)
+	ns.rpcServer, err = mrpc.CloseableRPC(ns.listenAddr, mrpc.NewNameServiceService(ns), "NameService")
+	if err != nil {
+		return nil,err
+	}
+	return ns, nil
 }
 
 type NameServer struct {
@@ -52,10 +56,6 @@ type NameServer struct {
 
 func (ns *NameServer) Serve() error {
 	var err error = nil
-	ns.rpcServer, err = mrpc.CloseableRPC(ns.listenAddr, mrpc.NewNameServiceService(ns), "NameService")
-	if err != nil {
-		return err
-	}
 	errChan := make(chan error,3)
 	go func() {
 		defer func() {

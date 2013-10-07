@@ -4,16 +4,16 @@ package integration
 import (
 	"fmt"
 	"github.com/jbooth/maggiefs/conf"
-	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/dataserver"
 	"github.com/jbooth/maggiefs/leaseserver"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/nameserver"
-	"github.com/jbooth/go-fuse/fuse"
+	"github.com/jbooth/maggiefs/mrpc"
 	"os"
 )
 
-// compile time check for 
+// compile time check
+var singleClustCheck mrpc.Service = &SingleNodeCluster{}
 
 
 // Encapsulates a single node, minus mountpoint.  Used for testing.
@@ -24,55 +24,26 @@ type SingleNodeCluster struct {
 	Names       maggiefs.NameService
 	DataNodes   []*dataserver.DataServer
 	Datas       maggiefs.DataService
-	FuseConnector fuse.RawFileSystem
+	svc         mrpc.Service
 }
 
-func (snc *SingleNodeCluster) Start() error {
-	// all services started at construction time for interdependencies
-	return nil
+func (snc *SingleNodeCluster) Serve() error {
+	return snc.svc.Serve()
 }
 
 func (snc *SingleNodeCluster) Close() error {
-	snc.NameServer.Close()
-	snc.LeaseServer.Close()
-	for _, dn := range snc.DataNodes {
-		dn.Close()
-	}
-	return nil
+	return snc.svc.Close()
 }
 
 func (snc *SingleNodeCluster) WaitClosed() error {
-	err := snc.NameServer.WaitClosed()
-	if err != nil {
-		return err
-	}
-	err = snc.LeaseServer.WaitClosed()
-	if err != nil {
-		return err
-	}
-	for _, dn := range snc.DataNodes {
-		err = dn.WaitClosed()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return snc.svc.WaitClosed()
 }
 
-
-
-//func NewDataServer(cfg *DSConfig) (*dataserver.DataServer, error) {
-//	nameService, err := NewNameClient(cfg.NameAddr)
-//	if err != nil {
-//		return nil, err
-//	}
-//	return dataserver.NewDataServer(cfg.VolumeRoots, cfg.DataClientBindAddr, cfg.NameDataBindAddr, nameService)
-//}
 
 // TODO refactor to use NewConfSet
 func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*SingleNodeCluster, error) {
 	cl := &SingleNodeCluster{}
-	nncfg,ds,err := newConfSet2(numDNs, volsPerDn, replicationFactor, baseDir)
+	nncfg,ds,err := NewConfSet2(numDNs, volsPerDn, replicationFactor, baseDir)
 	if err != nil {
 		return nil,err
 	}
@@ -107,13 +78,20 @@ func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, b
 			return cl, err
 		}
 	}
-	cl.FuseConnector,err = client.NewMaggieFuse(cl.Leases,cl.Names,cl.Datas)
+	// make service wrapper
+	multiServ := NewMultiService()
+	cl.svc = multiServ
+	multiServ.AddService(cl.LeaseServer)
+	multiServ.AddService(cl.NameServer)
+	for _,ds := range cl.DataNodes {
+		multiServ.AddService(ds)
+	}
 	return cl, err
 }
 
 
 // used to bootstrap singlenode clusters
-func newConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*conf.MasterConfig, []*conf.PeerConfig) {
+func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*conf.MasterConfig, []*conf.PeerConfig) {
 	nncfg := &conf.MasterConfig{}
 	nncfg.LeaseBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
 	startPort++
@@ -142,7 +120,7 @@ func newConfSet(volRoots [][]string, nameHome string, bindHost string, startPort
 }
 
 // used to bootstrap singlenode clusters
-func newConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*conf.MasterConfig, []*conf.PeerConfig, error) {
+func NewConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*conf.MasterConfig, []*conf.PeerConfig, error) {
 	err := os.Mkdir(baseDir, 0777)
 	if err != nil {
 		return nil, nil, err
@@ -175,6 +153,6 @@ func newConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir st
 		}
 		volRoots[i] = dnRoots
 	}
-	nnc, dsc := newConfSet(volRoots, nameBase, "0.0.0.0", 11001, replicationFactor, true)
+	nnc, dsc := NewConfSet(volRoots, nameBase, "0.0.0.0", 11001, replicationFactor, true)
 	return nnc, dsc, nil
 }
