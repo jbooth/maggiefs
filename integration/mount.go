@@ -22,7 +22,7 @@ func NewMount(mfs fuse.RawFileSystem, mountPoint string, debug bool) (*Mount, er
 		//Options: []string {"ac_attr_timeout=0"},//,"attr_timeout=0","entry_timeout=0"},
 	}
 	err := mountState.Mount(mountPoint, opts)
-	return &Mount{mountState, mountPoint, false, new(sync.Cond)}, err
+	return &Mount{mountState, mountPoint, false, sync.NewCond(new(sync.Mutex))}, err
 }
 
 func (m *Mount) Serve() error {
@@ -44,6 +44,9 @@ func (m *Mount) Close() error {
 		}
 	}()
 	err := m.Ms.Unmount()
+	for err != nil {
+		err = m.Ms.Unmount()
+	}
 	m.closed = true
 	m.closeCnd.Broadcast()
 	return err

@@ -6,6 +6,7 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
 	"net"
+	"sync"
 )
 
 type DataServer struct {
@@ -20,6 +21,9 @@ type DataServer struct {
 	nameDataAddr string
 	// dataservice for pipelining writes
 	dc *DataClient
+	// locks to manage shutdown
+	clos *sync.Cond
+	closed bool
 }
 
 // create a new dataserver serving the specified volumes, on the specified addrs, joining the specified nameservice
@@ -87,7 +91,7 @@ func NewDataServer(volRoots []string,
 		return nil, err
 	}
 
-	ds = &DataServer{ns, dnInfo, volumes, dataClientListen, nil, nameDataBindAddr, dc}
+	ds = &DataServer{ns, dnInfo, volumes, dataClientListen, nil, nameDataBindAddr, dc, sync.NewCond(new(sync.Mutex)),false}
 
 	ds.nameDataIface, err = mrpc.CloseableRPC(nameDataBindAddr, mrpc.NewNameDataIfaceService(ds), "NameDataIface")
 	if err != nil {
@@ -127,16 +131,27 @@ func (ds *DataServer) Serve() error {
 }
 
 func (ds *DataServer) Close() error {
-
+	ds.clos.L.Lock()
+	defer ds.clos.L.Unlock()
+	if ds.closed { 
+		return nil
+	}
 	ds.nameDataIface.Close()
 	ds.dataIface.Close()
 	for _, v := range ds.volumes {
 		v.Close()
 	}
+	ds.closed = true
+	ds.clos.Broadcast()
 	return nil
 }
 
 func (ds *DataServer) WaitClosed() error {
+	ds.clos.L.Lock()
+	for ! ds.closed {
+		ds.clos.Wait()
+	}
+	ds.clos.L.Unlock()
 	return ds.nameDataIface.WaitClosed()
 }
 

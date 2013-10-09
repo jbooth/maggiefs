@@ -40,6 +40,8 @@ func NewNameServer(ls maggiefs.LeaseService, nameAddr string, webAddr string, da
 	if err != nil {
 		return nil,err
 	}
+	ns.clos = sync.NewCond(new(sync.Mutex))
+	ns.closed = false
 	return ns, nil
 }
 
@@ -52,6 +54,9 @@ type NameServer struct {
 	rpcServer   *mrpc.CloseableServer // created at start time, need to be closed
 	webListen   net.Listener
 	webServer   *http.Server
+	clos *sync.Cond
+	closed bool
+	
 }
 
 func (ns *NameServer) Serve() error {
@@ -81,7 +86,11 @@ func (ns *NameServer) Serve() error {
 }
 
 func (ns *NameServer) Close() error {
-	
+	ns.clos.L.Lock()
+	defer ns.clos.L.Unlock()
+	if ns.closed {
+		return nil
+	}
 	var retError error = nil
 	err := ns.nd.Close()
 	if err != nil {
@@ -95,12 +104,18 @@ func (ns *NameServer) Close() error {
 	if err != nil {
 		retError = err
 	}
+	ns.closed = true
+	ns.clos.Broadcast()
 	return retError
 }
 
 func (ns *NameServer) WaitClosed() error {
-	ns.rpcServer.WaitClosed()
-	return nil
+	ns.clos.L.Lock()
+	for ! ns.closed {
+		ns.clos.Wait()
+	}
+	ns.clos.L.Unlock()
+	return ns.rpcServer.WaitClosed()
 }
 
 func (ns *NameServer) HttpAddr() string {

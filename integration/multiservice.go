@@ -62,8 +62,13 @@ func (ms *MultiService) Serve() error {
 func (ms *MultiService) Close() error {
 	ms.clos.L.Lock()
 	defer ms.clos.L.Unlock()
+	if ms.closed {
+		return nil
+	}
 	var retErr error = nil
-	for _,s := range ms.servs {
+	// close services in reverse order
+	for i := len(ms.servs) - 1; i >= 0 ; i-- {
+		s := ms.servs[i]
 		err := s.Close()
 		if err != nil && retErr == nil {
 			retErr = err
