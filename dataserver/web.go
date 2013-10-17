@@ -1,17 +1,17 @@
-package nameserver
+package dataserver
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
-	"strconv"
+	"fmt"
 	"time"
+	"strconv"
+	"encoding/json"
 )
 
-func newNameWebServer(ns *NameServer, addr string) *http.Server {
+
+func newDataWebServer(ds *DataServer, addr string) *http.Server {
 	myHandler := http.NewServeMux()
-	myHandler.HandleFunc("/inode", handle(ns.webInodeJson))
-	myHandler.HandleFunc("/stat", handle(ns.webFsStat))
+	myHandler.HandleFunc("/inode", handle(ds.webInodeJson))
 	http := &http.Server{
 		Addr:           addr,
 		Handler:        myHandler,
@@ -22,25 +22,27 @@ func newNameWebServer(ns *NameServer, addr string) *http.Server {
 	return http
 }
 
+
 // wraps a func taking nameserver to a standard http handler
 func handle(f func(w http.ResponseWriter, r *http.Request) error) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		err := f(w, r)
 		if err != nil {
-			fmt.Printf("web error evaluating func on nameserver : %s", err.Error())
+			fmt.Printf("web error evaluating func : %s", err.Error())
 			w.Write([]byte(err.Error()))
 		}
 	}
 }
 
+
 // http methods
 // render inode as json
-func (ns *NameServer) webInodeJson(w http.ResponseWriter, r *http.Request) error {
+func (ds *DataServer) webInodeJson(w http.ResponseWriter, r *http.Request) error {
 	inodeid, err := strconv.ParseUint(r.FormValue("inodeid"), 10, 64)
 	if err != nil {
 		return fmt.Errorf("webInodeJson: err parsing inode: %s", err.Error())
 	}
-	ino, err := ns.nd.GetInode(uint64(inodeid))
+	ino, err := ds.ns.GetInode(uint64(inodeid))
 	if err != nil {
 		return fmt.Errorf("webInodeJson: err getting inode id %d : %s", inodeid, err.Error())
 	}
@@ -53,9 +55,3 @@ func (ns *NameServer) webInodeJson(w http.ResponseWriter, r *http.Request) error
 	return err
 }
 
-// show filesystem info
-func (ns *NameServer) webFsStat(w http.ResponseWriter, r *http.Request) error {
-	w.Header().Set("Content-Type", "application/html")
-	_, err := w.Write([]byte("STATS"))
-	return err
-}

@@ -5,6 +5,8 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"os"
 	"testing"
+	"net/http"
+	"encoding/json"
 )
 
 func TestAddInodeToCluster(t *testing.T) {
@@ -71,5 +73,21 @@ func TestAddBlock(t *testing.T) {
 			}
 
 		}
+		// check that each datanode can pull inode json
+		inoJsonAddr := fmt.Sprintf("http://%s/inode?inodeid=%d", testCluster.DataNodes[dnInfo.DnId - 1].HttpAddr(), ino.Inodeid)
+		fmt.Printf("Getting ino json from %s\n", inoJsonAddr)
+		response, err := http.Get(inoJsonAddr)
+		if err != nil {
+			panic(err)
+		}
+		ino3 := &maggiefs.Inode{}
+		respBytes := make([]byte, response.ContentLength)
+		response.Body.Read(respBytes)
+		fmt.Printf("Got json %s\n", string(respBytes))
+		json.Unmarshal(respBytes, ino3)
+		if !ino.Equals(ino3) {
+			t.Fatal(fmt.Errorf("Error, inode from JSON not equal : %+v : %+v\n", *ino, *ino3))
+		}
 	}
+
 }

@@ -28,7 +28,11 @@ func main() {
 			teardown()
 		}
 	}()
-	shortFileTest()
+	err := shortFileTest()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Passed!")
 }
 func setup() {
 	// set up cluster
@@ -67,6 +71,43 @@ func teardown() {
 
 func shortFileTest() error {
 	f,err := os.Create(mountPoint + "/shortFile.txt")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err := f.Close()
+		if err != nil {
+			fmt.Printf("Error closing file for shortRead : %s\n",err.Error())
+		}
+		fmt.Printf("Closed file %s\n",f.Name())
+	}()
+	_,err = f.WriteString("hi")
+	if err != nil {
+		return err
+	}
+	// assert length
+	fstat,err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if fstat.Size() != 2 {
+		return fmt.Errorf("Wrong file size!")
+	}
+	_,err = f.Seek(0,0)
+	if err != nil {
+		return err
+	}
+	bytes := make([]byte,2)
+	f.Read(bytes)
+	if string(bytes) != "hi" {
+		return fmt.Errorf("Wrong file contents!  Expected: hi, got %s",string(bytes))
+	}
+	fmt.Println("success shortFileTest")
+	return nil
+}
+
+func longFileTest() error {
+	f,err := os.Create(mountPoint + "/longFile.txt")
 	if err != nil {
 		return err
 	}

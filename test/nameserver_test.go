@@ -11,6 +11,7 @@ import (
 	"os"
 	"testing"
 	"time"
+	"encoding/json"
 )
 
 func TestAddInode(t *testing.T) {
@@ -136,10 +137,18 @@ func TestGetInodeJson(t *testing.T) {
 	}
 	inoJsonAddr := fmt.Sprintf("http://%s/inode?inodeid=%d", testCluster.NameServer.HttpAddr(), ino.Inodeid)
 	fmt.Printf("Getting ino json from %s\n", inoJsonAddr)
-	inoJson, err := http.Get(inoJsonAddr)
+	response, err := http.Get(inoJsonAddr)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("Got json %s\n", inoJson)
+	ino3 := &maggiefs.Inode{}
+	respBytes := make([]byte,response.ContentLength)
+	response.Body.Read(respBytes)
+	fmt.Printf("Got json %s\n", string(respBytes))
+	json.Unmarshal(respBytes, ino3)
+	if !ino.Equals(ino3) {
+		
+		t.Fatal(fmt.Errorf("Error, inode from JSON not equal : %+v : %+v\n", *ino, *ino3))
+	}
 
 }
