@@ -1,11 +1,13 @@
-usage: mfs [-debug] [-cpuprofile <filePath>] [-blockprofile <filePath>] <cmd>
+usage: mfs [-debug] [-cpuprofile <filePath>] [-blockprofile <filePath>] &lt; cmd &gt; [cmd opts]
 
 Optional arguments
+
     -blockprofile="": file to write block profiling information to
     -cpuprofile="": file to write CPU profiling information to
     -debug=false: print debug info about which fuse operations we're doing and their errors
 
 Command arguments:
+
     mfs master <path/to/config> : run a master
     mfs peer <path/to/config> : run a peer
     mfs masterconfig <homedir> : prints defaulted master config to stdout, with homedir set as the master's home
