@@ -1,6 +1,9 @@
 package maggiefs
 
-import ()
+import (
+	"path/filepath"
+	"fmt"
+)
 
 // deep copies an inode
 func CopyInode(i *Inode) *Inode {
@@ -32,3 +35,46 @@ func CopyInode(i *Inode) *Inode {
 	}
 	return &ret
 }
+
+func ResolveInode(path string, ns NameService) (*Inode,error) {
+	if filepath.IsAbs(path) {
+		return nil,fmt.Errorf("Path %s is absolute! Must be relative to mountpoint!")
+	}
+	pathComponents := filepath.SplitList(path)
+	inodeId := uint64(ROOT_INO)
+	for _,pathChunk := range pathComponents {
+		ino,err := ns.GetInode(inodeId)
+		if err != nil {
+			return nil,err
+		}
+		dentry,ex := ino.Children[pathChunk]
+		if !ex {
+			return nil,fmt.Errorf("Inode %d has no child %s",inodeId,pathChunk)
+		}
+		inodeId = dentry.Inodeid
+	}
+	return ns.GetInode(inodeId)
+}
+
+func BlocksInRange(blocks []Block, start uint64, length uint64) []Block {
+	// scan once to figure out how many
+	numBlocksInRange := 0
+	end := start + length
+	for _,b := range blocks {
+		if (b.StartPos <= start && b.EndPos > start) || (b.StartPos <= end) {
+			numBlocksInRange++
+		}
+	}
+	// scan again and add
+	ret := make([]Block,numBlocksInRange)
+	idx := 0
+	for _,b := range blocks {
+		if (b.StartPos <= start && b.EndPos > start) || (b.StartPos <= end) {
+			ret[idx] = b
+			idx++
+		}
+	}
+	return ret
+}
+
+

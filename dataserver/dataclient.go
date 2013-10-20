@@ -28,6 +28,24 @@ func pickVol(vols []uint32) uint32 {
 	return vols[rand.Int()%len(vols)]
 }
 
+// get hostname for a volume
+func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr,error) {
+	dc.volLock.RLock()
+	raddr, exists := dc.volMap[volId]
+	dc.volLock.RUnlock()
+	if !exists {
+		// try refreshing map and try again
+		dc.refreshDNs()
+		dc.volLock.RLock()
+		raddr, exists = dc.volMap[volId]
+		dc.volLock.RUnlock()
+		if !exists {
+			return nil,fmt.Errorf("No dn for vol id %d", volId)
+		}
+	}
+	return raddr,nil
+}
+
 // read some bytes
 func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint32) (err error) {
 	return dc.withConn(pickVol(blk.Volumes), func(d Endpoint) error {
@@ -100,18 +118,9 @@ func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64) (err error
 }
 
 func (dc *DataClient) withConn(volId uint32, f func(d Endpoint) error) error {
-	dc.volLock.RLock()
-	raddr, exists := dc.volMap[volId]
-	dc.volLock.RUnlock()
-	if !exists {
-		// try refreshing map and try again
-		dc.refreshDNs()
-		dc.volLock.RLock()
-		raddr, exists = dc.volMap[volId]
-		dc.volLock.RUnlock()
-		if !exists {
-			return fmt.Errorf("No dn for vol id %d", volId)
-		}
+	raddr,err := dc.VolHost(volId)
+	if err != nil {
+		return err
 	}
 	return dc.pool.withConn(raddr, f)
 }

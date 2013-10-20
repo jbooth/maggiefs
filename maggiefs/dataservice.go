@@ -1,8 +1,14 @@
 package maggiefs
 
-import ()
+import (
+	"net"
+)
 
 type DataService interface {
+	// given a volume ID (see struct Block), get the associated hostname
+	// exposed for hadoop integration
+	VolHost(volId uint32) (*net.TCPAddr,error)
+
 	// read some bytes
 	Read(blk Block, p []byte, pos uint64, length uint32) (err error)
 

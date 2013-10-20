@@ -14,6 +14,7 @@ const (
 	FTYPE_LNK   = uint32(2)
 	PAGESIZE    = uint32(4096)
 	BLOCKLENGTH = uint64(1024 * 1024 * 128) // 128MB, hardcoded for now
+	ROOT_INO    = uint64(1)  // root ino for the filesystem
 )
 
 func init() {

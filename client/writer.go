@@ -62,6 +62,7 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (written uint
 	startOfWritePos := off + uint64(nWritten)
 	for _, b := range inode.Blocks {
 		//fmt.Printf("evaluating block %+v for writeStartPos %d endofWritePos %d\n", b, startOfWritePos, endOfWritePos)
+		// TODO do we need that last endOfWritePos <= b.EndPos here?
 		if (b.StartPos <= startOfWritePos && b.EndPos > startOfWritePos) || (b.StartPos < endOfWritePos && endOfWritePos <= b.EndPos) {
 
 			posInBlock := uint64(0)

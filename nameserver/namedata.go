@@ -64,7 +64,7 @@ func Format(dataDir string, rootUid, rootGid uint32) error {
 		return err
 	}
 	// add root node
-	ino := maggiefs.NewInode(1, maggiefs.FTYPE_DIR, 0755, rootUid, rootGid)
+	ino := maggiefs.NewInode(maggiefs.ROOT_INO, maggiefs.FTYPE_DIR, 0755, rootUid, rootGid)
 	binSize := ino.BinSize()
 	inoBytes := make([]byte, binSize)
 	ino.ToBytes(inoBytes)

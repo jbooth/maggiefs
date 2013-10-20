@@ -8,14 +8,15 @@ import (
 )
 
 // compile time check for mrpc.Service
-var peerTypeCheck mrpc.Service = &Peer{nil,nil,nil}
+var peerTypeCheck mrpc.Service = &Peer{nil,nil,nil,nil}
 
 type Peer struct {
-	
+	Mfs      *client.MaggieFuse
 	Datanode *dataserver.DataServer
 	Mountpoint *Mount
 	svc mrpc.Service
 }
+
 func (p *Peer) Serve() error {
 	return p.svc.Serve()
 }
@@ -45,6 +46,7 @@ func NewPeer(cfg *conf.PeerConfig, debug bool) (*Peer, error) {
 		if err != nil {
 			return ret,err
 		}	
+		ret.Mfs = fuseConnector
 		ret.Mountpoint,err = NewMount(fuseConnector,cfg.MountPoint,false)
 		
 		multiServ := NewMultiService()
