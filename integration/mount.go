@@ -38,6 +38,7 @@ func (m *Mount) Serve() error {
 }
 
 func (m *Mount) Close() error {
+	fmt.Printf("Closing mountpoint at %s\n",m.MountPoint)
 	defer func() {
 		if x := recover(); x != nil {
 			fmt.Printf("run time panic: %v\n", x)

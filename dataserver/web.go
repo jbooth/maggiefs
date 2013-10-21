@@ -81,7 +81,7 @@ func (ds *DataServer) getBlockLocations(w http.ResponseWriter, r *http.Request) 
 		item.Length = int64(b.EndPos - b.StartPos)
 		item.Hosts = make([]string,len(b.Volumes))
 		item.Names = make([]string,len(b.Volumes))
-		item.TopologyPaths = make([]string,0)
+		item.TopologyPaths = make([]string,len(b.Volumes))
 		
 		for hostIdx,v := range b.Volumes {
 			addr,err := ds.dc.VolHost(v)
@@ -90,6 +90,7 @@ func (ds *DataServer) getBlockLocations(w http.ResponseWriter, r *http.Request) 
 			}
 			item.Hosts[hostIdx] = addr.IP.String()
 			item.Names[hostIdx] = addr.IP.String() + ":" + strconv.Itoa(addr.Port)
+			item.TopologyPaths[hostIdx] = "/default-rack/" + addr.IP.String() + ":" + strconv.Itoa(addr.Port)
 		}
 		ret[blockIdx] = item
 	}
@@ -103,9 +104,9 @@ func (ds *DataServer) getBlockLocations(w http.ResponseWriter, r *http.Request) 
 }
 
 type BlockLocation struct {
-	Hosts []string `json: hosts` // hostnames of peers
-	Names []string `json: names` // hostname:port of peers
-	TopologyPaths []string `json: topologyPaths` // full path name in network topology, unused
-	Offset int64 `json: offset`
-	Length int64 `json: length` 
+	Hosts []string `json:"hosts"` // hostnames of peers
+	Names []string `json:"names"` // hostname:port of peers
+	TopologyPaths []string `json:"topologyPaths"` // full path name in network topology, unused
+	Offset int64 `json:"offset"`
+	Length int64 `json:"length"` 
 }

@@ -95,7 +95,7 @@ func NewDataServer(volRoots []string,
 		return nil, err
 	}
 	ds = &DataServer{ns, dnInfo, volumes, dataClientListen, nil, nameDataBindAddr, nil, nil, dc, sync.NewCond(new(sync.Mutex)),false}
-	
+	fmt.Printf("Peer web server listening on %s\n",webBindAddr)
 	ds.webListen, err = net.Listen("tcp", webBindAddr)
 	if err != nil {
 		return nil, err

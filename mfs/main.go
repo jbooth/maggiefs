@@ -177,6 +177,7 @@ func main() {
 	// wait for something to come from either signal handler or the mountpoint, unmount and blow up safely
 	err = <-errChan
 	if running != nil {
+		fmt.Println("Shutting down..")
 		running.Close()
 		running.WaitClosed()
 	}

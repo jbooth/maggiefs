@@ -127,10 +127,8 @@ func (nc *NameCache) WaitAllReleased(nodeid uint64) error {
 func (nc *NameCache) GetInode(nodeid uint64) (i *maggiefs.Inode, err error) {
 	i = nc.getIfCached(nodeid)
 	if i != nil {
-		fmt.Printf("Namecache returning inode %d from cache\n",nodeid)
 		return i, nil
 	}
-	fmt.Printf("Namecache getting inode %d from master\n",nodeid)
 	i, err = nc.names.GetInode(nodeid)
 	if err != nil {
 		return nil, err
