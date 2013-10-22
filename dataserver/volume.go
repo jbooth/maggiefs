@@ -41,7 +41,7 @@ func validVolume(volRoot string) bool {
 	return true
 }
 
-func loadVolume(volRoot string) (*volume, error) {
+func loadVolume(volRoot string, fp *FilePool) (*volume, error) {
 	id, err := getVolId(volRoot)
 	if err != nil {
 		return nil, err
@@ -65,10 +65,10 @@ func loadVolume(volRoot string) (*volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &volume{id, volRoot, rootFile, maggiefs.VolumeInfo{id, dnInfo}, db}, nil
+	return &volume{id, volRoot, rootFile, maggiefs.VolumeInfo{id, dnInfo}, db, fp}, nil
 }
 
-func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
+func formatVolume(volRoot string, vol maggiefs.VolumeInfo, fp *FilePool) (*volume, error) {
 	volIdPath := volRoot + "/VOLID"
 	// write vol id
 	volIdFile, err := os.Create(volIdPath)
@@ -112,7 +112,7 @@ func formatVolume(volRoot string, vol maggiefs.VolumeInfo) (*volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &volume{vol.VolId, volRoot, rootFile, vol, db}, nil
+	return &volume{vol.VolId, volRoot, rootFile, vol, db, fp}, nil
 }
 
 func getVolId(volRoot string) (uint32, error) {
@@ -134,6 +134,7 @@ type volume struct {
 	rootFile  *os.File
 	info      maggiefs.VolumeInfo
 	blockData *levigo.DB
+	fp        *FilePool
 }
 
 func (v *volume) Close() {
@@ -230,12 +231,8 @@ func (v *volume) BlockReport() ([]maggiefs.Block, error) {
 //  BlockReport(volId int32) (blocks []Block, err error)
 
 func (v *volume) withFile(id uint64, op func(*os.File) error) error {
-	f, err := os.OpenFile(v.resolvePath(id), os.O_RDWR, 0)
-	defer f.Close()
-	if err != nil {
-		return fmt.Errorf("Err opening file %s : %s", v.resolvePath(id), err.Error())
-	}
-	return op(f)
+	path := v.resolvePath(id)
+	return v.fp.WithFile(path,op)
 }
 
 func (v *volume) serveRead(client Endpoint, req RequestHeader) (err error) {

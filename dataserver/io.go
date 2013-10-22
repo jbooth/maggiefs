@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"syscall"
 )
 
 // wraps ReadWriteCloser with Stringer for debugging info
@@ -38,9 +39,27 @@ func (e *endpt) Close() error {
 }
 
 // wrap a socket with nice desc
-func SockEndpoint(c net.Conn) Endpoint {
-	desc := fmt.Sprintf("Socket: local %s to remote %s", c.LocalAddr(), c.RemoteAddr())
+func SockEndpoint(c *net.TCPConn) (Endpoint) {
+	desc := fmt.Sprintf("Socket(nonblock): local %s to remote %s", c.LocalAddr(), c.RemoteAddr())
+	c.SetNoDelay(true)
+	c.SetReadBuffer(128 * 1024)
 	return &endpt{c, c, desc, true}
+}
+
+func BlockingSockEndPoint(c *net.TCPConn) (Endpoint, error) {
+	desc := fmt.Sprintf("Socket(blocking): local %s to remote %s", c.LocalAddr(), c.RemoteAddr())
+	err := c.SetNoDelay(true)
+	if err != nil { return nil,err }
+	err = c.SetReadBuffer(128 * 1024)
+	if err != nil { return nil,err }
+	f, err := c.File()
+	defer c.Close()
+	if err != nil {
+		return nil, err
+	}
+	syscall.SetNonblock(int(f.Fd()), false)
+
+	return &endpt{f, f, desc, true}, nil
 }
 
 // matching pipe endpoints

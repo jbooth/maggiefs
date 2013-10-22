@@ -219,5 +219,5 @@ func (p *connPool) dial(host *net.TCPAddr) (Endpoint, error) {
 	}
 	conn.SetNoDelay(true)
 	//fmt.Printf("Connected to host %s with local conn %s\n",conn.RemoteAddr().String(),conn.LocalAddr().String())
-	return SockEndpoint(conn), nil
+	return BlockingSockEndPoint(conn)
 }

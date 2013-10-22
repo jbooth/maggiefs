@@ -40,10 +40,11 @@ func NewDataServer(volRoots []string,
 	// scan volumes
 	volumes := make(map[uint32]*volume)
 	unformatted := make([]string, 0)
+	fp := NewFilePool(256,128)
 	for _, volRoot := range volRoots {
 		if validVolume(volRoot) {
 			// initialize existing volume
-			vol, err := loadVolume(volRoot)
+			vol, err := loadVolume(volRoot,fp)
 			if err != nil {
 				return nil, err
 			}
@@ -77,7 +78,7 @@ func NewDataServer(volRoots []string,
 		if err != nil {
 			return nil, err
 		}
-		vol, err := formatVolume(path, maggiefs.VolumeInfo{volId, dnInfo})
+		vol, err := formatVolume(path, maggiefs.VolumeInfo{volId, dnInfo},fp)
 		if err != nil {
 			return nil, err
 		}
