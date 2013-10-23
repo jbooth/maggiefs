@@ -125,7 +125,7 @@ func (rm *replicationManager) FsStat() (maggiefs.FsStat, error) {
 }
 
 // note, doesn't actually use suggestedDN just yet
-func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []maggiefs.VolumeStat, err error) {
+func (rm *replicationManager) volumesForNewBlock(suggestedDN *uint32) (volumes []maggiefs.VolumeStat, err error) {
 	rm.l.RLock()
 	defer rm.l.RUnlock()
 
@@ -135,11 +135,23 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []
 		sortedVolumes = append(sortedVolumes, v.stat)
 	}
 	sort.Sort(sortedVolumes)
-	added := uint32(0)
+	added := 0
 	addedDNs := make(map[uint32]bool)
 	ret := make([]maggiefs.VolumeStat, rm.replicationFactor)
+	if suggestedDN != nil {
+		// first add one from the suggested DN
+		for i := 0 ; i < len(sortedVolumes) ; i++ {
+			v := sortedVolumes[i]
+			if v.DnInfo.DnId == *suggestedDN {
+				// add it
+				ret[int(added)] = v
+				added++
+				addedDNs[v.DnInfo.DnId] = true
+			}
+		}
+	}
 	fmt.Printf("Picking %d volumes out of %d for replication\n",rm.replicationFactor,len(sortedVolumes))
-	for i := 0; i < len(sortedVolumes); i++ {
+	for i := added; i < len(sortedVolumes); i++ {
 		// check if this DN is in our added list
 		v := sortedVolumes[i]
 		fmt.Printf("Evaluating volume %+v\n",v)
@@ -151,11 +163,11 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *int32) (volumes []
 			added++
 			addedDNs[v.DnInfo.DnId] = true
 		}
-		if added == rm.replicationFactor {
+		if uint32(added) == rm.replicationFactor {
 			break
 		}
 	}
-	if added < rm.replicationFactor {
+	if added < int(rm.replicationFactor) {
 		fmt.Printf("Added (%d) < replicationFactor, added volumes: \n",added)
 		fmt.Printf("%+v\n%+v\n",ret,addedDNs)
 		return nil, fmt.Errorf("Not enough datanodes available for replication factor %d -- only nodes available were %+v", rm.replicationFactor, ret)

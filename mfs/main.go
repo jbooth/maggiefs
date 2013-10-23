@@ -260,7 +260,7 @@ func singlenode(args []string) (serv *integration.MultiService, err error) {
 	if err != nil {
 		return
 	}
-	maggieFuse,err := client.NewMaggieFuse(s.Leases,s.Names,s.Datas)
+	maggieFuse,err := client.NewMaggieFuse(s.Leases,s.Names,s.Datas,nil)
 	if err != nil {
 		return
 	}
