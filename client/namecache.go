@@ -162,6 +162,7 @@ func (nc *NameCache) SetInode(node *maggiefs.Inode) (err error) {
 		nc.invalidate(node.Inodeid)
 		return err
 	}
+	
 	err = nc.setInCache(node)
 	return err
 }
@@ -200,8 +201,8 @@ func (nc *NameCache) Unlink(parent uint64, name string) (err error) {
 }
 
 // add a block attached to this inode, returns new block
-func (nc *NameCache) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.Block, err error) {
-	block, err := nc.names.AddBlock(nodeid, length)
+func (nc *NameCache) AddBlock(nodeid uint64, length uint32, requestedDnId *uint32) (newBlock maggiefs.Block, err error) {
+	block, err := nc.names.AddBlock(nodeid, length, requestedDnId)
 	nc.invalidate(nodeid)
 	return block, err
 }

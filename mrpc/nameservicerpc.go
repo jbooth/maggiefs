@@ -119,6 +119,7 @@ func (s *NameServiceService) Unlink(request *NameServiceUnlinkRequest, response 
 type NameServiceAddBlockRequest struct {
 	Nodeid uint64
 	Length uint32
+	RequestedDnId *uint32
 }
 
 type NameServiceAddBlockResponse struct {
@@ -126,7 +127,7 @@ type NameServiceAddBlockResponse struct {
 }
 
 func (s *NameServiceService) AddBlock(request *NameServiceAddBlockRequest, response *NameServiceAddBlockResponse) (err error) {
-	response.NewBlock, err = s.impl.AddBlock(request.Nodeid, request.Length)
+	response.NewBlock, err = s.impl.AddBlock(request.Nodeid, request.Length, request.RequestedDnId)
 	return
 }
 
@@ -225,8 +226,8 @@ func (_c *NameServiceClient) Unlink(parent uint64, name string) (err error) {
 	return err
 }
 
-func (_c *NameServiceClient) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.Block, err error) {
-	_request := &NameServiceAddBlockRequest{nodeid, length}
+func (_c *NameServiceClient) AddBlock(nodeid uint64, length uint32, requestedDnId *uint32) (newBlock maggiefs.Block, err error) {
+	_request := &NameServiceAddBlockRequest{nodeid, length, requestedDnId}
 	_response := &NameServiceAddBlockResponse{}
 	err = _c.client.Call(_c.service+".AddBlock", _request, _response)
 	fmt.Printf(" %+v\n", _response)

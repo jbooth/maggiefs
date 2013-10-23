@@ -10,14 +10,15 @@ type InodeWriter struct {
 	leases  maggiefs.LeaseService
 	names   maggiefs.NameService
 	datas   maggiefs.DataService
+	localDnId *uint32
 }
 
-func NewInodeWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService) (w *InodeWriter, err error) {
+func NewInodeWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, localDnId *uint32) (w *InodeWriter, err error) {
 	if err != nil {
 		return nil, err
 	}
 
-	return &InodeWriter{inodeid, leases, names, datas}, nil
+	return &InodeWriter{inodeid, leases, names, datas, localDnId}, nil
 }
 
 // calls out to name service to truncate this file by repeatedly shrinking blocks
@@ -120,7 +121,7 @@ func (w *InodeWriter) addBlocksForFileWrite(inode *maggiefs.Inode, off uint64, l
 			if newBlockLength > BLOCKLENGTH {
 				newBlockLength = BLOCKLENGTH
 			}
-			newBlock, err := w.names.AddBlock(inode.Inodeid, uint32(newBlockLength))
+			newBlock, err := w.names.AddBlock(inode.Inodeid, uint32(newBlockLength), w.localDnId)
 			if err != nil {
 				return err
 			}

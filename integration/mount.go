@@ -7,22 +7,23 @@ import (
 )
 
 type Mount struct {
-	Ms         *fuse.MountState
+	Mnt         *fuse.Server
 	MountPoint string
 	closed bool
 	closeCnd *sync.Cond
 }
 
 func NewMount(mfs fuse.RawFileSystem, mountPoint string, debug bool) (*Mount, error) {
-	mountState := fuse.NewMountState(mfs)
-
-	mountState.Debug = debug
 	opts := &fuse.MountOptions{
 		MaxBackground: 12,
-		//Options: []string {"ac_attr_timeout=0"},//,"attr_timeout=0","entry_timeout=0"},
+		MaxWrite: 128 * 1024,
 	}
-	err := mountState.Mount(mountPoint, opts)
-	return &Mount{mountState, mountPoint, false, sync.NewCond(new(sync.Mutex))}, err
+	mnt,err := fuse.NewServer(mfs,mountPoint,opts)
+	if err != nil {
+		return nil,err
+	}
+	mnt.SetDebug(debug)
+	return &Mount{mnt, mountPoint, false, sync.NewCond(new(sync.Mutex))}, err
 }
 
 func (m *Mount) Serve() error {
@@ -33,7 +34,7 @@ func (m *Mount) Serve() error {
 			m.Close()
 		}
 	}()
-	m.Ms.Loop()
+	m.Mnt.Serve()
 	return nil
 }
 
@@ -44,9 +45,9 @@ func (m *Mount) Close() error {
 			fmt.Printf("run time panic: %v\n", x)
 		}
 	}()
-	err := m.Ms.Unmount()
+	err := m.Mnt.Unmount()
 	for err != nil {
-		err = m.Ms.Unmount()
+		err = m.Mnt.Unmount()
 	}
 	m.closed = true
 	m.closeCnd.Broadcast()

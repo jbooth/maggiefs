@@ -33,7 +33,7 @@ func TestAddBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	ino.Inodeid = id
-	newBlock, err := testCluster.Names.AddBlock(ino.Inodeid, 1024)
+	newBlock, err := testCluster.Names.AddBlock(ino.Inodeid, 1024, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

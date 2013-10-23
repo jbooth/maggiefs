@@ -42,7 +42,11 @@ func NewPeer(cfg *conf.PeerConfig, debug bool) (*Peer, error) {
 		if err != nil {
 			return ret,err
 		}
-		fuseConnector,err := client.NewMaggieFuse(cl.Leases,cl.Names,cl.Datas)
+		dnStat,err := ret.Datanode.HeartBeat()
+		if err != nil {
+			return ret,err
+		}
+		fuseConnector,err := client.NewMaggieFuse(cl.Leases,cl.Names,cl.Datas, &dnStat.DnId)
 		if err != nil {
 			return ret,err
 		}	

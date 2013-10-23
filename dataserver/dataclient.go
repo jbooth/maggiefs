@@ -8,6 +8,9 @@ import (
 	"sync"
 )
 
+// compile-time check for type safety
+var typeCheck maggiefs.DataService = &DataClient{}
+
 type DataClient struct {
 	names   maggiefs.NameService
 	volMap  map[uint32]*net.TCPAddr
@@ -18,11 +21,6 @@ type DataClient struct {
 func NewDataClient(names maggiefs.NameService, connsPerDn int) (*DataClient, error) {
 	return &DataClient{names, make(map[uint32]*net.TCPAddr), &sync.RWMutex{}, newConnPool(connsPerDn, true)}, nil
 }
-
-var (
-	// compile-time check for type safety
-	checkClnt maggiefs.DataService = &DataClient{}
-)
 
 func pickVol(vols []uint32) uint32 {
 	return vols[rand.Int()%len(vols)]

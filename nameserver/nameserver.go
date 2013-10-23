@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 )
+// compile time typecheck
+var typeCheck maggiefs.NameService = &NameServer{}
 
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
 // addresses should be a 0.0.0.0:9999 type address
@@ -248,7 +250,7 @@ func (ns *NameServer) StatFs() (stat maggiefs.FsStat, err error) {
 	return ns.rm.FsStat()
 }
 
-func (ns *NameServer) AddBlock(nodeid uint64, length uint32) (newBlock maggiefs.Block, err error) {
+func (ns *NameServer) AddBlock(nodeid uint64, length uint32, requestedDnId *uint32) (newBlock maggiefs.Block, err error) {
 	i, err := ns.nd.GetInode(nodeid)
 	if err != nil {
 		return maggiefs.Block{}, nil

@@ -19,7 +19,7 @@ func TestWriteRead(t *testing.T) {
 	}
 	ino.Inodeid = id
 
-	writer, err := client.NewInodeWriter(ino.Inodeid, testCluster.Leases, testCluster.Names, testCluster.Datas)
+	writer, err := client.NewInodeWriter(ino.Inodeid, testCluster.Leases, testCluster.Names, testCluster.Datas,nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestWriteRead2(t *testing.T) {
 		t.Fatal(err)
 	}
 	ino.Inodeid = id
-	writer, err := client.NewInodeWriter(ino.Inodeid, testCluster.Leases, testCluster.Names, testCluster.Datas)
+	writer, err := client.NewInodeWriter(ino.Inodeid, testCluster.Leases, testCluster.Names, testCluster.Datas,nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestShortRead(t *testing.T) {
 	}
 	ino.Inodeid = id
 
-	writer, err := client.NewInodeWriter(ino.Inodeid, testCluster.Leases, testCluster.Names, testCluster.Datas)
+	writer, err := client.NewInodeWriter(ino.Inodeid, testCluster.Leases, testCluster.Names, testCluster.Datas,nil)
 	if err != nil {
 		t.Fatal(err)
 	}

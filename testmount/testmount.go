@@ -30,7 +30,9 @@ func main() {
 	}()
 	err := shortFileTest()
 	if err != nil {
-		panic(err)
+		fmt.Println("FAIL")
+		fmt.Println(err)
+		os.Exit(1)
 	}
 	fmt.Println("Passed!")
 }
@@ -40,10 +42,12 @@ func setup() {
 	var err error
 	testCluster, err = integration.NewSingleNodeCluster(4, 2, 3, "/tmp/testcluster")
 	if err != nil {
-		panic(err)
+		fmt.Println("failed to set up")
+		fmt.Println(err)
+		os.Exit(1)
 	}
 	// set up mountpoint
-	maggieFuse, err := client.NewMaggieFuse(testCluster.Leases, testCluster.Names, testCluster.Datas)
+	maggieFuse, err := client.NewMaggieFuse(testCluster.Leases, testCluster.Names, testCluster.Datas,nil)
 	if err != nil {
 		return
 	}
@@ -91,7 +95,7 @@ func shortFileTest() error {
 		return err
 	}
 	if fstat.Size() != 2 {
-		return fmt.Errorf("Wrong file size!")
+		return fmt.Errorf("Wrong file size! Expected 2, got %d",fstat.Size())
 	}
 	_,err = f.Seek(0,0)
 	if err != nil {
