@@ -163,7 +163,7 @@ func main() {
 
 	// spin off signal handler
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGTERM, syscall.SIGPIPE, syscall.SIGHUP)
+	signal.Notify(sig, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGPIPE, syscall.SIGHUP)
 	go func() {
 		s := <-sig
 		if s == syscall.SIGPIPE {
