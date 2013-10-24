@@ -3,6 +3,7 @@ package client
 import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"time"
+	//"fmt"
 )
 
 type InodeWriter struct {
@@ -36,6 +37,7 @@ func (w *InodeWriter) Truncate(length uint64) error {
 func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (written uint32, err error) {
 	// pick up lease
 	// TODO we could release this earlier and get better throughput, need a way to guarantee atomicity though
+	//fmt.Printf("Acquiring writelease for write at off %d length %d",off,length)
 	lease, err := w.leases.WriteLease(w.inodeid)
 	defer lease.Release()
 	if err != nil {
@@ -88,18 +90,19 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (written uint
 			//			fmt.Printf("Wrote %d, nWritten total %d", writeLength, nWritten)
 		}
 	}
+	//fmt.Printf("Returning from write, nWritten %d",nWritten)
 	return uint32(nWritten), err
 }
 
 // acquires lease, then adds the blocks to the namenode,
 // patching up the referenced inode to match
 func (w *InodeWriter) addBlocksForFileWrite(inode *maggiefs.Inode, off uint64, length uint32) error {
-	//	fmt.Printf("Adding/extending blocks for write at off %d length %d\n", off, length)
+	//fmt.Printf("Adding/extending blocks for write at off %d length %d\n", off, length)
 	newEndPos := off + uint64(length)
 	if newEndPos > inode.Length {
 		// if we have a last block and it's less than max length,
 		// extend last block to max block length first
-		//		fmt.Printf("Adding/extending blocks for file write to inode %+v\n", inode)
+		//fmt.Printf("Adding/extending blocks for file write to inode %+v\n", inode)
 		if inode.Blocks != nil && len(inode.Blocks) > 0 {
 			idx := int(len(inode.Blocks) - 1)
 			lastBlock := inode.Blocks[idx]
@@ -107,16 +110,22 @@ func (w *InodeWriter) addBlocksForFileWrite(inode *maggiefs.Inode, off uint64, l
 				extendLength := BLOCKLENGTH - lastBlock.Length()
 				if lastBlock.EndPos+extendLength > off+uint64(length) {
 					// only extend as much as we need to
-					extendLength = off + uint64(length) - lastBlock.EndPos
+					extendLength = off + uint64(length-1) - lastBlock.EndPos
 				}
 				lastBlock.EndPos = lastBlock.EndPos + extendLength
 				inode.Blocks[idx] = lastBlock
 				inode.Length += extendLength
+				//fmt.Printf("Extended block %v on inode %v\n",lastBlock,inode)
 			}
 		}
 		// and add new blocks as necessary
 		for newEndPos > inode.Length {
-			//			fmt.Printf("New end pos %d still greater than inode length %d\n", newEndPos, inode.Length)
+			// write prev block to stay consistent
+			err := w.names.SetInode(inode)
+			if err != nil {
+				return err
+			}
+			//fmt.Printf("New end pos %d still greater than inode length %d\n", newEndPos, inode.Length)
 			newBlockLength := newEndPos - inode.Length
 			if newBlockLength > BLOCKLENGTH {
 				newBlockLength = BLOCKLENGTH
@@ -127,6 +136,7 @@ func (w *InodeWriter) addBlocksForFileWrite(inode *maggiefs.Inode, off uint64, l
 			}
 			inode.Blocks = append(inode.Blocks, newBlock)
 			inode.Length += newBlockLength
+			//fmt.Printf("Added new block %v to inode %v",newBlock,inode)
 		}
 	}
 	inode.Mtime = time.Now().Unix()

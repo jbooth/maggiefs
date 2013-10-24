@@ -154,7 +154,7 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *uint32) (volumes [
 	for i := added; i < len(sortedVolumes); i++ {
 		// check if this DN is in our added list
 		v := sortedVolumes[i]
-		fmt.Printf("Evaluating volume %+v\n",v)
+		//fmt.Printf("Evaluating volume %+v\n",v)
 		if _, alreadyAdded := addedDNs[v.DnInfo.DnId]; alreadyAdded {
 			// continue
 		} else {

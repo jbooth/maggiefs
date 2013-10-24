@@ -17,7 +17,7 @@ var (
 	testCluster  *integration.SingleNodeCluster
 	mount        *integration.Mount
 	svcHandle    *integration.MultiService
-	mountPoint   string     = "/tmp/mfsTestMount2"
+	mountPoint   string     = "/tmp/mfsTestMount"
 	serviceError chan error = make(chan error, 1)
 )
 
@@ -43,13 +43,13 @@ func main() {
 	if err != nil {
 		fmt.Println("FAIL shortFileTest")
 		fmt.Println(err)
-		os.Exit(1)
+		return
 	}
 	err = longFileTest()
 	if err != nil {
 		fmt.Println("FAIL longFileTest")
 		fmt.Println(err)
-		os.Exit(1)
+		return
 	}
 	fmt.Println("Passed!")
 }
@@ -148,6 +148,14 @@ func longFileTest() error {
 			return err
 		}
 		fSize += int64(len(randBytes))
+		// check size at each step
+		fstat, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		if fstat.Size() != fSize {
+			return fmt.Errorf("Wrong file size! expected %d got %d", fSize, fstat.Size())
+		}
 	}
 	// add another 1337 for odd number to test block boundaries
 	_, err = f.Write(randBytes[:1337])
@@ -155,13 +163,13 @@ func longFileTest() error {
 		return err
 	}
 	fSize += 1337
-	// assert length
+	// assert length after last write
 	fstat, err := f.Stat()
 	if err != nil {
 		return err
 	}
 	if fstat.Size() != fSize {
-		return fmt.Errorf("Wrong file size!")
+		return fmt.Errorf("Wrong file size! expected %d got %d", fSize, fstat.Size())
 	}
 	_, err = f.Seek(0, 0)
 	if err != nil {
@@ -178,6 +186,7 @@ func longFileTest() error {
 		}
 	}
 	// last 1337
+	_, _ = f.Seek(0, 0)
 	_, err = f.Read(readBytes[:1337])
 	if err != nil {
 		return err

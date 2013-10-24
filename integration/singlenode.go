@@ -153,6 +153,6 @@ func NewConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir st
 		}
 		volRoots[i] = dnRoots
 	}
-	nnc, dsc := NewConfSet(volRoots, nameBase, "0.0.0.0", 11001, replicationFactor, true)
+	nnc, dsc := NewConfSet(volRoots, nameBase, "0.0.0.0", 13001, replicationFactor, true)
 	return nnc, dsc, nil
 }
