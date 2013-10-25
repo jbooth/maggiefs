@@ -230,12 +230,13 @@ func (ns *NameServer) doUnlink(parent uint64, name string) (err error) {
 // invoked as a goroutine typically,
 func (ns *NameServer) del(inodeid uint64) {
 	// wait until no clients have this file open (posix convention)
-	err := ns.ls.WaitAllReleased(inodeid)
-	if err != nil {
-		fmt.Printf("error waiting all released for node %d : %s\n", inodeid, err.Error())
-	}
+	// don't bother with this for now, screw posix
+//	err := ns.ls.WaitAllReleased(inodeid)
+//	if err != nil {
+//		fmt.Printf("error waiting all released for node %d : %s\n", inodeid, err.Error())
+//	}
 	// truncating to 0 bytes will remove all blocks
-	err = ns.Truncate(inodeid, 0)
+	err := ns.Truncate(inodeid, 0)
 	if err != nil {
 		fmt.Printf("error truncating node %d : %s\n", inodeid, err.Error())
 	}

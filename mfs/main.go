@@ -6,7 +6,6 @@ import (
 	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/integration"
 	"github.com/jbooth/maggiefs/mrpc"
-	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/nameserver"
 	"log"
 	"os"
@@ -163,7 +162,7 @@ func main() {
 
 	// spin off signal handler
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGPIPE, syscall.SIGHUP)
+	signal.Notify(sig, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGPIPE, syscall.SIGHUP)
 	go func() {
 		s := <-sig
 		if s == syscall.SIGPIPE {
@@ -235,7 +234,7 @@ func runMaster(args []string) (s mrpc.Service, err error) {
 	return
 }
 
-func singlenode(args []string) (serv *integration.MultiService, err error) {
+func singlenode(args []string) (s *integration.SingleNodeCluster, err error) {
 	numDNs, err := strconv.Atoi(args[0])
 	if err != nil {
 		return
@@ -250,25 +249,7 @@ func singlenode(args []string) (serv *integration.MultiService, err error) {
 	}
 	baseDir := args[3]
 	mountPoint := args[4]
-	serv = integration.NewMultiService()
-
-	s, err := integration.NewSingleNodeCluster(numDNs,volsPerDn,uint32(replicationFactor),baseDir)
-	if err != nil {
-		return
-	}
-	err = serv.AddService(s)
-	if err != nil {
-		return
-	}
-	maggieFuse,err := client.NewMaggieFuse(s.Leases,s.Names,s.Datas,nil)
-	if err != nil {
-		return
-	}
-	mount,err := integration.NewMount(maggieFuse,mountPoint,debug)
-	if err != nil {
-		return
-	}
-	err = serv.AddService(mount)
+	s, err = integration.NewSingleNodeCluster(numDNs,volsPerDn,uint32(replicationFactor),baseDir, mountPoint,debug)
 	return
 }
 

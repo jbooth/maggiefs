@@ -6,7 +6,6 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
 	"net"
-	"net/http"
 	"sync"
 )
 
@@ -20,9 +19,6 @@ type DataServer struct {
 	// accepts conn from namenode
 	nameDataIface *mrpc.CloseableServer
 	nameDataAddr string
-	// webserver for local requests
-	webListen net.Listener
-	webServer   *http.Server
 	// dataservice for pipelining writes
 	dc *DataClient
 	// locks to manage shutdown
@@ -95,13 +91,7 @@ func NewDataServer(volRoots []string,
 	if err != nil {
 		return nil, err
 	}
-	ds = &DataServer{ns, dnInfo, volumes, dataClientListen, nil, nameDataBindAddr, nil, nil, dc, sync.NewCond(new(sync.Mutex)),false}
-	fmt.Printf("Peer web server listening on %s\n",webBindAddr)
-	ds.webListen, err = net.Listen("tcp", webBindAddr)
-	if err != nil {
-		return nil, err
-	}
-	ds.webServer = newDataWebServer(ds, webBindAddr)
+	ds = &DataServer{ns, dnInfo, volumes, dataClientListen, nil, nameDataBindAddr, dc, sync.NewCond(new(sync.Mutex)),false}
 
 
 	ds.nameDataIface, err = mrpc.CloseableRPC(nameDataBindAddr, mrpc.NewNameDataIfaceService(ds), "NameDataIface")
@@ -132,19 +122,7 @@ func (ds *DataServer) Serve() error {
 		}()
 		errChan <- ds.serveClientData()
 	}()
-	
-	
-
-	go func() {
-		defer func() {
-			if x := recover(); x != nil {
-				fmt.Printf("run time panic from nameserver web: %v\n", x)
-				errChan <- fmt.Errorf("Run time panic: %v", x)
-			}
-		}()
-		errChan <- ds.webServer.Serve(ds.webListen)
-	}()
-	
+	// tell namenode we're joining cluster
 	err := ds.ns.Join(ds.info.DnId, ds.nameDataAddr)
 	if err != nil {
 		ds.Close()
@@ -160,7 +138,6 @@ func (ds *DataServer) Close() error {
 	if ds.closed { 
 		return nil
 	}
-	ds.webListen.Close()
 	ds.nameDataIface.Close()
 	ds.dataIface.Close()
 	for _, v := range ds.volumes {
@@ -178,11 +155,6 @@ func (ds *DataServer) WaitClosed() error {
 	}
 	ds.clos.L.Unlock()
 	return ds.nameDataIface.WaitClosed()
-}
-
-
-func (ds *DataServer) HttpAddr() string {
-	return ds.webServer.Addr
 }
 
 func (ds *DataServer) serveClientData() error {

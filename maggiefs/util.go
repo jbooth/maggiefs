@@ -38,7 +38,7 @@ func CopyInode(i *Inode) *Inode {
 
 func ResolveInode(path string, ns NameService) (*Inode,error) {
 	if filepath.IsAbs(path) {
-		return nil,fmt.Errorf("Path %s is absolute! Must be relative to mountpoint!")
+		return nil,fmt.Errorf("Path %s is absolute! Must be relative to mountpoint!",path)
 	}
 	pathComponents := filepath.SplitList(path)
 	inodeId := uint64(ROOT_INO)

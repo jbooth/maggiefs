@@ -7,14 +7,14 @@ import (
 	"github.com/jbooth/maggiefs/dataserver"
 	"github.com/jbooth/maggiefs/leaseserver"
 	"github.com/jbooth/maggiefs/maggiefs"
-	"github.com/jbooth/maggiefs/nameserver"
 	"github.com/jbooth/maggiefs/mrpc"
+	"github.com/jbooth/maggiefs/nameserver"
+	"github.com/jbooth/maggiefs/client"
 	"os"
 )
 
 // compile time check
 var singleClustCheck mrpc.Service = &SingleNodeCluster{}
-
 
 // Encapsulates a single node, minus mountpoint.  Used for testing.
 type SingleNodeCluster struct {
@@ -39,13 +39,15 @@ func (snc *SingleNodeCluster) WaitClosed() error {
 	return snc.svc.WaitClosed()
 }
 
+func (snc *SingleNodeCluster) HttpAddr() string {
+	return "localhost:1103"
+}
 
-// TODO refactor to use NewConfSet
-func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*SingleNodeCluster, error) {
+func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string, mountPoint string, debugMode bool) (*SingleNodeCluster, error) {
 	cl := &SingleNodeCluster{}
-	nncfg,ds,err := NewConfSet2(numDNs, volsPerDn, replicationFactor, baseDir)
+	nncfg, ds, err := NewConfSet2(numDNs, volsPerDn, replicationFactor, baseDir)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	nls, err := NewNameServer(nncfg, true)
 	if err != nil {
@@ -78,17 +80,43 @@ func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, b
 			return cl, err
 		}
 	}
+	// peer web server hardcoded to 1103
+	webServer, err := NewPeerWebServer(cl.Names, cl.Datas, mountPoint, "localhost:1103")
+	if err != nil {
+		return cl, err
+	}
+
 	// make service wrapper
 	multiServ := NewMultiService()
 	cl.svc = multiServ
 	multiServ.AddService(cl.LeaseServer)
 	multiServ.AddService(cl.NameServer)
-	for _,ds := range cl.DataNodes {
+	for _, ds := range cl.DataNodes {
 		multiServ.AddService(ds)
 	}
-	return cl, err
-}
 
+	err = multiServ.AddService(webServer)
+	if err != nil {
+		return cl, err
+	}
+
+	// create mountpoint if necessary
+	if mountPoint != "" {
+		maggieFuse, err := client.NewMaggieFuse(cl.Leases, cl.Names, cl.Datas, nil)
+		if err != nil {
+			return cl,err
+		}
+		mount, err := NewMount(maggieFuse, mountPoint, debugMode)
+		if err != nil {
+			return cl,err
+		}
+		err = multiServ.AddService(mount)
+		if err != nil {
+			return cl,err
+		}
+	}
+	return cl, nil
+}
 
 // used to bootstrap singlenode clusters
 func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*conf.MasterConfig, []*conf.PeerConfig) {
@@ -153,6 +181,6 @@ func NewConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir st
 		}
 		volRoots[i] = dnRoots
 	}
-	nnc, dsc := NewConfSet(volRoots, nameBase, "0.0.0.0", 13001, replicationFactor, true)
+	nnc, dsc := NewConfSet(volRoots, nameBase, "0.0.0.0", 11001, replicationFactor, true)
 	return nnc, dsc, nil
 }

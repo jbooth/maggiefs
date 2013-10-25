@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"fmt"
-	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/integration"
 	"os"
 	"os/signal"
@@ -15,8 +14,6 @@ import (
 
 var (
 	testCluster  *integration.SingleNodeCluster
-	mount        *integration.Mount
-	svcHandle    *integration.MultiService
 	mountPoint   string     = "/tmp/mfsTestMount"
 	serviceError chan error = make(chan error, 1)
 )
@@ -57,35 +54,22 @@ func setup() {
 	// set up cluster
 	os.RemoveAll("/tmp/testcluster")
 	var err error
-	testCluster, err = integration.NewSingleNodeCluster(4, 2, 3, "/tmp/testcluster")
+	os.RemoveAll(mountPoint)
+	os.MkdirAll(mountPoint, 0777)
+	testCluster, err = integration.NewSingleNodeCluster(4, 2, 3, "/tmp/testcluster", "/tmp/mfsTestMount",true)
 	if err != nil {
 		fmt.Println("failed to set up")
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	// set up mountpoint
-	maggieFuse, err := client.NewMaggieFuse(testCluster.Leases, testCluster.Names, testCluster.Datas, nil)
-	if err != nil {
-		return
-	}
-	os.RemoveAll(mountPoint)
-	os.MkdirAll(mountPoint, 0777)
-	mount, err = integration.NewMount(maggieFuse, mountPoint, true)
-	if err != nil {
-		return
-	}
-	svcHandle = integration.NewMultiService()
-	svcHandle.AddService(testCluster)
-	svcHandle.AddService(mount)
-	// spin off service function
 	go func() {
-		serviceError <- svcHandle.Serve()
+		serviceError <- testCluster.Serve()
 	}()
 }
 
 func teardown() {
-	svcHandle.Close()
-	svcHandle.WaitClosed()
+	testCluster.Close()
+	testCluster.WaitClosed()
 	os.RemoveAll("/tmp/testcluster")
 	os.RemoveAll(mountPoint)
 }

@@ -73,8 +73,8 @@ func TestAddBlock(t *testing.T) {
 			}
 
 		}
-		// check that each datanode can pull inode json
-		inoJsonAddr := fmt.Sprintf("http://%s/inode?inodeid=%d", testCluster.DataNodes[dnInfo.DnId - 1].HttpAddr(), ino.Inodeid)
+		// check that we can pull json from ino web server
+		inoJsonAddr := fmt.Sprintf("http://%s/inode?inodeid=%d", testCluster.HttpAddr(), ino.Inodeid)
 		fmt.Printf("Getting ino json from %s\n", inoJsonAddr)
 		response, err := http.Get(inoJsonAddr)
 		if err != nil {

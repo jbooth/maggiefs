@@ -132,7 +132,7 @@ func (nd *NameData) GetInode(inodeid uint64) (*maggiefs.Inode, error) {
 func (nd *NameData) SetInode(i *maggiefs.Inode) (err error) {
 	nd.inodeStripeLock[i.Inodeid%STRIPE_SIZE].Lock()
 	defer nd.inodeStripeLock[i.Inodeid%STRIPE_SIZE].Unlock()
-	//fmt.Printf("Nameserver setting inode %v\n",i)
+	//	fmt.Printf("Nameserver setting inode %v\n",i)
 	key := make([]byte, 8)
 	binary.LittleEndian.PutUint64(key, i.Inodeid)
 	// do the write and send OK

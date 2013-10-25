@@ -8,12 +8,14 @@ import (
 )
 
 // compile time check for mrpc.Service
-var peerTypeCheck mrpc.Service = &Peer{nil,nil,nil,nil}
+var peerTypeCheck mrpc.Service = &Peer{}
 
 type Peer struct {
+	Cfg 	 *conf.PeerConfig
 	Mfs      *client.MaggieFuse
 	Datanode *dataserver.DataServer
 	Mountpoint *Mount
+	Web  *PeerWebServer
 	svc mrpc.Service
 }
 
@@ -31,6 +33,10 @@ func (p *Peer) WaitClosed() error {
 	return p.svc.WaitClosed()
 }
 
+func (p *Peer) HttpAddr() string {
+	return p.Cfg.WebBindAddr
+}
+
 func NewPeer(cfg *conf.PeerConfig, debug bool) (*Peer, error) {
 		
 		cl,err :=  NewClient(cfg)
@@ -38,6 +44,7 @@ func NewPeer(cfg *conf.PeerConfig, debug bool) (*Peer, error) {
 			return nil,err
 		}
 		ret := &Peer{}
+		ret.Cfg = cfg
 		ret.Datanode, err = dataserver.NewDataServer(cfg.VolumeRoots, cfg.DataClientBindAddr, cfg.NameDataBindAddr, cfg.WebBindAddr, cl.Names, cl.Datas)
 		if err != nil {
 			return ret,err
@@ -56,6 +63,14 @@ func NewPeer(cfg *conf.PeerConfig, debug bool) (*Peer, error) {
 		multiServ := NewMultiService()
 
 		err = multiServ.AddService(ret.Datanode)
+		if err != nil {
+			return ret,err
+		}
+		ret.Web,err = NewPeerWebServer(cl.Names, cl.Datas, cfg.MountPoint, cfg.WebBindAddr)
+		if err != nil {
+			return ret,err
+		}
+		err = multiServ.AddService(ret.Web)
 		if err != nil {
 			return ret,err
 		}

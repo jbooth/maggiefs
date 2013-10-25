@@ -693,6 +693,7 @@ func (m *MaggieFuse) Read(input *fuse.ReadIn, buf []byte) (fuse.ReadResult, fuse
 
 func (m *MaggieFuse) Release(input *fuse.ReleaseIn) {
 	f := m.openFiles.get(input.Fh)
+	fmt.Printf("Closing file handle %d\n",input.Fh)
 	err := f.Close()
 	if err != nil {
 		m.log.Print("error closing file")

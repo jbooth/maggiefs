@@ -1,18 +1,42 @@
-package dataserver
+package integration
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"github.com/jbooth/maggiefs/mrpc"
 	"net/http"
 	"strconv"
 	"time"
+	"net"
+	"sync"
 )
 
-func newDataWebServer(ds *DataServer, addr string) *http.Server {
+var peerWebTypeCheck mrpc.Service = &PeerWebServer{}
+
+func NewPeerWebServer(ns maggiefs.NameService, dc maggiefs.DataService, mountPoint string, addr string) (*PeerWebServer,error) {
+	laddr,err := net.ResolveTCPAddr("tcp",addr)
+	if err != nil {
+		return nil,err
+	}
+	l,err := net.ListenTCP("tcp",laddr)
+	if err != nil {
+		return nil,err
+	}
+	ret := &PeerWebServer {
+		ns,
+		dc,
+		mountPoint,
+		l,
+		nil,
+		sync.NewCond(new(sync.Mutex)),
+		false,
+	}
 	myHandler := http.NewServeMux()
-	myHandler.HandleFunc("/inode", handle(ds.webInodeJson))
-	myHandler.HandleFunc("/blockLocations", handle(ds.getBlockLocations))
+	myHandler.HandleFunc("/inode", handle(ret.webInodeJson))
+	myHandler.HandleFunc("/blockLocations", handle(ret.getBlockLocations))
+	myHandler.HandleFunc("/mountPoint", handle(ret.getMountPoint))
+	
 	http := &http.Server{
 		Addr:           addr,
 		Handler:        myHandler,
@@ -20,9 +44,44 @@ func newDataWebServer(ds *DataServer, addr string) *http.Server {
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
-	return http
+	ret.http = http
+	return ret,nil
 }
 
+type PeerWebServer struct {
+	ns maggiefs.NameService
+	dc maggiefs.DataService
+	mountPoint string
+	l  *net.TCPListener
+	http *http.Server
+	clos *sync.Cond
+	closed bool
+}
+
+func (ws *PeerWebServer) Serve() error {
+	return ws.http.Serve(ws.l)
+}
+
+func (ws *PeerWebServer) Close() error {
+	ws.clos.L.Lock()
+	defer ws.clos.L.Unlock()
+	if ws.closed {
+		return nil
+	}
+	err := ws.l.Close()
+	ws.closed = true
+	ws.clos.Broadcast()
+	return err
+}
+
+func (ws *PeerWebServer) WaitClosed() error {
+	ws.clos.L.Lock()
+	for !ws.closed {
+		ws.clos.Wait()
+	}
+	ws.clos.L.Unlock()
+	return nil
+}
 // wraps a func taking nameserver to a standard http handler
 func handle(f func(w http.ResponseWriter, r *http.Request) error) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -36,12 +95,12 @@ func handle(f func(w http.ResponseWriter, r *http.Request) error) func(w http.Re
 
 // http methods
 // render inode as json
-func (ds *DataServer) webInodeJson(w http.ResponseWriter, r *http.Request) error {
+func (ws *PeerWebServer) webInodeJson(w http.ResponseWriter, r *http.Request) error {
 	inodeid, err := strconv.ParseUint(r.FormValue("inodeid"), 10, 64)
 	if err != nil {
 		return fmt.Errorf("webInodeJson: err parsing inode: %s", err.Error())
 	}
-	ino, err := ds.ns.GetInode(uint64(inodeid))
+	ino, err := ws.ns.GetInode(uint64(inodeid))
 	if err != nil {
 		return fmt.Errorf("webInodeJson: err getting inode id %d : %s", inodeid, err.Error())
 	}
@@ -54,8 +113,16 @@ func (ds *DataServer) webInodeJson(w http.ResponseWriter, r *http.Request) error
 	return err
 }
 
+
+// spit out our mountpoint for hadoop clients to delegate to
+func (ws *PeerWebServer) getMountPoint(w http.ResponseWriter, r *http.Request) error {
+	_, err := w.Write([]byte(ws.mountPoint))
+	return err
+}
+
+
 // given a relative path and offset into the file, get the locations for that offset
-func (ds *DataServer) getBlockLocations(w http.ResponseWriter, r *http.Request) error {
+func (ws *PeerWebServer) getBlockLocations(w http.ResponseWriter, r *http.Request) error {
 	filePath := r.FormValue("file")
 	start, err := strconv.ParseUint(r.FormValue("start"), 10, 64)
 	if err != nil {
@@ -66,7 +133,7 @@ func (ds *DataServer) getBlockLocations(w http.ResponseWriter, r *http.Request) 
 		return fmt.Errorf("getBlockLocations: err parsing length: %s", err.Error())
 	}
 	
-	ino, err := maggiefs.ResolveInode(filePath, ds.ns)
+	ino, err := maggiefs.ResolveInode(filePath, ws.ns)
 	if err != nil {
 		return err
 	}
@@ -84,7 +151,7 @@ func (ds *DataServer) getBlockLocations(w http.ResponseWriter, r *http.Request) 
 		item.TopologyPaths = make([]string,len(b.Volumes))
 		
 		for hostIdx,v := range b.Volumes {
-			addr,err := ds.dc.VolHost(v)
+			addr,err := ws.dc.VolHost(v)
 			if err != nil {
 				return err
 			}
