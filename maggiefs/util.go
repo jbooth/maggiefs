@@ -3,6 +3,7 @@ package maggiefs
 import (
 	"path/filepath"
 	"fmt"
+	"strings"
 )
 
 // deep copies an inode
@@ -40,9 +41,12 @@ func ResolveInode(path string, ns NameService) (*Inode,error) {
 	if filepath.IsAbs(path) {
 		return nil,fmt.Errorf("Path %s is absolute! Must be relative to mountpoint!",path)
 	}
-	pathComponents := filepath.SplitList(path)
+	pathComponents := strings.Split(path,"/")
 	inodeId := uint64(ROOT_INO)
 	for _,pathChunk := range pathComponents {
+		if pathChunk == "" {  // empty chunks from double slash
+			continue
+		}
 		ino,err := ns.GetInode(inodeId)
 		if err != nil {
 			return nil,err

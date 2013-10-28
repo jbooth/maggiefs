@@ -129,7 +129,7 @@ func main() {
 			usage(fmt.Errorf("Usage: format [NameHome]"))
 			return
 		}
-		fmt.Println("Formatting directory : ",args[0])
+		fmt.Println("Formatting directory : ", args[0])
 		err = nameserver.Format(args[0], uint32(os.Getuid()), uint32(os.Getgid()))
 		if err != nil {
 			usage(err)
@@ -145,8 +145,6 @@ func main() {
 
 	// this chan gets hit on error or signal
 	errChan := make(chan error)
-
-	
 
 	// spin off service
 	go func() {
@@ -164,12 +162,15 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGPIPE, syscall.SIGHUP)
 	go func() {
-		s := <-sig
-		if s == syscall.SIGPIPE {
-			errChan <- fmt.Errorf("SIGPIPE")
-		} else {
-			// silent quit for other signals
-			errChan <- nil
+		for {
+			s := <-sig
+			if s == syscall.SIGPIPE {
+				fmt.Println("Got sigpipe!")
+			} else {
+				// silent quit for other signals
+				errChan <- nil
+				return
+			}
 		}
 	}()
 
@@ -249,7 +250,7 @@ func singlenode(args []string) (s *integration.SingleNodeCluster, err error) {
 	}
 	baseDir := args[3]
 	mountPoint := args[4]
-	s, err = integration.NewSingleNodeCluster(numDNs,volsPerDn,uint32(replicationFactor),baseDir, mountPoint,debug)
+	s, err = integration.NewSingleNodeCluster(numDNs, volsPerDn, uint32(replicationFactor), baseDir, mountPoint, debug)
 	return
 }
 

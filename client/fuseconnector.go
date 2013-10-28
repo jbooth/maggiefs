@@ -693,7 +693,6 @@ func (m *MaggieFuse) Read(input *fuse.ReadIn, buf []byte) (fuse.ReadResult, fuse
 
 func (m *MaggieFuse) Release(input *fuse.ReleaseIn) {
 	f := m.openFiles.get(input.Fh)
-	fmt.Printf("Closing file handle %d\n",input.Fh)
 	err := f.Close()
 	if err != nil {
 		m.log.Print("error closing file")
@@ -750,12 +749,10 @@ func (d dentrylist) Less(i, j int) bool { return d[i].CreatedTime < d[j].Created
 
 func (m *MaggieFuse) ReadDir(input *fuse.ReadIn, l *fuse.DirEntryList) fuse.Status {
 	// read from map fd-> dirobject
-	fmt.Printf("Called ReadDir with offset %d", input.Offset)
 	dir, err := m.names.GetInode(input.InHeader.NodeId)
 	if err != nil {
-		return fuse.EROFS
+		return fuse.EINVAL
 	}
-	fmt.Printf("dir.children %+v", dir.Children)
 	// create sorted list
 	entryList := dentrylist(make([]dentryWithName, len(dir.Children), len(dir.Children)))
 
@@ -765,6 +762,7 @@ func (m *MaggieFuse) ReadDir(input *fuse.ReadIn, l *fuse.DirEntryList) fuse.Stat
 		i++
 	}
 	sort.Sort(entryList)
+	// fill until offset
 	for i := int(input.Offset); i < len(entryList); i++ {
 		inode, err := m.names.GetInode(entryList[i].Inodeid)
 		if err != nil {
@@ -775,8 +773,6 @@ func (m *MaggieFuse) ReadDir(input *fuse.ReadIn, l *fuse.DirEntryList) fuse.Stat
 			break
 		}
 	}
-	// fill until offset
-	fmt.Printf("Readdir returning %+v", l)
 	return fuse.OK
 }
 

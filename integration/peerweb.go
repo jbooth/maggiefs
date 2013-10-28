@@ -116,6 +116,7 @@ func (ws *PeerWebServer) webInodeJson(w http.ResponseWriter, r *http.Request) er
 
 // spit out our mountpoint for hadoop clients to delegate to
 func (ws *PeerWebServer) getMountPoint(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "text/plain")
 	_, err := w.Write([]byte(ws.mountPoint))
 	return err
 }
