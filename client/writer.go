@@ -108,7 +108,8 @@ func (w *InodeWriter) process() {
 				return
 			}
 			if op.data != nil {
-				_, err = w.doWrite(op.data, op.startPos, op.length)
+				_, err = w.doWrite(op.data[:int(op.length)], op.startPos, op.length)
+				maggiefs.ReturnBuff(op.data)
 			} else if op.doTrunc {
 				err = w.names.Truncate(w.inodeid,op.truncLength)
 			}
