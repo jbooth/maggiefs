@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"syscall"
+	"github.com/jbooth/maggiefs/maggiefs"
 )
 
 // wraps ReadWriteCloser with Stringer for debugging info
@@ -43,6 +44,7 @@ func SockEndpoint(c *net.TCPConn) (Endpoint) {
 	desc := fmt.Sprintf("Socket(nonblock): local %s to remote %s", c.LocalAddr(), c.RemoteAddr())
 	c.SetNoDelay(true)
 	c.SetReadBuffer(128 * 1024)
+	c.SetWriteBuffer(128*1024)
 	return &endpt{c, c, desc, true}
 }
 
@@ -51,6 +53,8 @@ func BlockingSockEndPoint(c *net.TCPConn) (Endpoint, error) {
 	err := c.SetNoDelay(true)
 	if err != nil { return nil,err }
 	err = c.SetReadBuffer(128 * 1024)
+	if err != nil { return nil,err }
+	err = c.SetWriteBuffer(128 * 1024)
 	if err != nil { return nil,err }
 	f, err := c.File()
 	defer c.Close()
@@ -71,30 +75,6 @@ func PipeEndpoints() (Endpoint, Endpoint) {
 	return left, right
 }
 
-var buffPool = make(chan []byte, 32)
-
-func getBuff() []byte {
-	var b []byte
-	select {
-	case b = <-buffPool:
-	// got one off pool
-	default:
-		// none free, so allocate
-		b = make([]byte, 1024*64)
-	}
-	return b
-}
-
-func returnBuff(b []byte) {
-	// return pipe
-	select {
-	case buffPool <- b:
-		// returned to pool
-	default:
-		// pool full, GC will handle
-	}
-}
-
 func Copy(dst io.Writer, src io.Reader, n int64) (int64, error) {
 	// If the writer has a ReadFrom method, use it to do the copy.
 	// Avoids an allocation and a copy.
@@ -106,8 +86,8 @@ func Copy(dst io.Writer, src io.Reader, n int64) (int64, error) {
 		return wt.WriteTo(dst)
 	}
 
-	buff := getBuff()
-	defer returnBuff(buff)
+	buff := maggiefs.GetBuff()
+	defer maggiefs.ReturnBuff(buff)
 	nWritten := int64(0)
 	for nWritten < n {
 		r, err := src.Read(buff)
