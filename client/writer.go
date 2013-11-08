@@ -15,10 +15,7 @@ type InodeWriter struct {
 	localDnId *uint32
 
 	// used to manage work queue
-	queueIn  chan *writeOp
-	queueOut chan *writeOp // 2 queues with goroutine in between for unbounded, ordered queue
-	l        maggiefs.WriteLease
-	inode    *maggiefs.Inode
+	workQueue chan *writeOp // 16 long for total of 2MB in flight at a time
 }
 
 type writeOp struct {
@@ -31,7 +28,7 @@ type writeOp struct {
 	doneChan    chan bool
 }
 
-func (w *writeOp) wait() {
+func (w *writeOp) 
 	<-w.doneChan
 }
 
@@ -40,119 +37,154 @@ func NewInodeWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs
 		return nil, err
 	}
 
-	ret := &InodeWriter{inodeid, leases, names, datas, localDnId, make(chan *writeOp),make(chan *writeOp),nil,nil}
-	go ret.bufferChans()
+	ret := &InodeWriter{inodeid, leases, names, datas, localDnId, make(chan *writeOp, 16), nil, nil}
 	go ret.process()
-	return ret,nil
-}
-
-func (w *InodeWriter) bufferChans() {
-	defer close(w.queueOut)
-
-	// pending events (this is the "infinite" part)
-	pending := []*writeOp{}
-	pendingAdded := 0
-recv:
-	for {
-		// Ensure that pending always has values so the select can
-		// multiplex between the receiver and sender properly
-		if len(pending) == 0 {
-			// realloc so we don't grow forever
-			if pendingAdded > 1024 {
-				pendingAdded = 0
-				pending = []*writeOp{}
-			}
-			// no work to do right now, send sync to let go of lease so others can process
-			w.queueOut <- &writeOp{nil, 0, 0, false, 0, true, nil}
-			// now wait for input
-			v, ok := <-w.queueIn
-			if !ok {
-				// in is closed, flush values
-				break
-			}
-
-			// We now have something to send
-			pending = append(pending, v)
-			pendingAdded++
-		}
-
-		select {
-		// Queue incoming values
-		case v, ok := <-w.queueIn:
-			if !ok {
-				// in is closed, flush values
-				break recv
-			}
-			pending = append(pending, v)
-			pendingAdded++
-		// Send queued values
-		case w.queueOut <- pending[0]:
-			pending = pending[1:]
-		}
-	}
-
-	// After in is closed, we may still have events to send
-	for _, v := range pending {
-		w.queueOut <- v
-	}
+	return ret, nil
 }
 
 func (w *InodeWriter) process() {
-	for op := range w.queueOut {
+	for {
+		// pull ops from the workqueue
+		op, ok := <-w.workQueue
+		if !ok {
+			// close 
+			return
+		}
 		var err error
-		if op.data != nil || op.doTrunc {
-			// need to ensure lease for these ops
-			err = w.ensureLease()
+		if op.doTrunc {
+
+		}
+		needLeaseForOp := false
+		// if we're appending, we need a lease
+		if op.data != nil {
+			inoForLenCheck,err :=  w.names.GetInode(w.inodeid)
 			if err != nil {
-				fmt.Printf("Goroutine couldn't acquire writeLease for inode %d, quitting..\n", w.inodeid)
-				return
+				fmt.Printf("Error getting ino %d : %s\n",w.inodeid,err)
 			}
+			if inoForLenCheck.Length < op.startPos + uint64(op.length) {
+				// appending to file so we are modifying inode structure
+				needLeaseForOp = true
+			}
+		}
+		if op.doTrunc {
+			// trunc needs lease becuase we're modifying inode structure
+			needLeaseForOp = true 
+		}
+		// if we're getting an expensive lease, we'll try to hold it and coalesce a few writes
+		if needLeaseForOp {
+			
+		} else {
+			// didn't need a lease for this op, so just handle without
 			if op.data != nil {
-				_, err = w.doWrite(op.data[:int(op.length)], op.startPos, op.length)
-				maggiefs.ReturnBuff(op.data)
-			} else if op.doTrunc {
-				err = w.names.Truncate(w.inodeid,op.truncLength)
+				
 			}
-		}
-		if op.doSync {
-			// only bother with sync if we actually hold lease
-			if w.l != nil {
-				err = w.dropLease()
-				if err != nil {
-					fmt.Printf("Goroutine couldn't commit changes for inode %+v, quitting..\n", w.inode)
-				}
-			}
-		}
-		if err != nil {
-			fmt.Printf("Error with op %+v, continuing..",op)
+			
 		}
 		if op.doneChan != nil {
 			// inform blocking ops that they're done
 			op.doneChan <- true
 		}
-	}
-}
-func (w *InodeWriter) ensureLease() error {
-	var err error
-	if w.l == nil {
-		w.l, err = w.leases.WriteLease(w.inodeid)
-		if err != nil {
-			return err
-		}
-		w.inode, err = w.names.GetInode(w.inodeid)
-	}
-	return err
+	} // endfor
 }
 
-func (w *InodeWriter) dropLease() error {
-	defer w.l.Release()
-	return w.names.SetInode(w.inode)
+// acquires lease, does firstOp, then does up to numExtra more operations while holding lease
+// this allows us to coalesce metadata updates and only sync to the cluster once
+func (w *InodeWriter) doOpsWithLease(firstOp *writeOp, numExtra int) (closeReceived bool, err error) {
+	// need to ensure lease for these ops
+			l,err := w.leases.WriteLease(w.inodeid)
+			if err != nil {
+				fmt.Printf("Writer for inode %d process() couldn't acquire writeLease, quitting..\n", w.inodeid)
+				return
+			}
+			// refresh local view of inode now that we have lease
+			inode,err := w.names.GetInode(w.inodeid)
+			if err != nil {
+				fmt.Printf("Error getting ino %d : %s\n",w.inodeid,err)
+				l.Release()
+				return
+			}
+			// do first op
+			doWriteOrTrunc(op)
+			
+			
+			
+			// we want to run up to 64 non-sync ops while holding the lease, or 8MB in between commits
+			
+			closeReceived := false // whether to shut down
+			var syncChan chan bool = nil // 
+			CONTINUATION_WRITE: for numWrites := 0 ; numWrites < numExtra ; numWrites++ {
+				select {
+					case myOp,ok := <- w.workQueue:
+						if !ok {
+							closeReceived = true
+							break CONTINUATION_WRITE
+						}
+						// check if this op also modifies inode, if so,
+						if myOp.data != nil || myOp.doTrunc {
+							err := doWriteOrTrunc(op)
+							if err != nil {
+								fmt.Printf("Error writing in continuation loop %s\n",err)
+								break CONTINUATION_WRITE
+							}
+						} 
+						// if it's a sync, we break out of the loop and sync up
+						if op.doSync {
+							syncChan = op.doneChan
+							break CONTINUATION_WRITE
+						}
+						if op.doClose {
+							// op close
+							syncChan = op.doneChan
+							closeReceived = true
+							break CONTINUATION_WRITE
+						}
+				    default: 
+				    	// no ops in pipe, bail and release lease so others can write
+				    	break CONTINUATION_WRITE
+				}
+			}
+			w.inode = nil
+			err = w.names.SetInode(w.inode)
+			if err != nil {
+					fmt.Printf("process() couldn't set inode %d after continuation write, quitting, err: %s..\n", w.inodeid,err)
+					l.Release()
+					return
+			}
+			err = l.Release()
+			if err != nil {
+					fmt.Printf("process() couldn't release lease for inode %d after continuation write, quitting, err: %s..\n", w.inodeid,err)
+					return
+			}
+			if closeReceived {
+				return
+			}
+			// end continuation write section
 }
+
+// assumes correct leases are held and does op using w.inode to store state
+// may commit changes to master if we added a block, however most of the time will not
+func (w *InodeWriter) doWriteOrTrunc(op *writeOp) error {
+	if op.doTrunc {
+		// commit
+		w.names.SetInode(w.inode)
+		// truncate
+		w.names.Truncate(i.inodeid,op.truncLength)
+		
+	}
+	if op.data != nil {
+	
+	}
+	return nil
+}
+
 
 // calls out to name service to truncate this file by repeatedly shrinking blocks
 func (w *InodeWriter) Truncate(length uint64) error {
 	// pick up lease
-	lease, err := w.leases.WriteLease(w.inodeid)
+	lease, err := w.leases.WritBROKENeLease(w.inodeid)
+	
+	// TODO wire this to workQueue
+	
 	defer lease.Release()
 	if err != nil {
 		return err
@@ -164,29 +196,31 @@ func (w *InodeWriter) Truncate(length uint64) error {
 func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uint32, err error) {
 	// get our copy of buffer
 	ourBuff := maggiefs.GetBuff()
-	copy(ourBuff,p[:int(length)])
+	copy(ourBuff, p[:int(length)])
 	op := &writeOp{ourBuff, 0, 0, false, 0, false, nil}
-	w.queueIn <- op
+	w.workQueue <- op
 	return length, nil
 }
 
 func (w *InodeWriter) Fsync() (err error) {
 	fsync := &writeOp{nil, 0, 0, false, 0, true, make(chan bool)}
-	w.queueIn <- fsync
-	<- fsync.doneChan
+	w.workQueue <- fsync
+	// don't return until done
+	<-fsync.doneChan
 	return nil
 }
 
-func (w *InodeWriter) Close() (err error) {	
+func (w *InodeWriter) Close() (err error) {
 	fsync := &writeOp{nil, 0, 0, false, 0, true, make(chan bool)}
-	w.queueIn <- fsync
-	<- fsync.doneChan
+	w.workQueue <- fsync
+	// don't return until done
+	<-fsync.doneChan
 	return nil
 }
 
-// assumes lease is held and w.inode is up to date -- may flush w.inode state to nameserver if we're adding a new block
-// but will not most of the time
-func (w *InodeWriter) doWrite(p []byte, off uint64, length uint32) (uint32, error) {
+// assumes lease is held and passed in inode is up to date -- may flush inode state to nameserver if we're adding a new block
+// but will not most of the time, will modify passed in inode instead
+func (w *InodeWriter) doWrite(ino *maggiefs.Inode, p []byte, off uint64, length uint32) (uint32, error) {
 	// check if we need to add blocks, note we support sparse files
 	// so it's ok to add blocks that won't be written to right away,
 	// on read they'll return 0 for all bytes in empty sections, and
