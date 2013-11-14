@@ -235,7 +235,7 @@ func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 	return v.fp.WithFile(path,op)
 }
 
-func (v *volume) serveRead(client Endpoint, req RequestHeader) (err error) {
+func (v *volume) serveRead(client Endpoint, req *RequestHeader) (err error) {
 	err = v.withFile(req.Blk.Id, func(file *os.File) error {
 		//		fmt.Printf("Serving read to file %s\n", file.Name())
 		// check off
@@ -284,7 +284,7 @@ func (v *volume) serveRead(client Endpoint, req RequestHeader) (err error) {
 	return err
 }
 
-func (v *volume) serveWrite(client Endpoint, req RequestHeader, datas *DataClient) error {
+func (v *volume) serveWrite(client Endpoint, req *RequestHeader, datas *DataClient) error {
 
 	// should we check block.Version here?  skipping for now
 	err := v.withFile(req.Blk.Id, func(file *os.File) error {

@@ -9,6 +9,8 @@ import (
 const (
 	OP_READ        = uint8(0)
 	OP_WRITE       = uint8(1)
+	OP_CONTINUATION_WRITE = uint8(2)
+	OP_COMMIT = uint8(3)
 	STAT_OK        = uint8(0)
 	STAT_ERR       = uint8(1)
 	STAT_NOBLOCK   = uint8(2)

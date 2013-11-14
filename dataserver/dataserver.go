@@ -172,7 +172,7 @@ func (ds *DataServer) serveClientData() error {
 func (ds *DataServer) serveClientConn(conn Endpoint) {
 	defer conn.Close()
 	for {
-		req := RequestHeader{}
+		req := &RequestHeader{}
 		_, err := req.ReadFrom(conn)
 		if err != nil {
 			fmt.Printf("Err serving conn %s : %s\n", conn.String(), err.Error())
