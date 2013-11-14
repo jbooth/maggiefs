@@ -3,7 +3,7 @@ package client
 import (
 	"bytes"
 	"fmt"
-	"github.com/jbooth/go-fuse/fuse"
+	"github.com/jbooth/maggiefs/fuse"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"io"
 	"log"
@@ -671,24 +671,17 @@ func (m *MaggieFuse) OpenDir(input *fuse.OpenIn, out *fuse.OpenOut) (status fuse
 	return fuse.OK
 }
 
-func (m *MaggieFuse) Read(input *fuse.ReadIn, buf []byte) (fuse.ReadResult, fuse.Status) {
+func (m *MaggieFuse) Read(input *fuse.ReadIn, *fuse.ReadPipe) (fuse.Status) {
 	reader := m.openFiles.get(input.Fh).r
-	nRead := uint32(0)
-	for nRead < input.Size {
-		n, err := reader.ReadAt(buf, input.Offset+uint64(nRead), nRead, input.Size-nRead)
-		nRead += n
-		if err != nil {
-			if err == io.EOF {
-				return fuse.ReadResultData(buf[0:int(nRead)]), fuse.OK
-			} else {
-				fmt.Printf("Error reading %s\n", err.Error())
-				return fuse.ReadResultData(buf), fuse.EROFS
-			}
+	// reader.ReadAt buffers our response header and bytes into the supplied pipe
+	err := reader.ReadAt(buf,input.Offset,input.Size)
+	if err != nil {
+		if err == io.EOF {
+			return fuse.EOF
 		}
-	}
-	// read from map fd -> file
-	//fmt.Printf("returning data %s\n", string(buf))
-	return fuse.ReadResultData(buf), fuse.OK
+		return fuse.EIO
+	} 
+	return fuse.OK
 }
 
 func (m *MaggieFuse) Release(input *fuse.ReleaseIn) {

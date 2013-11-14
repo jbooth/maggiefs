@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"github.com/jbooth/maggiefs/fuse"
 	"io"
 )
 
@@ -20,29 +21,34 @@ type Reader struct {
 	datas   maggiefs.DataService
 }
 
-func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32) (n uint32, err error) {
+func (r *Reader) ReadAt(p *fuse.ReadPipe, position uint64, length uint32) (err error) {
 	// have to re-get inode every time because it might have changed
 
 	inode, err := r.names.GetInode(r.inodeid)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	if position == inode.Length {
-		return 0, io.EOF
+		// write header for OK, 0 bytes at EOF
+		p.WriteHeader(0,0)
+		return nil
 	}
 	if position > inode.Length {
-		return 0, errors.New("Read past end of file")
+		return errors.New("Read past end of file")
+	}
+	if position+uint64(length) > inode.Length {
+		length = uint32(inode.Length - position)
 	}
 
 	// confirm currBlock and currReader correct
 	nRead := uint32(0)
 	for nRead < length {
 		if position == inode.Length {
-			return nRead, io.EOF
+			break
 		}
 		block, err := blockForPos(position, inode)
 		if err != nil {
-			return 0, err
+			return err
 		}
 		// read at most the bytes remaining in this block
 		// if we're being asked to read past end of block, we just return early
@@ -57,17 +63,16 @@ func (r *Reader) ReadAt(p []byte, position uint64, offset uint32, length uint32)
 		}
 		// read bytes
 		//fmt.Printf("reader.go reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
-		err = r.datas.Read(block, p[offset:], posInBlock, numBytesFromBlock)
+		err = r.datas.Read(block, p, posInBlock, numBytesFromBlock)
 		if err != nil && err != io.EOF {
-			return nRead, fmt.Errorf("reader.go error reading from block %+v : %s", block, err.Error())
+			return fmt.Errorf("reader.go error reading from block %+v : %s", block, err.Error())
 		}
 		nRead += numBytesFromBlock
 		position += uint64(numBytesFromBlock)
-		offset += numBytesFromBlock
 		//fmt.Printf("reader.go finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
 	}
 	// sometimes the length can be more bytes than there are in the file, so always just give that back
-	return length, nil
+	return nil
 }
 
 func blockForPos(position uint64, inode *maggiefs.Inode) (blk maggiefs.Block, err error) {

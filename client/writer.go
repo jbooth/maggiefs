@@ -28,10 +28,6 @@ type writeOp struct {
 	doneChan    chan bool
 }
 
-func (w *writeOp) 
-	<-w.doneChan
-}
-
 func NewInodeWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, localDnId *uint32) (w *InodeWriter, err error) {
 	if err != nil {
 		return nil, err

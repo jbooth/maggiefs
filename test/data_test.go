@@ -38,7 +38,10 @@ func TestWriteRead(t *testing.T) {
 	if n < uint32(len(bytes)) {
 		t.Fatal(fmt.Sprintf("Only wrote %d bytes out of %d", n, len(bytes)))
 	}
-
+	
+	err = writer.Fsync()
+	if err != nil { t.Fatal(err) }
+	
 	readBytes := make([]byte, 1024*1024*200)
 	r, err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
 	if err != nil {
@@ -87,7 +90,8 @@ func TestWriteRead2(t *testing.T) {
 			t.Fatal(fmt.Sprintf("Only wrote %d bytes out of %d", n, len(bytes)))
 		}
 	}
-
+	err = writer.Fsync()
+	if err != nil { t.Fatal(err) }
 	// then do that many reads across the file to confirm it's ok
 	readBytes := make([]byte, 65536)
 	reader, err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
@@ -141,6 +145,9 @@ func TestShortRead(t *testing.T) {
 		t.Fatal(fmt.Sprintf("Only wrote %d bytes out of %d", n, len(bytes)))
 	}
 
+	err = writer.Fsync()
+	if err != nil { t.Fatal(err) }
+	
 	readBytes := make([]byte, 4096)
 	r, err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
 	if err != nil {
