@@ -15,8 +15,8 @@ type DataService interface {
 	// write some bytes
 	// updates generation ID on datanodes before returning
 	// if generation id doesn't match prev generation id, we have an error
-	Write(blk Block, p []byte, pos uint64) (err error)
-}
+	WriteSession(blk Block) (writer BlockWriter, err error)
+} 
 
 // represents a stateful write session
 // this is an optimization over stateless writes because we can coalesce

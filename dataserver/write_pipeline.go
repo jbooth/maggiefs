@@ -4,8 +4,43 @@ import (
 	"sync"
 )
 
+
+type ClientPipeline struct {
+	server Endpoint
+	blk Block
+	l *sync.Cond
+	bytesInFlight int
+	maxBytesInFlight int
+	awaitingAck chan int // the number of bytes sent with each request awaiting an ack
+}
+
+func newClientPipeline(server Endpoint, blk Block,  maxBytesInFlight int) (*ClientPipeline,error) {
+	ret := &clientPipeline {
+		server,
+		blk,
+		sync.NewCond(new(sync.Mutex)),
+		0,
+		maxBytesInFlight,
+		make(chan int, int(maxBytesInFlight/131072)), // we try to send 128kb per write so allow that many requests outstanding
+		
+	}
+	
+	// send WRITE_START
+	// launch ack goroutine
+	return ret,nil
+}
+
+func (c *ClientPipeline) 	Write(p []byte, pos uint64) (err error) {
+	return nil
+}
+
+func (c *ClientPipeline) SyncAndClose() (err error) {
+	return nil
+}
+	
+
 // used by the server to manage a stateful write pipeline
-type writePipeline struct {
+type serverPipeline struct {
 	client Endpoint
 	nextInLine Endpoint
 	vol *volume
@@ -13,53 +48,8 @@ type writePipeline struct {
 	
 }
 
-func newWritePipeline(client Endpoint, nextInLine Endpoint, firstReq *RequestHeader
+func newServerPipeline(client Endpoint, nextInLine Endpoint, 
 
 
-type writePipelineClient struct {
-	remote Endpoint
-	
-}
-
-type semaphore struct {
-        permits int
-        avail   int
-        channel chan int
-        aMutex  *sync.Mutex
-        rMutex  *sync.Mutex
-}
-
-
-
-func newSem(permits int) *semaphore {
-        if permits < 1 {
-                panic("Invalid number of permits. Less than 1")
-        }
-        return &semaphore{
-                permits,
-                permits,
-                make(chan int, permits),
-                &sync.Mutex{},
-                &sync.Mutex{},
-        }
-}
-
-
-//Acquire one permit, if its not available the goroutine will block till its available
-func (s *semaphore) acquire() {
-        s.aMutex.Lock()
-        s.channel <- 1
-        s.avail--
-        s.aMutex.Unlock()
-}
-
-
-//Release one permit
-func (s *semaphore) release() {
-        s.rMutex.Lock()
-        <-s.channel
-        s.avail++
-        s.rMutex.Unlock()
-}
 
 
