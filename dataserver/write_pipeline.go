@@ -107,9 +107,50 @@ type serverPipeline struct {
 	nextInLine Endpoint
 	f *os.File
 	buff []byte
-	
+	ackRequired chan bool // channel representing the number of acks we need to receive, ack() reads from this
+	allAcksReceived chan bool // ack() sends to this exactly once when finished
 }
 
+func newServerPipeline(client Endpoint, nextInLine Endpoint, f *os.File, buff []byte) (*serverPipeline) {
+	return &serverPipeline{
+		client,
+		nextInLine,
+		f,
+		buff,
+		make(chan bool, 64),
+		make(chan bool),
+	}
+}
 
+// pulls requests from the client, 
+
+//  when we get a SYNC, we block and wait for all acks from nextInLine (if not null) and then return ourselves
+func (s *serverPipeline) run() {
+	PIPELINE: for {
+		// read header
+		
+		// read bytes
+		
+		// send to nextInLine, if appropriate
+		
+		// write to disk
+	}
+	
+	// fsync
+	
+	// wait till all acks received
+	<- s.allAcksReceived
+	// send our response
+}
+
+// runs in a loop processing acks from nextInLine and passing them back to client
+func (s *serverPipeline) ack() {
+	for _ := range s.ackRequired {
+		
+	}
+	
+	s.allAcksReceived <- true
+
+}
 
 
