@@ -5,11 +5,11 @@ import (
 	"os"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"fmt"
+	"io"
 )
 
 
 type ClientPipeline struct {
-	dc *DataClient
 	server Endpoint
 	blk maggiefs.Block
 	l *sync.Cond
@@ -18,11 +18,11 @@ type ClientPipeline struct {
 	awaitingAck chan int // the number of bytes sent with each request awaiting an ack
 	gotAllAcks chan bool // ack thread sends a single bool to this chan after receiving the last ack required
 	closed bool // whether we've already been closed
+	onDone func() // called after we're finished IFF there is no error condition, used to return server endpoint to pool
 }
 
-func newClientPipeline(dc *DataClient, server Endpoint, blk maggiefs.Block,  maxBytesInFlight int) (*ClientPipeline,error) {
+func newClientPipeline(server Endpoint, blk maggiefs.Block,  maxBytesInFlight int, onDone func()) (*ClientPipeline,error) {
 	ret := &ClientPipeline {
-		dc,
 		server,
 		blk,
 		sync.NewCond(new(sync.Mutex)),
@@ -31,11 +31,15 @@ func newClientPipeline(dc *DataClient, server Endpoint, blk maggiefs.Block,  max
 		make(chan int, int(maxBytesInFlight/131072)), // we try to send 128kb per write so allow that many requests outstanding
 		make(chan bool),
 		false,
+		onDone,
 	}
 	
-	// send WRITE_START
+	// send WRITE_START to set up pipeline
+	header := &RequestHeader{OP_START_WRITE, blk, 0, 0}
+	_,err := header.WriteTo(server)
 	// launch ack goroutine
-	return ret,nil
+	go ret.ReadAcks()
+	return ret,err
 }
 
 func (c *ClientPipeline) Write(p []byte, pos uint64) (err error) {
@@ -85,10 +89,12 @@ func (c *ClientPipeline) SyncAndClose() (err error) {
 
 func (c *ClientPipeline) ReadAcks() {
 	resp := &ResponseHeader{}
+	haveErr := false
 	for numBytesAck := range c.awaitingAck {
 		// read resp header
 		_, err := resp.ReadFrom(c.server)
 		if err != nil || resp.Stat != STAT_OK {
+			haveErr = true
 			fmt.Printf("Error code %d from DN while acking write, error: %s\n", resp.Stat,err)
 		}
 		c.l.L.Lock()
@@ -98,6 +104,13 @@ func (c *ClientPipeline) ReadAcks() {
 	}
 	// awaitingAck chan is closed and we've received all syncs so signal done chan
 	c.gotAllAcks <- true
+	
+	// if we got this far, return connection
+	if !haveErr {
+		c.onDone()
+	} else {
+		c.server.Close()
+	}
 }
 	
 
@@ -105,52 +118,101 @@ func (c *ClientPipeline) ReadAcks() {
 type serverPipeline struct {
 	client Endpoint
 	nextInLine Endpoint
+	remainingVolumes []uint32 // list of volumes with ourself removed, forwarded to rest of chain
 	f *os.File
 	buff []byte
 	ackRequired chan bool // channel representing the number of acks we need to receive, ack() reads from this
 	allAcksReceived chan bool // ack() sends to this exactly once when finished
 }
 
-func newServerPipeline(client Endpoint, nextInLine Endpoint, f *os.File, buff []byte) (*serverPipeline) {
+func newServerPipeline(client Endpoint, nextInLine Endpoint, remainingVolumes []uint32, f *os.File) (*serverPipeline) {
+	
 	return &serverPipeline{
 		client,
 		nextInLine,
+		remainingVolumes,
 		f,
-		buff,
+		maggiefs.GetBuff(),
 		make(chan bool, 64),
 		make(chan bool),
 	}
 }
 
 // pulls requests from the client, 
+// in this situation we just received OP_START_WRITE and should receive a series of OP_WRITE_BYTES followed by a single OP_COMMIT_WRITE 
+func (s *serverPipeline) run() error {
+	req := &RequestHeader{}
 
-//  when we get a SYNC, we block and wait for all acks from nextInLine (if not null) and then return ourselves
-func (s *serverPipeline) run() {
 	PIPELINE: for {
 		// read header
-		
+		_, err := req.ReadFrom(s.client)
+		if err != nil {
+			return fmt.Errorf("Err serving conn for pipelined write %s : %s\n", s.client.String(), err.Error())
+		}
+		// if this is a sync request, break the loop and sync
+		if req.Op == OP_COMMIT_WRITE {
+			break PIPELINE
+		}
+		// all writes shuold be 128kb max, subset our 128k buffer to size
+		myBuf := s.buff[:int(req.Length)]
 		// read bytes
-		
+		_,err = io.ReadFull(s.client,myBuf)
+		if err != nil {
+			return fmt.Errorf("Error reading from conn for pipelined write %s : %s\n",s.client.String(),err.Error())
+		}
 		// send to nextInLine, if appropriate
-		
+		if s.nextInLine != nil {
+			// forward header
+			req.Blk.Volumes = s.remainingVolumes
+			// TODO could optimize these into a single buffered write
+			_,err = req.WriteTo(s.nextInLine)
+			if err != nil {
+				return fmt.Errorf("Error writing header to nextInLine in pipelined write %s : %s",s.nextInLine.String(),err) 
+			}
+			
+			// forward bytes
+			_,err = s.nextInLine.Write(myBuf)
+			if err != nil {
+				return fmt.Errorf("Error writing to nextInLine in pipelined write %s : %s",s.nextInLine.String(),err) 
+			}
+		}
 		// write to disk
+		_,err = s.f.WriteAt(myBuf,int64(req.Pos))
+		if err != nil {
+			return fmt.Errorf("Error flushing bytes to disk in pipelined write : %s",err)
+		}
 	}
 	
 	// fsync
-	
+	s.f.Sync()	
 	// wait till all acks received
+	close(s.ackRequired)
 	<- s.allAcksReceived
-	// send our response
+	return nil
 }
 
 // runs in a loop processing acks from nextInLine and passing them back to client
-func (s *serverPipeline) ack() {
-	for _ := range s.ackRequired {
-		
+func (s *serverPipeline) ack() error {
+	resp := &ResponseHeader{}
+	// we'll get an entry in ackRequired for every write we send
+	for _ = range s.ackRequired {
+		// pull ack from socket
+		_, err := resp.ReadFrom(s.nextInLine)
+		if resp.Stat != STAT_OK {
+			return fmt.Errorf("Error code %d from remote DN on ack", resp.Stat)
+		}
+		if err != nil {
+			return fmt.Errorf("Network error receiving ack from pipelined write: %s",err)
+		}
+		// forward to our client
+		_,err = resp.WriteTo(s.client)
+		if err != nil {
+			return fmt.Errorf("Network error forwarding ack back to client from pipelined write: %s",err)
+		}
 	}
-	
+	// ackRequired is closed, shut it down
 	s.allAcksReceived <- true
-
+	return nil
 }
 
 

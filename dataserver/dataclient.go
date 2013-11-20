@@ -27,7 +27,7 @@ func pickVol(vols []uint32) uint32 {
 }
 
 // get hostname for a volume
-func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr,error) {
+func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr, error) {
 	dc.volLock.RLock()
 	raddr, exists := dc.volMap[volId]
 	dc.volLock.RUnlock()
@@ -38,14 +38,16 @@ func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr,error) {
 		raddr, exists = dc.volMap[volId]
 		dc.volLock.RUnlock()
 		if !exists {
-			return nil,fmt.Errorf("No dn for vol id %d", volId)
+			return nil, fmt.Errorf("No dn for vol id %d", volId)
 		}
 	}
-	return raddr,nil
+	return raddr, nil
 }
 
 // read some bytes
-func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint32) (err error) {
+func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) (err error) {
+	//BROKEN NEED TO HANDLE LOCAL DN CASE
+
 	return dc.withConn(pickVol(blk.Volumes), func(d Endpoint) error {
 		// send req
 		header := RequestHeader{OP_READ, blk, pos, length}
@@ -64,13 +66,20 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 		if resp.Stat == STAT_ERR {
 			return fmt.Errorf("Error code %d from DN", resp.Stat)
 		}
+		// put header into response buffer
+		err = buf.WriteHeader(0,int(length))
+		if err != nil {
+			return fmt.Errorf("Error writing resp header to splice pipe : %s",err)
+		}
+		
+		
 		// read resp bytes
 		//fmt.Printf("Entering loop to read %d bytes\n",length)
 		numRead := 0
 		for uint32(numRead) < length {
 			//			fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length - uint32(numRead), d, numRead, int(length))
 			//			fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
-			n, err := d.Read(p[numRead:int(length)])
+			n, err := buf.SpliceBytes(uintptr(d.Rfd()),int(length))
 			//			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
 			if err != nil {
 				return err
@@ -81,42 +90,33 @@ func (dc *DataClient) Read(blk maggiefs.Block, p []byte, pos uint64, length uint
 	})
 }
 
-// write some bytes, extending block if necessary
-// updates generation ID on datanodes before returning
-// if generation id doesn't match prev generation id, we have an error
-
-func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64) (err error) {
-	return dc.withConn(pickVol(blk.Volumes), func(d Endpoint) error {
-		// send req header
-		header := &RequestHeader{OP_WRITE, blk, pos, uint32(len(p))}
-		if d == nil {
-			fmt.Println("nil dnconn!")
+// returns a write session
+func (dc *DataClient) WriteSession(blk maggiefs.Block) (writer maggiefs.BlockWriter, err error) {
+	// find host
+	raddr, err := dc.VolHost(pickVol(blk.Volumes))
+	if err != nil {
+		return nil,err
+	}
+	// get conn
+	conn,err := dc.pool.getConn(raddr)
+	if err != nil {
+		if conn != nil {
+			conn.Close()
 		}
-		header.WriteTo(d)
-		// send req bytes
-		numWritten := 0
-		for numWritten < len(p) {
-			//			fmt.Printf("Writing bytes from pos %d, first byte %x\n", numWritten, p[numWritten])
-			n, err := d.Write(p[numWritten:])
-			if err != nil {
-				return err
-			}
-			numWritten += n
-		}
-		// read resp header
-		resp := &ResponseHeader{}
-		_, err := resp.ReadFrom(d)
-		if resp.Stat != STAT_OK {
-			return fmt.Errorf("Error code %d from DN", resp.Stat)
-		}
-		return err
-
-	})
-	return nil
+		return nil,err
+	}
+	return newClientPipeline(
+		conn,
+		blk,
+		64*1024*1024, // 64MB max for unack'd bytes in flight
+		func() {
+			dc.pool.returnConn(raddr,conn) // return to pool on done
+		},
+	)
 }
 
 func (dc *DataClient) withConn(volId uint32, f func(d Endpoint) error) error {
-	raddr,err := dc.VolHost(volId)
+	raddr, err := dc.VolHost(volId)
 	if err != nil {
 		return err
 	}
@@ -157,6 +157,7 @@ func newConnPool(maxPerKey int, destroyOnError bool) *connPool {
 	return &connPool{make(map[*net.TCPAddr]chan Endpoint), &sync.RWMutex{}, maxPerKey, destroyOnError}
 }
 
+// optimized to only acquire lock and perHost channel once, top and bottom of this are identical to getConn, returnConn
 func (p *connPool) withConn(host *net.TCPAddr, with func(c Endpoint) error) (err error) {
 	//fmt.Printf("Doing something with conn to host %s\n", host.String())
 	// get chan
@@ -208,6 +209,70 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c Endpoint) error) (err
 		}
 	}
 	return err
+}
+
+
+// direct access to conn pool, be careful to return!
+func (p *connPool) getConn(host *net.TCPAddr) (Endpoint, error) {
+	//fmt.Printf("Doing something with conn to host %s\n", host.String())
+	// get chan
+	p.l.RLock()
+	ch, exists := p.pool[host]
+	p.l.RUnlock()
+	if !exists {
+		p.l.Lock()
+		ch, exists = p.pool[host]
+		if !exists {
+			ch = make(chan Endpoint, p.maxPerKey)
+			p.pool[host] = ch
+		}
+		p.l.Unlock()
+	}
+
+	// get object
+	var conn Endpoint
+	var err error = nil
+	select {
+	case conn = <-ch:
+		// nothing to do
+	default:
+		// create new one
+		//fmt.Printf("Creating new conn to %s\n", host.String())
+		conn, err = p.dial(host)
+		if err != nil {
+			if conn != nil {
+				_ = conn.Close()
+			}
+		}
+	}
+	return conn, err
+}
+
+// direct access to conn pool, be careful to return!
+func (p *connPool) returnConn(host *net.TCPAddr, conn Endpoint) {
+	// get chan
+	p.l.RLock()
+	ch, exists := p.pool[host]
+	p.l.RUnlock()
+	if !exists {
+		p.l.Lock()
+		ch, exists = p.pool[host]
+		if !exists {
+			ch = make(chan Endpoint, p.maxPerKey)
+			p.pool[host] = ch
+		}
+		p.l.Unlock()
+	}
+	// return	to pool
+	select {
+		case ch <- conn:
+			// successfully added back to freelist
+			//fmt.Printf("Added conn back to pool for host %s, local %s\n", host.String(), conn)
+		default:
+			// freelist full, dispose of that trash
+			//fmt.Printf("Closing conn for host %s, local %s\n", host.String(), conn)
+			_ = conn.Close()
+	}
 }
 
 func (p *connPool) dial(host *net.TCPAddr) (Endpoint, error) {

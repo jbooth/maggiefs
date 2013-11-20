@@ -4,7 +4,7 @@ import (
 
 )
 
-var buffPool = make(chan []byte, 512) // up to 512 buffers * 128kb = 64MB approx
+var buffPool = make(chan []byte, 1024) // up to 1024 buffers * 128kb = 128MB approx
 
 func GetBuff() []byte {
 	var b []byte

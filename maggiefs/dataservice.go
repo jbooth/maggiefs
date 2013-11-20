@@ -34,6 +34,8 @@ type SplicerTo interface {
 	SpliceBytes(fd uintptr, length int) (int,error)
 	// splice bytes from the FD at the given offset to the return buffer
 	SpliceBytesAt(fd uintptr, length int, offset int64) (int,error)
+	// write bytes to the pipe from an in-memory buffer
+	WriteBytes(b []byte) (int,error)
 }
 
 // interface exposed from datanodes to namenode (and tests)

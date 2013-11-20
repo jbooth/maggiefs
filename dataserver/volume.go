@@ -235,6 +235,50 @@ func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 	return v.fp.WithFile(path,op)
 }
 
+func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) (err error) {
+	err = v.withFile(req.Blk.Id, func(file *os.File) error {
+		//		fmt.Printf("Serving read to file %s\n", file.Name())
+		// check off
+		sendPos := int64(req.Pos)
+		stat, _ := file.Stat()
+		// send only the bytes we have, then we'll send zeroes for the rest
+		sendLength := uint64(req.Length)
+		zerosLength := 0
+		fileSize := uint64(stat.Size())
+		if uint64(sendPos)+sendLength > fileSize {
+
+			sendLength = uint64(stat.Size() - sendPos)
+			zerosLength = int(uint32(req.Length) - uint32(sendLength))
+		}
+		// send header
+		err := result.WriteHeader(0,int(req.Length))
+		if err != nil {
+			return err
+		}
+		// send data
+		//		fmt.Printf("splicing data from pos %d length %d\n", sendPos, sendLength)
+		_, err = result.SpliceBytesAt(file.Fd(),int(sendLength),sendPos)
+		if err != nil {
+			return err
+		}
+		for zerosLength > 0 {
+			// send some zeroes
+			zerosSend := zerosLength
+			if zerosSend > 65536 {
+				zerosSend = 65536
+			}
+			sent, err := result.WriteBytes(ZERO_64KB[:zerosSend])
+			if err != nil {
+				return err
+			}
+			zerosLength -= sent
+		}
+		return nil
+	})
+	return err
+	
+} 
+
 func (v *volume) serveRead(client Endpoint, req *RequestHeader) (err error) {
 	err = v.withFile(req.Blk.Id, func(file *os.File) error {
 		//		fmt.Printf("Serving read to file %s\n", file.Name())
@@ -290,55 +334,50 @@ func (v *volume) serveWrite(client Endpoint, req *RequestHeader, datas *DataClie
 	err := v.withFile(req.Blk.Id, func(file *os.File) error {
 		//		fmt.Printf("vol %d pipelining write to following vol IDs %+v\n", v.id, req.Blk.Volumes)
 		// remove ourself from pipeline remainder
+		var remainingVolumes []uint32 = nil
 		for idx, volId := range req.Blk.Volumes {
 			if volId == v.id {
 				if idx == 0 {
-					req.Blk.Volumes = req.Blk.Volumes[1:]
+					remainingVolumes = req.Blk.Volumes[1:]
 				} else {
 					if idx < len(req.Blk.Volumes) {
-						req.Blk.Volumes = append(req.Blk.Volumes[:idx], req.Blk.Volumes[idx+1:]...)
+						remainingVolumes = append(req.Blk.Volumes[:idx], req.Blk.Volumes[idx+1:]...)
 					} else {
-						req.Blk.Volumes = req.Blk.Volumes[:idx]
+						remainingVolumes = req.Blk.Volumes[:idx]
 					}
 				}
 				break
 			}
 		}
-		//		fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
-		// prepare to transfer
-		outOffset := int64(req.Pos)
-		fileWriter := NewSectionWriter(file, outOffset, int64(req.Length))
-		// check if we have other dataservers in pipeline
-		if len(req.Blk.Volumes) > 0 {
-			// setup pipeline to forward write
-			return datas.withConn(pickVol(req.Blk.Volumes), func(d Endpoint) error {
-				// forward request minus us in the replication chain
-				req.WriteTo(d)
-				// tee to net and file
-				teeWriter := io.MultiWriter(d, fileWriter)
-				_, err := Copy(teeWriter, client, int64(req.Length))
-				if err != nil {
-					return fmt.Errorf("Error sending data on volume %d : %s", v.id, err.Error())
-				}
-				//				fmt.Printf("Sent %d bytes from client %s to file %s remote ds %s\n", sent, client, file.Name(), d)
-				// confirm response before sending our own
-				remoteResp := &ResponseHeader{}
-				_, err = remoteResp.ReadFrom(d)
-				if remoteResp.Stat != STAT_OK {
-					return fmt.Errorf("Bad Status Response")
-				}
-				return nil
-			})
-		} else {
-			// just us, so splice to file and return
-			//			fmt.Println("Copying just to local")
-			_, err := Copy(fileWriter, client, int64(req.Length))
-			//			fmt.Printf("Sent %d bytes from client %s to file %s\n", sent, client, file.Name())
-			if err != nil {
-				return fmt.Errorf("Error sending to conn %s : %s", client, err)
+		//fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
+		
+		// wrap func to do the pipeline around our vars
+		doPipeline := func(nextInLine Endpoint) error {
+			pipeline := newServerPipeline(client,nextInLine,remainingVolumes,file)
+			sendErrChan := make(chan error)
+			ackErrChan := make(chan error)
+			go func() {
+				sendErrChan <- pipeline.run()
+			}()
+			go func() {
+				ackErrChan <- pipeline.ack()
+			}()
+			sendErr := <- sendErrChan
+			ackErr := <- ackErrChan
+			if sendErr != nil {
+				return sendErr
 			}
+			return ackErr
 		}
-		return nil
+		
+		var pipelineErr error = nil
+		if len(remainingVolumes) > 0 {
+			pipelineErr = datas.withConn(remainingVolumes[0],doPipeline)
+		} else {
+			// nil nextInLine, just compute here
+			pipelineErr = doPipeline(nil)
+		}
+		return pipelineErr
 	})
 
 	// send response

@@ -165,6 +165,8 @@ func (ds *DataServer) serveClientData() error {
 			return err
 		}
 		tcpConn.SetNoDelay(true)
+		tcpConn.SetReadBuffer(128*1024)
+		tcpConn.SetWriteBuffer(128*1024)
 		go ds.serveClientConn(SockEndpoint(tcpConn))
 	}
 }
@@ -203,7 +205,7 @@ func (ds *DataServer) serveClientConn(conn Endpoint) {
 					fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
 					return
 				}
-			} else if req.Op == OP_WRITE {
+			} else if req.Op == OP_START_WRITE {
 				err = vol.serveWrite(conn, req, ds.dc)
 				if err != nil {
 					fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
@@ -221,6 +223,10 @@ func (ds *DataServer) serveClientConn(conn Endpoint) {
 		}
 
 	}
+}
+
+func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) (err error) {
+	return nil
 }
 
 func (ds *DataServer) HeartBeat() (stat *maggiefs.DataNodeStat, err error) {

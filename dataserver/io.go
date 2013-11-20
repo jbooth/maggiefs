@@ -12,6 +12,8 @@ import (
 type Endpoint interface {
 	io.ReadWriteCloser
 	fmt.Stringer
+	Rfd() int // returns an FD that can be used to read from this Endpoint.  Negative FDs indicate you should use the Read() method instead.
+	Wfd() int // returns an FD that can be used write to this interface.  Negative FDs indicate you should use the Write() method instead
 }
 
 type endpt struct {
@@ -19,10 +21,14 @@ type endpt struct {
 	w      io.Writer
 	desc   string
 	sameFD bool // whether they point to the same fd or not
+	rfd int
+	wfd int
 }
 
 func (e *endpt) Read(p []byte) (n int, err error)  { return e.r.Read(p) }
 func (e *endpt) Write(p []byte) (n int, err error) { return e.w.Write(p) }
+func (e *endpt) Rfd() int { return e.rfd }
+func (e *endpt) Wfd() int { return e.wfd }
 func (e *endpt) String() string                    { return e.desc }
 func (e *endpt) Close() error {
 	closer, ok := e.r.(io.Closer)
@@ -45,7 +51,7 @@ func SockEndpoint(c *net.TCPConn) (Endpoint) {
 	c.SetNoDelay(true)
 	c.SetReadBuffer(128 * 1024)
 	c.SetWriteBuffer(128*1024)
-	return &endpt{c, c, desc, true}
+	return &endpt{c, c, desc, true, -1, -1}
 }
 
 func BlockingSockEndPoint(c *net.TCPConn) (Endpoint, error) {
@@ -62,16 +68,17 @@ func BlockingSockEndPoint(c *net.TCPConn) (Endpoint, error) {
 		return nil, err
 	}
 	syscall.SetNonblock(int(f.Fd()), false)
+	fd := int(f.Fd())
 
-	return &endpt{f, f, desc, true}, nil
+	return &endpt{f, f, desc, true, fd, fd}, nil
 }
 
 // matching pipe endpoints
 func PipeEndpoints() (Endpoint, Endpoint) {
 	leftRead, rightWrite := io.Pipe()
 	rightRead, leftWrite := io.Pipe()
-	left := &endpt{leftRead, leftWrite, "Pipe", false}
-	right := &endpt{rightRead, rightWrite, "Pipe", false}
+	left := &endpt{leftRead, leftWrite, "Pipe", false, -1, -1 }
+	right := &endpt{rightRead, rightWrite, "Pipe", false, -1, -1 }
 	return left, right
 }
 
