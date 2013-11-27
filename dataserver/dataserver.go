@@ -7,6 +7,7 @@ import (
 	"github.com/jbooth/maggiefs/mrpc"
 	"net"
 	"sync"
+	"io"
 )
 
 type DataServer struct {
@@ -15,14 +16,15 @@ type DataServer struct {
 	// live and unformatted volumes
 	volumes map[uint32]*volume
 	// accepts data conns for read/write requests
+	dataClientAddr *net.TCPAddr
 	dataIface *net.TCPListener
 	// accepts conn from namenode
 	nameDataIface *mrpc.CloseableServer
-	nameDataAddr string
+	nameDataAddr  string
 	// dataservice for pipelining writes
 	dc *DataClient
 	// locks to manage shutdown
-	clos *sync.Cond
+	clos   *sync.Cond
 	closed bool
 }
 
@@ -36,11 +38,11 @@ func NewDataServer(volRoots []string,
 	// scan volumes
 	volumes := make(map[uint32]*volume)
 	unformatted := make([]string, 0)
-	fp := NewFilePool(256,128)
+	fp := NewFilePool(256, 128)
 	for _, volRoot := range volRoots {
 		if validVolume(volRoot) {
 			// initialize existing volume
-			vol, err := loadVolume(volRoot,fp)
+			vol, err := loadVolume(volRoot, fp)
 			if err != nil {
 				return nil, err
 			}
@@ -74,7 +76,7 @@ func NewDataServer(volRoots []string,
 		if err != nil {
 			return nil, err
 		}
-		vol, err := formatVolume(path, maggiefs.VolumeInfo{volId, dnInfo},fp)
+		vol, err := formatVolume(path, maggiefs.VolumeInfo{volId, dnInfo}, fp)
 		if err != nil {
 			return nil, err
 		}
@@ -91,8 +93,7 @@ func NewDataServer(volRoots []string,
 	if err != nil {
 		return nil, err
 	}
-	ds = &DataServer{ns, dnInfo, volumes, dataClientListen, nil, nameDataBindAddr, dc, sync.NewCond(new(sync.Mutex)),false}
-
+	ds = &DataServer{ns, dnInfo, volumes, dataClientBind, dataClientListen, nil, nameDataBindAddr, dc, sync.NewCond(new(sync.Mutex)), false}
 
 	ds.nameDataIface, err = mrpc.CloseableRPC(nameDataBindAddr, mrpc.NewNameDataIfaceService(ds), "NameDataIface")
 	if err != nil {
@@ -102,7 +103,7 @@ func NewDataServer(volRoots []string,
 }
 
 func (ds *DataServer) Serve() error {
-	errChan := make(chan error,3)
+	errChan := make(chan error, 3)
 	go func() {
 		defer func() {
 			if x := recover(); x != nil {
@@ -128,14 +129,14 @@ func (ds *DataServer) Serve() error {
 		ds.Close()
 		return err
 	}
-	err = <- errChan
+	err = <-errChan
 	return err
 }
 
 func (ds *DataServer) Close() error {
 	ds.clos.L.Lock()
 	defer ds.clos.L.Unlock()
-	if ds.closed { 
+	if ds.closed {
 		return nil
 	}
 	ds.nameDataIface.Close()
@@ -150,7 +151,7 @@ func (ds *DataServer) Close() error {
 
 func (ds *DataServer) WaitClosed() error {
 	ds.clos.L.Lock()
-	for ! ds.closed {
+	for !ds.closed {
 		ds.clos.Wait()
 	}
 	ds.clos.L.Unlock()
@@ -165,8 +166,8 @@ func (ds *DataServer) serveClientData() error {
 			return err
 		}
 		tcpConn.SetNoDelay(true)
-		tcpConn.SetReadBuffer(128*1024)
-		tcpConn.SetWriteBuffer(128*1024)
+		tcpConn.SetReadBuffer(128 * 1024)
+		tcpConn.SetWriteBuffer(128 * 1024)
 		go ds.serveClientConn(SockEndpoint(tcpConn))
 	}
 }
@@ -177,7 +178,10 @@ func (ds *DataServer) serveClientConn(conn Endpoint) {
 		req := &RequestHeader{}
 		_, err := req.ReadFrom(conn)
 		if err != nil {
-			fmt.Printf("Err serving conn %s : %s\n", conn.String(), err.Error())
+			// don't log error for remote closed connection
+			if err != io.EOF && err != io.ErrClosedPipe {
+				fmt.Printf("Err serving conn %s : %s\n", conn.String(), err.Error())
+			}
 			return
 		}
 		// figure out which of our volumes
@@ -226,7 +230,23 @@ func (ds *DataServer) serveClientConn(conn Endpoint) {
 }
 
 func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) (err error) {
-	return nil
+	req := &RequestHeader{OP_READ, blk, pos, length}
+	// figure out which of our volumes
+	volForBlock := uint32(0)
+	var volWithBlock *volume = nil
+	for volId,vol  := range ds.volumes {
+		for _, blockVolId := range req.Blk.Volumes {
+			if blockVolId == volId {
+				volForBlock = blockVolId
+				volWithBlock = vol
+			}
+		}
+	}
+	if volForBlock == 0 {
+		// return error and reloop
+		return fmt.Errorf("No valid volume for block %+v", blk)
+	}
+	return volWithBlock.serveDirectRead(buf, req)
 }
 
 func (ds *DataServer) HeartBeat() (stat *maggiefs.DataNodeStat, err error) {

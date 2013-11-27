@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"time"
+	"sync"
 )
 
 type InodeWriter struct {
@@ -13,206 +14,170 @@ type InodeWriter struct {
 	names     maggiefs.NameService
 	datas     maggiefs.DataService
 	localDnId *uint32
-
-	// used to manage work queue
-	workQueue chan *writeOp // 16 long for total of 2MB in flight at a time
+	
+	// state vars, these are protected by lock
+	l *sync.Mutex
+	currLease maggiefs.WriteLease
+	currInode *maggiefs.Inode
+	currBlock maggiefs.Block
+	currPipeline maggiefs.BlockWriter
+	leaseCreatedTime time.Time
+	lastWriteTime time.Time
+	closed bool
 }
 
-type writeOp struct {
-	data        []byte
-	startPos    uint64
-	length      uint32
-	doTrunc     bool
-	truncLength uint64
-	doSync      bool
-	doneChan    chan bool
-}
+var (
+	MAX_LEASE_HOLD=time.Duration(10*time.Second) // close/reacquire lease if held for 10 seconds (10,000 millis)
+	MAX_LEASE_IDLE=time.Duration(1 * time.Second) // close lease if idle for 1 second (1,000 millis)
+)
 
 func NewInodeWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, localDnId *uint32) (w *InodeWriter, err error) {
 	if err != nil {
 		return nil, err
 	}
 
-	ret := &InodeWriter{inodeid, leases, names, datas, localDnId, make(chan *writeOp, 16), nil, nil}
-	go ret.process()
+	ret := &InodeWriter{inodeid, leases, names, datas, localDnId, new(sync.Mutex),nil,nil,maggiefs.Block{},nil,time.Time{}, time.Time{},false}
+	go ret.checkLease()
 	return ret, nil
 }
 
-func (w *InodeWriter) process() {
+// checks every second if we haven't done a write in more than a second
+func (w *InodeWriter) checkLease() {
 	for {
-		// pull ops from the workqueue
-		op, ok := <-w.workQueue
-		if !ok {
-			// close 
+		// sleep 1 second in between checks
+		time.Sleep(1 * time.Second)
+		w.l.Lock()
+		now := time.Now()
+		// if lease is held and we've held it too long
+		if w.currLease != nil && (now.After(w.leaseCreatedTime.Add(MAX_LEASE_HOLD)) || now.After(w.lastWriteTime.Add(MAX_LEASE_IDLE))) {
+			err := w.expireLease()
+			if err != nil {
+				// already marked close, just bail this goroutine
+				fmt.Printf("Error expiring lease for writer on inode %d!, closing..\n",w.inodeid)
+				w.l.Unlock()
+				return
+			}
+			
+		}
+		w.l.Unlock()
+	}
+}
+
+// commits all changes and drops our lease
+// expects lock held
+func (w *InodeWriter) expireLease() (err error) {
+	if w.currInode != nil {
+		err = w.names.SetInode(w.currInode)
+		if err != nil {
+			w.closed = true
 			return
 		}
-		var err error
-		if op.doTrunc {
-
-		}
-		needLeaseForOp := false
-		// if we're appending, we need a lease
-		if op.data != nil {
-			inoForLenCheck,err :=  w.names.GetInode(w.inodeid)
-			if err != nil {
-				fmt.Printf("Error getting ino %d : %s\n",w.inodeid,err)
-			}
-			if inoForLenCheck.Length < op.startPos + uint64(op.length) {
-				// appending to file so we are modifying inode structure
-				needLeaseForOp = true
-			}
-		}
-		if op.doTrunc {
-			// trunc needs lease becuase we're modifying inode structure
-			needLeaseForOp = true 
-		}
-		// if we're getting an expensive lease, we'll try to hold it and coalesce a few writes
-		if needLeaseForOp {
-			
-		} else {
-			// didn't need a lease for this op, so just handle without
-			if op.data != nil {
-				
-			}
-			
-		}
-		if op.doneChan != nil {
-			// inform blocking ops that they're done
-			op.doneChan <- true
-		}
-	} // endfor
-}
-
-// acquires lease, does firstOp, then does up to numExtra more operations while holding lease
-// this allows us to coalesce metadata updates and only sync to the cluster once
-func (w *InodeWriter) doOpsWithLease(firstOp *writeOp, numExtra int) (closeReceived bool, err error) {
-	// need to ensure lease for these ops
-			l,err := w.leases.WriteLease(w.inodeid)
-			if err != nil {
-				fmt.Printf("Writer for inode %d process() couldn't acquire writeLease, quitting..\n", w.inodeid)
-				return
-			}
-			// refresh local view of inode now that we have lease
-			inode,err := w.names.GetInode(w.inodeid)
-			if err != nil {
-				fmt.Printf("Error getting ino %d : %s\n",w.inodeid,err)
-				l.Release()
-				return
-			}
-			// do first op
-			doWriteOrTrunc(op)
-			
-			
-			
-			// we want to run up to 64 non-sync ops while holding the lease, or 8MB in between commits
-			
-			closeReceived := false // whether to shut down
-			var syncChan chan bool = nil // 
-			CONTINUATION_WRITE: for numWrites := 0 ; numWrites < numExtra ; numWrites++ {
-				select {
-					case myOp,ok := <- w.workQueue:
-						if !ok {
-							closeReceived = true
-							break CONTINUATION_WRITE
-						}
-						// check if this op also modifies inode, if so,
-						if myOp.data != nil || myOp.doTrunc {
-							err := doWriteOrTrunc(op)
-							if err != nil {
-								fmt.Printf("Error writing in continuation loop %s\n",err)
-								break CONTINUATION_WRITE
-							}
-						} 
-						// if it's a sync, we break out of the loop and sync up
-						if op.doSync {
-							syncChan = op.doneChan
-							break CONTINUATION_WRITE
-						}
-						if op.doClose {
-							// op close
-							syncChan = op.doneChan
-							closeReceived = true
-							break CONTINUATION_WRITE
-						}
-				    default: 
-				    	// no ops in pipe, bail and release lease so others can write
-				    	break CONTINUATION_WRITE
-				}
-			}
-			w.inode = nil
-			err = w.names.SetInode(w.inode)
-			if err != nil {
-					fmt.Printf("process() couldn't set inode %d after continuation write, quitting, err: %s..\n", w.inodeid,err)
-					l.Release()
-					return
-			}
-			err = l.Release()
-			if err != nil {
-					fmt.Printf("process() couldn't release lease for inode %d after continuation write, quitting, err: %s..\n", w.inodeid,err)
-					return
-			}
-			if closeReceived {
-				return
-			}
-			// end continuation write section
-}
-
-// assumes correct leases are held and does op using w.inode to store state
-// may commit changes to master if we added a block, however most of the time will not
-func (w *InodeWriter) doWriteOrTrunc(op *writeOp) error {
-	if op.doTrunc {
-		// commit
-		w.names.SetInode(w.inode)
-		// truncate
-		w.names.Truncate(i.inodeid,op.truncLength)
-		
 	}
-	if op.data != nil {
-	
+	if w.currPipeline != nil {
+		err = w.currPipeline.SyncAndClose()
+		if err != nil {
+			w.closed = true
+			return
+		}
 	}
-	return nil
+	if w.currLease != nil {
+		err = w.currLease.Release()
+		if err != nil {
+			w.closed = true
+			return
+		}
+	}
+	w.currLease = nil
+	w.currInode = nil
+	w.currPipeline = nil
+	return
 }
+
 
 
 // calls out to name service to truncate this file by repeatedly shrinking blocks
 func (w *InodeWriter) Truncate(length uint64) error {
-	// pick up lease
-	lease, err := w.leases.WritBROKENeLease(w.inodeid)
-	
-	// TODO wire this to workQueue
-	
-	defer lease.Release()
+	// expire/flush any previous lease
+	err := w.expireLease()
 	if err != nil {
+		w.closed = true
 		return err
 	}
+	// pick up lease
+	lease, err := w.leases.WriteLease(w.inodeid)
+	if err != nil {
+		w.closed = true
+		if lease != nil { lease.Release() }
+		return err
+	}	
+	defer lease.Release()
 	return w.names.Truncate(w.inodeid, length)
 }
 
 //io.InodeWriter
 func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uint32, err error) {
+	w.l.Lock()
+	defer w.l.Unlock()
+	
+	
+	// check lease
+	if w.currLease != nil && w.currInode != nil && w.currPipeline != nil {
+		blockNeeded,err := blockForPos(off,w.currInode)
+		if err != nil {
+			return 0,err
+		}
+		// if the write (or a portion) can be served using current writer
+		if blockNeeded.Id == w.currBlock.Id {
+			// serve from local pipeline
+			posInBlock := off - w.currBlock.StartPos
+		}
+	}
+	
+	// if not, release lock and serve from new pipeline
+	
+	// lastly, reacquire lock and cache our new pipeline 
+
+
 	// get our copy of buffer
-	ourBuff := maggiefs.GetBuff()
-	copy(ourBuff, p[:int(length)])
-	op := &writeOp{ourBuff, 0, 0, false, 0, false, nil}
-	w.workQueue <- op
 	return length, nil
 }
 
-func (w *InodeWriter) Fsync() (err error) {
-	fsync := &writeOp{nil, 0, 0, false, 0, true, make(chan bool)}
-	w.workQueue <- fsync
-	// don't return until done
-	<-fsync.doneChan
+type blockwrite struct {
+	p []byte
+	posInBlock uint64
+}
+
+// gets the list of block writes
+func (w *InodeWriter) blockwrites(p []byte, off uint64, length uint32) []blockwrite {
 	return nil
 }
 
-func (w *InodeWriter) Close() (err error) {
-	fsync := &writeOp{nil, 0, 0, false, 0, true, make(chan bool)}
-	w.workQueue <- fsync
-	// don't return until done
-	<-fsync.doneChan
-	return nil
+func (w *InodeWriter) doBlockWrite(b blockwrite) error {
+	
 }
+
+// assumes lease held and state (inode, writer) is up to date
+func (w *InodeWriter) servableFromCurrWriter(off uint64, length uint32) {
+	if off >= w.currBlock.StartPos {
+		if (off + uint64(length)) < w.currBlock.EndPos {
+			return true
+		}
+		// if it's the last block, it can be extended up to blocklength
+		
+	}
+}
+
+func (w *InodeWriter) Fsync() (err error) {
+	return w.expireLease()
+}
+
+func (w *InodeWriter) Close() (err error) {
+	err = w.expireLease()
+	w.closed = true
+	return
+}
+
+
 
 // assumes lease is held and passed in inode is up to date -- may flush inode state to nameserver if we're adding a new block
 // but will not most of the time, will modify passed in inode instead

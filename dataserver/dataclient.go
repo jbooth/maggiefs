@@ -11,19 +11,35 @@ import (
 // compile-time check for type safety
 var typeCheck maggiefs.DataService = &DataClient{}
 
+
 type DataClient struct {
 	names   maggiefs.NameService
 	volMap  map[uint32]*net.TCPAddr
 	volLock *sync.RWMutex // guards volMap
 	pool    *connPool
+	localDS *DataServer
+	localVols []uint32
 }
 
 func NewDataClient(names maggiefs.NameService, connsPerDn int) (*DataClient, error) {
-	return &DataClient{names, make(map[uint32]*net.TCPAddr), &sync.RWMutex{}, newConnPool(connsPerDn, true)}, nil
+	return &DataClient{names, make(map[uint32]*net.TCPAddr), &sync.RWMutex{}, newConnPool(connsPerDn, true),nil,nil}, nil
 }
 
 func pickVol(vols []uint32) uint32 {
 	return vols[rand.Int()%len(vols)]
+}
+
+func (dc *DataClient) isLocal(vols []uint32) bool {
+	if dc.localVols == nil {
+		return false
+	}
+	// both lists are short, double for loop is fine
+	for _,volId := range vols {
+		for _,localVolId := range dc.localVols {
+			if localVolId == volId { return true }
+		}
+	}
+	return false
 }
 
 // get hostname for a volume
@@ -46,8 +62,10 @@ func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr, error) {
 
 // read some bytes
 func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) (err error) {
-	//BROKEN NEED TO HANDLE LOCAL DN CASE
-
+	if (dc.isLocal(blk.Volumes)) {
+		// local direct read
+		return dc.localDS.DirectRead(blk,buf,pos,length)
+	}
 	return dc.withConn(pickVol(blk.Volumes), func(d Endpoint) error {
 		// send req
 		header := RequestHeader{OP_READ, blk, pos, length}
@@ -92,6 +110,22 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 
 // returns a write session
 func (dc *DataClient) WriteSession(blk maggiefs.Block) (writer maggiefs.BlockWriter, err error) {
+	if dc.isLocal(blk.Volumes) {
+		// local shortcut, return write session from an in-memory pipe
+		local,remote := PipeEndpoints()
+		go dc.localDS.serveClientConn(remote)
+		return newClientPipeline(
+		local,
+		blk,
+		64*1024*1024, // 64MB max for unack'd bytes in flight
+		func() {
+			local.Close()  // kill in-memory pipe when finished
+		},
+	)
+		
+	}
+	// return write session over the netwrok
+	
 	// find host
 	raddr, err := dc.VolHost(pickVol(blk.Volumes))
 	if err != nil {
@@ -116,6 +150,7 @@ func (dc *DataClient) WriteSession(blk maggiefs.Block) (writer maggiefs.BlockWri
 }
 
 func (dc *DataClient) withConn(volId uint32, f func(d Endpoint) error) error {
+	// normal case, remote dataserver
 	raddr, err := dc.VolHost(volId)
 	if err != nil {
 		return err

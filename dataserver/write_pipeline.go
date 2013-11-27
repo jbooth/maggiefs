@@ -38,7 +38,7 @@ func newClientPipeline(server Endpoint, blk maggiefs.Block,  maxBytesInFlight in
 	header := &RequestHeader{OP_START_WRITE, blk, 0, 0}
 	_,err := header.WriteTo(server)
 	// launch ack goroutine
-	go ret.ReadAcks()
+	go ret.readAcks()
 	return ret,err
 }
 
@@ -87,7 +87,7 @@ func (c *ClientPipeline) SyncAndClose() (err error) {
 	return nil	
 }
 
-func (c *ClientPipeline) ReadAcks() {
+func (c *ClientPipeline) readAcks() {
 	resp := &ResponseHeader{}
 	haveErr := false
 	for numBytesAck := range c.awaitingAck {
