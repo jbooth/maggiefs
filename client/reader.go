@@ -3,8 +3,8 @@ package client
 import (
 	"errors"
 	"fmt"
-	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/fuse"
+	"github.com/jbooth/maggiefs/maggiefs"
 	"io"
 )
 
@@ -30,7 +30,7 @@ func (r *Reader) ReadAt(p *fuse.ReadPipe, position uint64, length uint32) (err e
 	}
 	if position == inode.Length {
 		// write header for OK, 0 bytes at EOF
-		p.WriteHeader(0,0)
+		p.WriteHeader(0, 0)
 		return nil
 	}
 	if position > inode.Length {

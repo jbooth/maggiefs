@@ -41,8 +41,8 @@ func NewNameCache(names maggiefs.NameService, leases maggiefs.LeaseService, onNo
 	// pull notifiers and invalidate our cache and host fs cache
 	go func() {
 		for {
-			notify := <- nc.notifier
-			nc.invalidate(notify.Inodeid()) 
+			notify := <-nc.notifier
+			nc.invalidate(notify.Inodeid())
 			nc.onNotify(notify)
 		}
 	}()
@@ -162,7 +162,7 @@ func (nc *NameCache) SetInode(node *maggiefs.Inode) (err error) {
 		nc.invalidate(node.Inodeid)
 		return err
 	}
-	
+
 	err = nc.setInCache(node)
 	return err
 }
@@ -178,8 +178,10 @@ func (nc *NameCache) Truncate(nodeid uint64, newSize uint64) (err error) {
 func (nc *NameCache) Link(parent uint64, child uint64, name string, force bool) (err error) {
 	// write lease / release on parent to ensure other caches see the new dentry
 	// TODO could do this on nameservice side and be faster
-	l,err := nc.leases.WriteLease(parent)
-	if err != nil { return err }
+	l, err := nc.leases.WriteLease(parent)
+	if err != nil {
+		return err
+	}
 	defer l.Release()
 	err = nc.names.Link(parent, child, name, force)
 	nc.invalidate(parent)
@@ -191,8 +193,10 @@ func (nc *NameCache) Link(parent uint64, child uint64, name string, force bool) 
 func (nc *NameCache) Unlink(parent uint64, name string) (err error) {
 	// write lease / release on parent to ensure other caches see the new dentry
 	// TODO could do this on nameservice side and be faster
-	l,err := nc.leases.WriteLease(parent)
-	if err != nil { return err }
+	l, err := nc.leases.WriteLease(parent)
+	if err != nil {
+		return err
+	}
 	defer l.Release()
 	// perform unlink and invalidate ourselves
 	err = nc.names.Unlink(parent, name)
