@@ -231,9 +231,9 @@ func (fs *wrappingFS) OpenDir(input *OpenIn, out *OpenOut) (status Status) {
 	return ENOSYS
 }
 
-func (fs *wrappingFS) Read(input *ReadIn, buf *ReadPipe) (Status) {
+func (fs *wrappingFS) Read(input *ReadIn, buf ReadPipe) (Status) {
 	if s, ok := fs.fs.(interface {
-		Read(input *ReadIn, buf *ReadPipe) (Status)
+		Read(input *ReadIn, buf ReadPipe) (Status)
 	}); ok {
 		return s.Read(input, buf)
 	}

@@ -46,7 +46,19 @@ type MountOptions struct {
 	SingleThreaded bool
 }
 
-type ReadPipe struct {
+// represents an OS pipe which read results will be piped through
+type ReadPipe interface {
+	// write the header for this response
+	WriteHeader(code int32, returnBytesLength int) error
+	// write bytes from memory
+	WriteBytes(b []byte) (int,error)
+	// splice bytes from the given fd
+	SpliceBytes(fd uintptr, length int) (int,error)
+	// splice bytes from the given fd at the given offset
+	SpliceBytesAt(fd uintptr, length int, offset int64) (int,error)
+}
+
+type readPipe struct {
 	req *request
 	pipe *splice.Pair
 }
@@ -56,7 +68,7 @@ type ReadPipe struct {
 
 // note that after calling this method, you MUST either write returnBytesLength to this pipe 
 // or return an error code from the Read() method
-func (r *ReadPipe) WriteHeader(code int32, returnBytesLength int) error {
+func (r *readPipe) WriteHeader(code int32, returnBytesLength int) error {
 	r.req.status = Status(code)
 	headerBytes := r.req.serializeHeader(returnBytesLength)
 	r.req.readNumBytesInChan = len(headerBytes) + returnBytesLength
@@ -80,15 +92,15 @@ func (r *ReadPipe) WriteHeader(code int32, returnBytesLength int) error {
 	return nil
 }
 
-func (r *ReadPipe) WriteBytes(b []byte) (int,error) {
+func (r *readPipe) WriteBytes(b []byte) (int,error) {
 	return r.pipe.Write(b)
 }
 
-func (r *ReadPipe) SpliceBytes(fd uintptr, length int) (int,error) {
+func (r *readPipe) SpliceBytes(fd uintptr, length int) (int,error) {
 	return r.pipe.LoadFrom(fd,length)
 }
 
-func (r *ReadPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int,error) {
+func (r *readPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int,error) {
 	return r.pipe.LoadFromAt(fd,length,offset)
 }
 
@@ -137,7 +149,7 @@ type RawFileSystem interface {
 	Open(input *OpenIn, out *OpenOut) (status Status)
 	
 	// note you must accurately report how many bytes you spliced into the pipe, if you cannot you should return an error status
-	Read(input *ReadIn, buf *ReadPipe) (code Status)
+	Read(input *ReadIn, buf ReadPipe) (code Status)
 
 	Release(input *ReleaseIn)
 	

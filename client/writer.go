@@ -144,6 +144,9 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uin
 	// if first write can be served from curr pipeline, do it
 	if w.currBlock.Id == writes[0].b.Id {
 		err := w.currPipeline.Write(writes[0].p, writes[0].posInBlock)
+		if err != nil {
+			return nWritten,err
+		}
 		nWritten += uint32(len(writes[0].p))
 		if len(writes) > 1 {
 			writes = writes[1:]
@@ -152,7 +155,7 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uin
 		}
 	}
 
-	// iterate making new pipelines for rest
+	// iterate making new pipelines for rest, if any
 	for _, write := range writes {
 		if w.currPipeline != nil {
 			err = w.currPipeline.SyncAndClose()
@@ -171,19 +174,6 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uin
 		}
 		nWritten += uint32(len(write.p))
 	}
-	// check lease
-	if w.currLease != nil && w.currInode != nil && w.currPipeline != nil {
-		blockNeeded, err := blockForPos(off, w.currInode)
-		if err != nil {
-			return 0, err
-		}
-		// if the write (or a portion) can be served using current writer
-		if blockNeeded.Id == w.currBlock.Id {
-			// serve from local pipeline
-			posInBlock := off - w.currBlock.StartPos
-		}
-	}
-
 	return nWritten, nil
 }
 

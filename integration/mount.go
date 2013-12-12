@@ -3,7 +3,7 @@ package integration
 import (
 	"fmt"
 	"sync"
-	"github.com/jbooth/go-fuse/fuse"
+	"github.com/jbooth/maggiefs/fuse"
 )
 
 type Mount struct {

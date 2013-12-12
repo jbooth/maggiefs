@@ -287,7 +287,7 @@ func doRead(server *Server, req *request) {
 		}
 		return
 	}
-	readResult := &ReadPipe{req,pipe}
+	readResult := &readPipe{req,pipe}
 	// execute filesystem handler to splice header and actual read results into buffer
 	req.status = server.fileSystem.Read(in, readResult)
 	req.flatData = nil

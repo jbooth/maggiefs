@@ -671,7 +671,7 @@ func (m *MaggieFuse) OpenDir(input *fuse.OpenIn, out *fuse.OpenOut) (status fuse
 	return fuse.OK
 }
 
-func (m *MaggieFuse) Read(input *fuse.ReadIn, buf *fuse.ReadPipe) (fuse.Status) {
+func (m *MaggieFuse) Read(input *fuse.ReadIn, buf fuse.ReadPipe) (fuse.Status) {
 	reader := m.openFiles.get(input.Fh).r
 	// reader.ReadAt buffers our response header and bytes into the supplied pipe
 	err := reader.ReadAt(buf,input.Offset,input.Size)

@@ -21,7 +21,7 @@ type Reader struct {
 	datas   maggiefs.DataService
 }
 
-func (r *Reader) ReadAt(p *fuse.ReadPipe, position uint64, length uint32) (err error) {
+func (r *Reader) ReadAt(p fuse.ReadPipe, position uint64, length uint32) (err error) {
 	// have to re-get inode every time because it might have changed
 
 	inode, err := r.names.GetInode(r.inodeid)

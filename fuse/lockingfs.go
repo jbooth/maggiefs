@@ -150,7 +150,7 @@ func (fs *lockingRawFileSystem) ReleaseDir(input *ReleaseIn) {
 	fs.RawFS.ReleaseDir(input)
 }
 
-func (fs *lockingRawFileSystem) Read(input *ReadIn, buf *ReadPipe) (Status) {
+func (fs *lockingRawFileSystem) Read(input *ReadIn, buf ReadPipe) (Status) {
 	defer fs.locked()()
 	return fs.RawFS.Read(input, buf)
 }

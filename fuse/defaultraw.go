@@ -109,7 +109,7 @@ func (fs *defaultRawFileSystem) OpenDir(input *OpenIn, out *OpenOut) (status Sta
 	return ENOSYS
 }
 
-func (fs *defaultRawFileSystem) Read(input *ReadIn, buf *ReadPipe) (Status) {
+func (fs *defaultRawFileSystem) Read(input *ReadIn, buf ReadPipe) (Status) {
 	return ENOSYS
 }
 
