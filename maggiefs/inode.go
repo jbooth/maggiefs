@@ -399,6 +399,7 @@ func (b *Block) FromBytes(bytes []byte) int {
 	currOff += 8
 	numVolumes := bytes[currOff]
 	currOff++
+	fmt.Printf("Decoding %d volumes for block id %d\n",numVolumes,b.Id)
 	b.Volumes = make([]uint32, numVolumes, numVolumes)
 	for i := byte(0); i < numVolumes; i++ {
 		b.Volumes[i] = binary.LittleEndian.Uint32(bytes[currOff:])

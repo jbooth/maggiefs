@@ -3,7 +3,7 @@ package maggiefs
 import (
 
 )
-
+var BuffSize = 128*1024
 var buffPool = make(chan []byte, 1024) // up to 1024 buffers * 128kb = 128MB approx
 
 func GetBuff() []byte {
@@ -13,7 +13,7 @@ func GetBuff() []byte {
 	// got one off pool
 	default:
 		// none free, so allocate
-		b = make([]byte, 1024*128)
+		b = make([]byte, BuffSize)
 	}
 	return b
 }

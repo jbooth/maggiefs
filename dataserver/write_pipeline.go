@@ -43,22 +43,26 @@ func newClientPipeline(server Endpoint, blk maggiefs.Block,  maxBytesInFlight in
 }
 
 func (c *ClientPipeline) Write(p []byte, pos uint64) (err error) {
+	fmt.Printf("client pipeline write acquiring lock\n")
 	c.l.L.Lock()
+	defer c.l.L.Unlock()
 	if c.closed {
 		return fmt.Errorf("ClientPipeline was already closed!")
 	}
 	// wait until there are enough bytes available
 	for c.bytesInFlight + len(p) > c.maxBytesInFlight {
+		fmt.Printf("client pipeline write waiting till bytes freed up\n")
 		c.l.Wait() 
 	}
-	defer c.l.L.Unlock()
 	// send req header
 	header := &RequestHeader{OP_WRITE_BYTES, c.blk, pos, uint32(len(p))}
+	fmt.Printf("Client pipeline writing header %+v\n",header)
 	_,err = header.WriteTo(c.server)
 	if err != nil {
 		return fmt.Errorf("Error writing bytes: %s",err)
 	}
 	// send req bytes
+	fmt.Printf("Client pipeline writing bytes\n")
 	numWritten := 0
 	for numWritten < len(p) {
 		//	fmt.Printf("Writing bytes from pos %d, first byte %x\n", numWritten, p[numWritten])
@@ -125,12 +129,18 @@ type serverPipeline struct {
 	allAcksReceived chan bool // ack() sends to this exactly once when finished
 }
 
-func newServerPipeline(client Endpoint, nextInLine Endpoint, remainingVolumes []uint32, f *os.File) (*serverPipeline) {
+// RequestHeader's block member should already have our volume removed, so it just contains remainingVolumes
+func newServerPipeline(client Endpoint, nextInLine Endpoint, req *RequestHeader, f *os.File) (*serverPipeline) {
+	// forward request to nextInLine
+	if nextInLine != nil {
+		req.WriteTo(nextInLine)
+	}
 	
+	// construct ourselves
 	return &serverPipeline{
 		client,
 		nextInLine,
-		remainingVolumes,
+		req.Blk.Volumes,
 		f,
 		maggiefs.GetBuff(),
 		make(chan bool, 64),
@@ -142,17 +152,19 @@ func newServerPipeline(client Endpoint, nextInLine Endpoint, remainingVolumes []
 // in this situation we just received OP_START_WRITE and should receive a series of OP_WRITE_BYTES followed by a single OP_COMMIT_WRITE 
 func (s *serverPipeline) run() error {
 	req := &RequestHeader{}
-
 	PIPELINE: for {
 		// read header
+		fmt.Printf("Server pipeline running, trying to read req header\n")
 		_, err := req.ReadFrom(s.client)
 		if err != nil {
 			return fmt.Errorf("Err serving conn for pipelined write %s : %s\n", s.client.String(), err.Error())
 		}
 		// if this is a sync request, break the loop and sync
 		if req.Op == OP_COMMIT_WRITE {
+			fmt.Printf("Breaking server side pipeline\n")
 			break PIPELINE
 		}
+		fmt.Printf("Handling server side write, length %d\n",req.Length)
 		// all writes shuold be 128kb max, subset our 128k buffer to size
 		myBuf := s.buff[:int(req.Length)]
 		// read bytes
@@ -181,6 +193,18 @@ func (s *serverPipeline) run() error {
 		if err != nil {
 			return fmt.Errorf("Error flushing bytes to disk in pipelined write : %s",err)
 		}
+		// send ack back to previous
+		resp := &ResponseHeader{}
+		if err != nil {
+			resp.Stat = STAT_ERR
+			_, _ = resp.WriteTo(s.client)
+			return err
+		}
+		_, err = resp.WriteTo(s.client)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Relooping server side pipeline\n")
 	}
 	
 	// fsync
@@ -188,6 +212,7 @@ func (s *serverPipeline) run() error {
 	// wait till all acks received
 	close(s.ackRequired)
 	<- s.allAcksReceived
+	fmt.Printf("server pipeline returning")
 	return nil
 }
 

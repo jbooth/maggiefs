@@ -71,6 +71,7 @@ func TestWriteRead(t *testing.T) {
 	}
 	// 200 MB to make us 2 blocks
 	bytes := make([]byte, 1024*1024*200)
+	fmt.Printf("Getting 200MB from rand\n")
 	_, err = rand.Read(bytes)
 	if err != nil {
 		t.Fatal(err)
