@@ -68,10 +68,10 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 	}
 	return dc.withConn(pickVol(blk.Volumes), func(d Endpoint) error {
 		// send req
-		fmt.Printf("Sending read header in dataclient \n")
 		header := RequestHeader{OP_READ, blk, pos, length}
 		//		fmt.Printf("data client writing read header to %s\n", d)
 		//		fmt.Printf("Reading length %d to slice of length %d\n", length, len(p))
+		fmt.Printf("Sending read header in dataclient : %+v \n",header)
 		_, err = header.WriteTo(d)
 		if err != nil {
 			return fmt.Errorf("Error writing header to dn : %s", err.Error())
@@ -98,7 +98,7 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 		for uint32(numRead) < length {
 			//			fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length - uint32(numRead), d, numRead, int(length))
 			//			fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
-			n, err := buf.SpliceBytes(uintptr(d.Rfd()),int(length))
+			n, err := buf.SpliceBytes(uintptr(d.Rfd()),int(length) - numRead)
 			//			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
 			if err != nil {
 				return err

@@ -170,7 +170,7 @@ func (w *InodeWriter) doWriteAt(p []byte, off uint64, length uint32) (nWritten u
 	
 	nWritten = 0
 	// if first write can be served from curr pipeline, do it
-	if w.currBlock.Id == writes[0].b.Id {
+	if w.currBlock.Id == writes[0].b.Id && w.currPipeline != nil {
 		fmt.Printf("Serving block write from curr writer\n")
 		err := w.currPipeline.Write(writes[0].p, writes[0].posInBlock)
 		if err != nil {

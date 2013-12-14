@@ -7,35 +7,61 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"os"
 	"testing"
+	"sync"
 )
 
 type testReadPipe struct {
 	responseCode int32
 	b []byte
 	numWritten int
+	l *sync.Mutex
+}
+
+func (t *testReadPipe) Reset() {
+	t.l.Lock()
+	defer t.l.Unlock()
+	t.responseCode = 0
+	t.numWritten = 0
 }
 
 func (t *testReadPipe) WriteHeader(code int32, returnBytesLength int) error {
+	t.l.Lock()
+	defer t.l.Unlock()
+	fmt.Printf("Writing header to mock, code %d returnBytesLength %d\n",code,returnBytesLength)
 	t.responseCode = code
-	t.b = make([]byte,returnBytesLength,returnBytesLength)
+	if len(t.b) < returnBytesLength {
+	  t.b = make([]byte,returnBytesLength,returnBytesLength)
+	}
 	t.numWritten = 0
+	fmt.Printf("Done writing header to mock, numWritten %d\n",t.numWritten)
 	return nil
 }
 
 func (t *testReadPipe) WriteBytes(b []byte) (int,error) {
+	t.l.Lock()
+	defer t.l.Unlock()
 	copy(b,t.b[t.numWritten:])
 	t.numWritten += len(b)
 	return len(b),nil
 }
 
 func (t *testReadPipe) SpliceBytes(fd uintptr, length int) (int,error) {
+	t.l.Lock()
+	defer t.l.Unlock()
 	f := os.NewFile(fd,"splicingFrom")
+	fmt.Printf("Splicing from %d to %d into array of length %d\n",t.numWritten,t.numWritten+length,len(t.b))
 	ret1,ret2 := f.Read(t.b[t.numWritten:t.numWritten+length])
+	if len(t.b) > 5 {
+		fmt.Printf("First 5 in test splice buffer : %x\n", t.b[:5])
+	}
 	t.numWritten += ret1
+	fmt.Printf("Spliced %d, returning\n",ret1)
 	return ret1,ret2
 }
 
 func (t *testReadPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int,error) {
+	t.l.Lock()
+	defer t.l.Unlock()
 	f := os.NewFile(fd,"splicingFrom")
 	ret1,ret2 := f.ReadAt(t.b[t.numWritten:t.numWritten+length],offset)
 	t.numWritten += ret1
@@ -89,7 +115,7 @@ func TestWriteRead(t *testing.T) {
 	err = writer.Fsync()
 	if err != nil { t.Fatal(err) }
 	
-	readBytes := &testReadPipe{}
+	readBytes := &testReadPipe{0,nil,0,new(sync.Mutex)}
 	r, err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
 	if err != nil {
 		t.Fatal(fmt.Sprintf("Error opening reader %s", err.Error()))
@@ -140,12 +166,15 @@ func TestWriteRead2(t *testing.T) {
 	err = writer.Fsync()
 	if err != nil { t.Fatal(err) }
 	// then do that many reads across the file to confirm it's ok
-	readBytes := &testReadPipe{}
+	readBytes := &testReadPipe{0,nil,0,new(sync.Mutex)}
 	reader, err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
 	if err != nil {
 		t.Fatal(fmt.Sprintf("Error opening reader %s", err.Error()))
 	}
 	for i := 0; i < 5000; i++ {
+		// reset our buffer
+		readBytes.Reset()
+		// fill it 
 		err := reader.ReadAt(readBytes, uint64(65536*i), 65536)
 		if err != nil {
 			t.Fatal(err)
@@ -192,7 +221,7 @@ func TestShortRead(t *testing.T) {
 	err = writer.Fsync()
 	if err != nil { t.Fatal(err) }
 	
-	readBytes := &testReadPipe{}
+	readBytes := &testReadPipe{0,nil,0,new(sync.Mutex)}
 	r, err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
 	if err != nil {
 		t.Fatal(fmt.Sprintf("Error opening reader %s", err.Error()))

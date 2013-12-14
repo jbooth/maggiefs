@@ -382,13 +382,13 @@ func (v *volume) serveWrite(client Endpoint, req *RequestHeader, datas *DataClie
 		return pipelineErr
 	})
 
-	// send response
-	resp := ResponseHeader{STAT_OK}
-	//	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
-	if err != nil {
-		resp.Stat = STAT_ERR
-	}
-	resp.WriteTo(client)
+	// no response, response is implicit in acks that are sent along
+//	resp := ResponseHeader{STAT_OK}
+//	//	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
+//	if err != nil {
+//		resp.Stat = STAT_ERR
+//	}
+//	resp.WriteTo(client)
 	return err
 }
 

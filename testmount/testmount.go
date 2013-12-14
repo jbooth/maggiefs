@@ -90,6 +90,10 @@ func shortFileTest() error {
 	if err != nil {
 		return err
 	}
+  err = f.Sync()
+  if err != nil {
+    return err
+  }
 	// assert length
 	fstat, err := f.Stat()
 	if err != nil {
@@ -104,6 +108,7 @@ func shortFileTest() error {
 	}
 	bytes := make([]byte, 2)
 	f.Read(bytes)
+	fmt.Printf("Just read bytes %x\n",bytes)
 	if string(bytes) != "hi" {
 		return fmt.Errorf("Wrong file contents!  Expected: hi, got %s", string(bytes))
 	}
@@ -131,6 +136,9 @@ func longFileTest() error {
 		if err != nil {
 			return err
 		}
+		
+	
+  		f.Sync()
 		fSize += int64(len(randBytes))
 		// check size at each step
 		fstat, err := f.Stat()
@@ -147,6 +155,9 @@ func longFileTest() error {
 		return err
 	}
 	fSize += 1337
+	
+  	f.Sync()
+	
 	// assert length after last write
 	fstat, err := f.Stat()
 	if err != nil {

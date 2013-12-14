@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+	"github.com/jbooth/maggiefs/splice"
 )
 
 const (
@@ -333,7 +334,7 @@ func (ms *Server) handleRequest(req *request) {
 	if req.status.Ok() {
 		req.handler.Func(ms, req)
 	}
-
+	
 	errNo := ms.write(req)
 	if errNo != 0 {
 		log.Printf("writer: Write/Writev failed, err: %v. opcode: %v",
@@ -378,7 +379,11 @@ func (ms *Server) systemWrite(req *request) Status {
 	if req.readBuffer != nil {
 		// if we have a pipe, then use splice
 		// header is already in pipe
-		_, err = req.readBuffer.WriteTo(uintptr(ms.mountFd),req.readNumBytesInChan) 
+		var n int
+		n, err = req.readBuffer.WriteTo(uintptr(ms.mountFd),req.readNumBytesInChan) 
+		fmt.Printf("Wrote %d bytes from splice out of %d in pipe\n",n,req.readNumBytesInChan)
+		splice.Done(req.readBuffer)
+		req.readBuffer = nil
 	} else {
 		// serialize header
 		header := req.serializeHeader(req.flatDataSize())
