@@ -140,7 +140,7 @@ func longFileTest() error {
 	
   		f.Sync()
 		fSize += int64(len(randBytes))
-		// check size at each step
+		// check size at each step	
 		fstat, err := f.Stat()
 		if err != nil {
 			return err

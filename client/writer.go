@@ -117,7 +117,9 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uin
 	fmt.Printf("Starting write, acquiring lock\n")
 	w.l.Lock()
 	defer w.l.Unlock()
-	
+	if len(p) < int(length) {
+		return 0,fmt.Errorf("Called writer.WriteAt with bad arguments:  array of length %d, writing to file at off %d len %d",len(p),off,length)
+	}
 	nWritten = 0
 	// make sure writes are max 128kb
 	for nWritten < length {
