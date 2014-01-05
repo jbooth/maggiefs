@@ -137,7 +137,7 @@ func longFileTest() error {
 			return err
 		}
 		
-	
+		fmt.Printf("Wrote %d bytes, syncing..\n",len(randBytes))
   		f.Sync()
 		fSize += int64(len(randBytes))
 		// check size at each step	
@@ -145,6 +145,7 @@ func longFileTest() error {
 		if err != nil {
 			return err
 		}
+		fmt.Printf("Finished write, expected size: %d, actual size %d\n",fSize,fstat.Size())
 		if fstat.Size() != fSize {
 			return fmt.Errorf("Wrong file size! expected %d got %d", fSize, fstat.Size())
 		}

@@ -114,16 +114,18 @@ func (w *InodeWriter) Truncate(length uint64) error {
 }
 
 func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uint32, err error) {
-	fmt.Printf("Starting write, acquiring lock\n")
+	fmt.Printf("Starting write at off %d, length %d, acquiring lock\n",off,length)
 	w.l.Lock()
 	defer w.l.Unlock()
 	if len(p) < int(length) {
 		return 0,fmt.Errorf("Called writer.WriteAt with bad arguments:  array of length %d, writing to file at off %d len %d",len(p),off,length)
 	}
 	nWritten = 0
-	// make sure writes are max 128kb
-	for nWritten < length {
+	origLength := length
+	for nWritten < origLength {
+		fmt.Printf("Writing to offset %d from array of length %d from position %d, orig length arg %d\n",off,len(p),nWritten,length)
 		toWrite := p[int(nWritten):]
+		// make sure writes are max 128kb
 		if len(toWrite) > maggiefs.BuffSize {
 			toWrite = toWrite[:maggiefs.BuffSize-1]
 		}
@@ -144,7 +146,6 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uin
 }
 
 func (w *InodeWriter) doWriteAt(p []byte, off uint64, length uint32) (nWritten uint32, err error) {
-	
 	// make sure inode is up to date
 	if w.currLease == nil {
 		w.currLease, err = w.leases.WriteLease(w.inodeid)
@@ -238,11 +239,12 @@ func blockwrites(i *maggiefs.Inode, p []byte, off uint64, length uint32) []block
 			if b.EndPos < endOfWritePos {
 				writeLength = int(b.Length() - posInBlock)
 			}
-			//fmt.Printf("startIdx %d writeLength %d\n", nWritten, writeLength)
+			fmt.Printf("startIdx %d writeLength %d\n", nWritten, writeLength)
 			startIdx := nWritten
 			endIdx := startIdx + writeLength
-
+			
 			ret = append(ret, blockwrite{b, p[startIdx:endIdx], posInBlock})
+			nWritten += writeLength
 			//fmt.Printf("Writing %d bytes to block %+v pos %d startIdx %d endIdx %d\n", b, posInBlock, startIdx, endIdx)
 			//      fmt.Printf("Wrote %d bytes to block %+v\n", endIdx-startIdx, b)
 			//      fmt.Printf("Wrote %d, nWritten total %d", writeLength, nWritten)
@@ -330,12 +332,14 @@ func (w *InodeWriter) addBlocksForFileWrite(off uint64, length uint32) error {
 				extendLength := BLOCKLENGTH - lastBlock.Length()
 				if lastBlock.EndPos+extendLength > off+uint64(length) {
 					// only extend as much as we need to
+					fmt.Printf("Extending at offset %d for length %d\n",off,length)
 					extendLength = off + uint64(length-1) - lastBlock.EndPos
 				}
+				fmt.Printf("Extending block %+v by %d\n",lastBlock,extendLength)
 				lastBlock.EndPos = lastBlock.EndPos + extendLength
 				w.currInode.Blocks[idx] = lastBlock
 				w.currInode.Length += extendLength
-				fmt.Printf("Extended block %v on inode %v\n",lastBlock,w.currInode)
+				fmt.Printf("Extended block %v on inode %+v\n",lastBlock,w.currInode)
 			}
 		}
 		// and add new blocks as necessary
@@ -358,6 +362,7 @@ func (w *InodeWriter) addBlocksForFileWrite(off uint64, length uint32) error {
 			}
 			// patch up local copy
 			w.currInode.Blocks = append(w.currInode.Blocks, newBlock)
+			fmt.Printf("Added new block %+v\n",newBlock)
 			w.currInode.Length += newBlockLength
 		}
 	}

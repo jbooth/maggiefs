@@ -42,7 +42,7 @@ func newClientPipeline(server Endpoint, blk maggiefs.Block, maxBytesInFlight int
 }
 
 func (c *ClientPipeline) Write(p []byte, pos uint64) (err error) {
-	fmt.Printf("client pipeline write acquiring lock\n")
+	// fmt.Printf("client pipeline write acquiring lock\n")
 	c.l.L.Lock()
 	defer c.l.L.Unlock()
 	if c.closed {
@@ -50,7 +50,7 @@ func (c *ClientPipeline) Write(p []byte, pos uint64) (err error) {
 	}
 	// wait until there are enough bytes available
 	for c.bytesInFlight+len(p) > c.maxBytesInFlight {
-		fmt.Printf("client pipeline write waiting till bytes freed up\n")
+		//fmt.Printf("client pipeline write waiting till bytes freed up\n")
 		c.l.Wait()
 	}
 	// send req header
@@ -61,7 +61,7 @@ func (c *ClientPipeline) Write(p []byte, pos uint64) (err error) {
 		return fmt.Errorf("Error writing bytes: %s", err)
 	}
 	// send req bytes
-	fmt.Printf("Client pipeline writing bytes\n")
+	//fmt.Printf("Client pipeline writing bytes\n")
 	numWritten := 0
 	for numWritten < len(p) {
 		//	fmt.Printf("Writing bytes from pos %d, first byte %x\n", numWritten, p[numWritten])
@@ -158,14 +158,14 @@ func (s *serverPipeline) run() error {
 PIPELINE:
 	for {
 		// read header
-		fmt.Printf("Server pipeline running, trying to read req header\n")
+		//fmt.Printf("Server pipeline running, trying to read req header\n")
 		_, err := req.ReadFrom(s.client)
 		if err != nil {
 			return fmt.Errorf("Err serving conn for pipelined write %s : %s\n", s.client.String(), err.Error())
 		}
 		// if this is a sync request, break the loop and sync
 		if req.Op == OP_COMMIT_WRITE {
-			fmt.Printf("Breaking server side pipeline\n")
+			//fmt.Printf("Breaking server side pipeline\n")
 
 			b := make([]byte, 5)
 			s.f.ReadAt(b, 0)
@@ -181,7 +181,7 @@ PIPELINE:
 			break PIPELINE
 		}
 		// normal write
-		fmt.Printf("Handling server side write, length %d\n", req.Length)
+		//fmt.Printf("Handling server side write, length %d\n", req.Length)
 		// all writes shuold be 128kb max, subset our 128k buffer to size
 		myBuf := s.buff[:int(req.Length)]
 		// read bytes
@@ -230,11 +230,11 @@ PIPELINE:
 	s.f.Sync()
 	b := make([]byte, 5)
 	s.f.ReadAt(b, 0)
-	fmt.Printf("First 5 in file with remaining volumes %+v : %x\n", s.remainingVolumes, b)
+	//fmt.Printf("First 5 in file with remaining volumes %+v : %x\n", s.remainingVolumes, b)
 	// wait till all acks received
 	close(s.ackRequired)
 	<-s.allAcksReceived
-	fmt.Printf("server pipeline returning")
+	//fmt.Printf("server pipeline returning")
 	return nil
 }
 

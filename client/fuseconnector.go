@@ -693,7 +693,7 @@ func (m *MaggieFuse) Release(input *fuse.ReleaseIn) {
 }
 
 func (m *MaggieFuse) Write(input *fuse.WriteIn, data []byte) (written uint32, code fuse.Status) {
-	fmt.Println("Call to write!")
+	fmt.Printf("Call to write! %+v\n",input)
 	writer := m.openFiles.get(input.Fh).w
 	//fmt.Printf("Got writer %+v\n", writer)
 	written = uint32(0)
@@ -706,6 +706,7 @@ func (m *MaggieFuse) Write(input *fuse.WriteIn, data []byte) (written uint32, co
 			return written, fuse.EROFS
 		}
 	}
+	fmt.Printf("Write returning nWritten %d\n",written)
 	return written, fuse.OK
 }
 
