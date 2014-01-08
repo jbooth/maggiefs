@@ -43,7 +43,6 @@ func (r *Reader) ReadAt(p fuse.ReadPipe, position uint64, length uint32) (err er
 	// confirm currBlock and currReader correct
 	nRead := uint32(0)
 	for nRead < length {
-		fmt.Printf("reader.go top of loop")
 		if position == inode.Length {
 			break
 		}
@@ -64,7 +63,6 @@ func (r *Reader) ReadAt(p fuse.ReadPipe, position uint64, length uint32) (err er
 		}
 		// read bytes
 		//fmt.Printf("reader.go reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
-		fmt.Printf("Doing read of %d inside reader.go\n",numBytesFromBlock)
 		err = r.datas.Read(block, p, posInBlock, numBytesFromBlock)
 		if err != nil && err != io.EOF {
 			return fmt.Errorf("reader.go error reading from block %+v : %s", block, err.Error())

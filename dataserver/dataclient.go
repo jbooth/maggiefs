@@ -71,7 +71,6 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 		header := RequestHeader{OP_READ, blk, pos, length}
 		//		fmt.Printf("data client writing read header to %s\n", d)
 		//		fmt.Printf("Reading length %d to slice of length %d\n", length, len(p))
-		fmt.Printf("Sending read header in dataclient : %+v \n",header)
 		_, err = header.WriteTo(d)
 		if err != nil {
 			return fmt.Errorf("Error writing header to dn : %s", err.Error())
@@ -111,7 +110,6 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 
 // returns a write session
 func (dc *DataClient) WriteSession(blk maggiefs.Block) (writer maggiefs.BlockWriter, err error) {
-	fmt.Printf("Fetching write session in dataclient \n")
 	if dc.isLocal(blk.Volumes) {
 		// local shortcut, return write session from an in-memory pipe
 		local,remote := PipeEndpoints()

@@ -100,7 +100,7 @@ func initPipe() (p *pipe, err error) {
 	if e != 0 {
 		return nil, os.NewSyscallError("pipe", e)
 	}
-	fmt.Printf("Got new pipe, read fd %d, write fd %d\n", pp[0], pp[1])
+	//fmt.Printf("Got new pipe, read fd %d, write fd %d\n", pp[0], pp[1])
 	return &pipe{os.NewFile(uintptr(pp[0]), "|0"), os.NewFile(uintptr(pp[1]), "|1"), 0}, nil
 
 }
@@ -205,7 +205,7 @@ func SpliceWithTee(in *os.File, inOff *int64, out *os.File, outOff *int64, teeOu
 	for length > 0 {
 		// splice into buffer
 		chunkSize, err := p.spliceIn(in, inOff, length)
-		fmt.Printf("Spliced %d into pipe\n", chunkSize)
+		//fmt.Printf("Spliced %d into pipe\n", chunkSize)
 		if err != nil {
 			return fmt.Errorf("Error splicing into pipe fd %d from input fd %d : %s", p.w.Fd(), in.Fd(), err.Error())
 		}

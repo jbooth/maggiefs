@@ -55,7 +55,7 @@ func (c *ClientPipeline) Write(p []byte, pos uint64) (err error) {
 	}
 	// send req header
 	header := &RequestHeader{OP_WRITE_BYTES, c.blk, pos, uint32(len(p))}
-	fmt.Printf("Client pipeline writing header %+v\n", header)
+	//fmt.Printf("Client pipeline writing header %+v\n", header)
 	_, err = header.WriteTo(c.server)
 	if err != nil {
 		return fmt.Errorf("Error writing bytes: %s", err)
@@ -169,7 +169,6 @@ PIPELINE:
 
 			b := make([]byte, 5)
 			s.f.ReadAt(b, 0)
-			fmt.Printf("First 5 in file with remaining volumes %+v : %x\n", s.remainingVolumes, b)
 			// forward the op
 			if s.nextInLine != nil {
 				req.Blk.Volumes = s.remainingVolumes

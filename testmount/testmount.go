@@ -9,6 +9,7 @@ import (
 	"github.com/jbooth/maggiefs/integration"
 	"os"
 	"os/signal"
+	"io/ioutil"
 	"syscall"
 )
 
@@ -42,9 +43,15 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	err = longFileTest()
+//	err = longFileTest()
+//	if err != nil {
+//		fmt.Println("FAIL longFileTest")
+//		fmt.Println(err)
+//		return
+//	}
+	err = listStatusTest()
 	if err != nil {
-		fmt.Println("FAIL longFileTest")
+		fmt.Println("FAIL listStatusTest")
 		fmt.Println(err)
 		return
 	}
@@ -191,5 +198,44 @@ func longFileTest() error {
 		return fmt.Errorf("bytes not equal to reference in last section")
 	}
 	fmt.Println("success longFileTest")
+	return nil
+}
+
+func listStatusTest() error {
+	err := os.Mkdir(mountPoint + "/dir1",0777)
+	if err != nil {
+		return err
+	}
+	files,err := ioutil.ReadDir(mountPoint)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%+v\n",files)
+	found := false
+	for _,f := range files {
+		fmt.Printf("got file %s\n",f.Name())
+		if f.Name() == "dir1" {
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("Couldn't find dir1 under %s",mountPoint)
+	}
+	f,err := os.Create(mountPoint + "/file1.txt")
+	if err != nil {
+		return err
+	}
+	f.WriteString("hi")
+	f.Close()
+	files,err = ioutil.ReadDir(mountPoint + "/dir1")
+	for _,f := range files {
+		fmt.Printf("got file %s\n",f.Name())
+		if f.Name() == "file1.txt" {
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("Couldn't find file1 under %s/dir1",mountPoint)
+	}
 	return nil
 }

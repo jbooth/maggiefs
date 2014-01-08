@@ -7,8 +7,6 @@ package fuse
 import (
 	"github.com/jbooth/maggiefs/splice"
 	"log"
-	"fmt"
-	"runtime/debug"
 )
 
 type MountOptions struct {
@@ -85,10 +83,7 @@ func (r *readPipe) WriteHeader(code int32, returnBytesLength int) error {
 	}
 	// response header goes in buffer first, before read results
 	
-	n, err := r.pipe.Write(headerBytes)
-	fmt.Printf("Header: %x\n",headerBytes)
-	fmt.Printf("Stack: %s\n",string(debug.Stack()))
-	fmt.Printf("Wrote %d header bytes to pipe out of %d\n",n,len(headerBytes))
+	_,err = r.pipe.Write(headerBytes)
 	if err != nil {
 		log.Printf("Error writing header to pipe prior to read: %s\n", err)
 		r.req.status = EIO
@@ -103,7 +98,6 @@ func (r *readPipe) WriteBytes(b []byte) (int,error) {
 }
 
 func (r *readPipe) SpliceBytes(fd uintptr, length int) (int,error) {
-	fmt.Printf("Splicing %d bytes to pipe\n",length)
 	return r.pipe.LoadFrom(fd,length)
 }
 

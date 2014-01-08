@@ -114,7 +114,7 @@ func (w *InodeWriter) Truncate(length uint64) error {
 }
 
 func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uint32, err error) {
-	fmt.Printf("Starting write at off %d, length %d, acquiring lock\n",off,length)
+	//fmt.Printf("Starting write at off %d, length %d, acquiring lock\n",off,length)
 	w.l.Lock()
 	defer w.l.Unlock()
 	if len(p) < int(length) {
@@ -123,7 +123,6 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uin
 	nWritten = 0
 	origLength := length
 	for nWritten < origLength {
-		fmt.Printf("Writing to offset %d from array of length %d from position %d, orig length arg %d\n",off,len(p),nWritten,length)
 		toWrite := p[int(nWritten):]
 		// make sure writes are max 128kb
 		if len(toWrite) > maggiefs.BuffSize {
@@ -160,12 +159,10 @@ func (w *InodeWriter) doWriteAt(p []byte, off uint64, length uint32) (nWritten u
 	
 	// confirm inode long enough to hold our write
 	if off + uint64(length) > w.currInode.Length {
-		fmt.Printf("Adding block for file write\n")
 		w.addBlocksForFileWrite(off,length)
 	}
 	// get list of blockwrites
 	writes := blockwrites(w.currInode, p, off, length)
-	fmt.Printf("%d block writes\n",len(writes))
 
 	if len(writes) == 0 {
 		return 0, fmt.Errorf("Couldn't write to inode %+v at off %d len %d", w.currInode, off, length)
@@ -174,7 +171,6 @@ func (w *InodeWriter) doWriteAt(p []byte, off uint64, length uint32) (nWritten u
 	nWritten = 0
 	// if first write can be served from curr pipeline, do it
 	if w.currBlock.Id == writes[0].b.Id && w.currPipeline != nil {
-		fmt.Printf("Serving block write from curr writer\n")
 		err := w.currPipeline.Write(writes[0].p, writes[0].posInBlock)
 		if err != nil {
 			return nWritten,err
@@ -189,21 +185,17 @@ func (w *InodeWriter) doWriteAt(p []byte, off uint64, length uint32) (nWritten u
 
 	// iterate making new pipelines for rest, if any
 	for _, write := range writes {
-		fmt.Printf("Serving block write from new writer\n")
 		if w.currPipeline != nil {
-			fmt.Printf("Closing prev writer\n")
 			err = w.currPipeline.SyncAndClose()
 			if err != nil {
 				return nWritten, err
 			}
 		}
-		fmt.Printf("Creating new writer\n")
 		w.currBlock = write.b
 		w.currPipeline,err = w.datas.WriteSession(w.currBlock)
 		if err != nil {
 			return nWritten,err
 		}
-		fmt.Printf("Writing bytes\n")
 		err = w.currPipeline.Write(write.p, write.posInBlock)
 		if err != nil {
 			return nWritten, err
@@ -239,7 +231,6 @@ func blockwrites(i *maggiefs.Inode, p []byte, off uint64, length uint32) []block
 			if b.EndPos < endOfWritePos {
 				writeLength = int(b.Length() - posInBlock)
 			}
-			fmt.Printf("startIdx %d writeLength %d\n", nWritten, writeLength)
 			startIdx := nWritten
 			endIdx := startIdx + writeLength
 			
@@ -263,54 +254,6 @@ func (w *InodeWriter) Close() (err error) {
 	return
 }
 
-//// assumes lease is held and passed in inode is up to date -- may flush inode state to nameserver if we're adding a new block
-//// but will not most of the time, will modify passed in inode instead
-//func (w *InodeWriter) doWrite(ino *maggiefs.Inode, p []byte, off uint64, length uint32) (uint32, error) {
-//	// check if we need to add blocks, note we support sparse files
-//	// so it's ok to add blocks that won't be written to right away,
-//	// on read they'll return 0 for all bytes in empty sections, and
-//	// won't read past
-//	if off+uint64(length) > w.inode.Length {
-//		err := w.addBlocksForFileWrite(off, length)
-//		if err != nil {
-//			return 0, err
-//		}
-//		//fmt.Printf("Added blocks for filewrite to ino %+v\n", inode)
-//	}
-//	// now write bytes
-//	nWritten := 0
-//	endOfWritePos := off + uint64(length) - 1
-//	startOfWritePos := off + uint64(nWritten)
-//	for _, b := range w.inode.Blocks {
-//		//fmt.Printf("evaluating block %+v for writeStartPos %d endofWritePos %d\n", b, startOfWritePos, endOfWritePos)
-//		// TODO do we need that last endOfWritePos <= b.EndPos here?
-//		if (b.StartPos <= startOfWritePos && b.EndPos > startOfWritePos) || (b.StartPos < endOfWritePos && endOfWritePos <= b.EndPos) {
-//
-//			posInBlock := uint64(0)
-//			if b.StartPos < off {
-//				posInBlock += off - b.StartPos
-//			}
-//			//fmt.Printf("nWritten %d off %d len %d endofWritePos %d block %+v posInBlock %d\n", nWritten, off, length, endOfWritePos, b, posInBlock)
-//			writeLength := int(length) - nWritten
-//			if b.EndPos < endOfWritePos {
-//				writeLength = int(b.Length() - posInBlock)
-//			}
-//			//fmt.Printf("startIdx %d writeLength %d\n", nWritten, writeLength)
-//			startIdx := nWritten
-//			endIdx := startIdx + writeLength
-//			//fmt.Printf("Writing %d bytes to block %+v pos %d startIdx %d endIdx %d\n", b, posInBlock, startIdx, endIdx)
-//			err := w.datas.Write(b, p[startIdx:endIdx], posInBlock)
-//			if err != nil {
-//				return 0, err
-//			}
-//			//			fmt.Printf("Wrote %d bytes to block %+v\n", endIdx-startIdx, b)
-//			nWritten += writeLength
-//			//			fmt.Printf("Wrote %d, nWritten total %d", writeLength, nWritten)
-//		}
-//	}
-//	//fmt.Printf("Returning from write, nWritten %d",nWritten)
-//	return uint32(nWritten), nil
-//}
 
 // acquires lease, then adds the blocks to the namenode,
 // patching up the referenced inode to match
@@ -332,14 +275,11 @@ func (w *InodeWriter) addBlocksForFileWrite(off uint64, length uint32) error {
 				extendLength := BLOCKLENGTH - lastBlock.Length()
 				if lastBlock.EndPos+extendLength > off+uint64(length) {
 					// only extend as much as we need to
-					fmt.Printf("Extending at offset %d for length %d\n",off,length)
 					extendLength = off + uint64(length-1) - lastBlock.EndPos
 				}
-				fmt.Printf("Extending block %+v by %d\n",lastBlock,extendLength)
 				lastBlock.EndPos = lastBlock.EndPos + extendLength
 				w.currInode.Blocks[idx] = lastBlock
 				w.currInode.Length += extendLength
-				fmt.Printf("Extended block %v on inode %+v\n",lastBlock,w.currInode)
 			}
 		}
 		// and add new blocks as necessary
@@ -362,7 +302,6 @@ func (w *InodeWriter) addBlocksForFileWrite(off uint64, length uint32) error {
 			}
 			// patch up local copy
 			w.currInode.Blocks = append(w.currInode.Blocks, newBlock)
-			fmt.Printf("Added new block %+v\n",newBlock)
 			w.currInode.Length += newBlockLength
 		}
 	}

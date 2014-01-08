@@ -183,7 +183,6 @@ func fillAttrOut(out *fuse.AttrOut, i *maggiefs.Inode) {
 	// fuse.AttrOut
 	out.AttrValid = uint64(0)
 	out.AttrValidNsec = uint32(100)
-	fmt.Printf("Filled attrOut %v with inode %v\n",out,i)
 }
 
 func (m *MaggieFuse) GetAttr(input *fuse.GetAttrIn, out *fuse.AttrOut) (code fuse.Status) {
@@ -693,7 +692,6 @@ func (m *MaggieFuse) Release(input *fuse.ReleaseIn) {
 }
 
 func (m *MaggieFuse) Write(input *fuse.WriteIn, data []byte) (written uint32, code fuse.Status) {
-	fmt.Printf("Call to write! %+v\n",input)
 	writer := m.openFiles.get(input.Fh).w
 	//fmt.Printf("Got writer %+v\n", writer)
 	written = uint32(0)
@@ -706,7 +704,6 @@ func (m *MaggieFuse) Write(input *fuse.WriteIn, data []byte) (written uint32, co
 			return written, fuse.EROFS
 		}
 	}
-	fmt.Printf("Write returning nWritten %d\n",written)
 	return written, fuse.OK
 }
 
@@ -742,7 +739,6 @@ func (d dentrylist) Swap(i, j int)      { d[i], d[j] = d[j], d[i] }
 func (d dentrylist) Less(i, j int) bool { return d[i].CreatedTime < d[j].CreatedTime }
 
 func (m *MaggieFuse) ReadDir(input *fuse.ReadIn, l *fuse.DirEntryList) fuse.Status {
-	// read from map fd-> dirobject
 	dir, err := m.names.GetInode(input.InHeader.NodeId)
 	if err != nil {
 		return fuse.EINVAL
@@ -771,7 +767,37 @@ func (m *MaggieFuse) ReadDir(input *fuse.ReadIn, l *fuse.DirEntryList) fuse.Stat
 }
 
 func (m *MaggieFuse) ReadDirPlus(input *fuse.ReadIn, l *fuse.DirEntryList) fuse.Status {
-	return m.ReadDir(input,l)
+	dir, err := m.names.GetInode(input.InHeader.NodeId)
+	if err != nil {
+		return fuse.EINVAL
+	}
+	// create sorted list
+	entryList := dentrylist(make([]dentryWithName, len(dir.Children), len(dir.Children)))
+
+	i := 0
+	for name, entry := range dir.Children {
+		entryList[i] = dentryWithName{name, entry}
+		i++
+	}
+	sort.Sort(entryList)
+	
+	// fill until offset
+	d := fuse.DirEntry{}
+	e := &fuse.EntryOut{}
+	for i := int(input.Offset); i < len(entryList); i++ {
+		inode, err := m.names.GetInode(entryList[i].Inodeid)
+		if err != nil {
+			return fuse.EROFS
+		}
+		d.Name = entryList[i].name
+		d.Mode = inode.FullMode()
+		fillEntryOut(e,inode)
+		success,_ := l.AddDirLookupEntry(d,e)
+		if !success {
+			break
+		}
+	}
+	return fuse.OK
 }
 func (m *MaggieFuse) ReleaseDir(input *fuse.ReleaseIn) {
 	// noop, we do stateless dirs

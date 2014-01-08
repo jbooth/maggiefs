@@ -379,9 +379,7 @@ func (ms *Server) systemWrite(req *request) Status {
 	if req.readBuffer != nil {
 		// if we have a pipe, then use splice
 		// header is already in pipe
-		var n int
-		n, err = req.readBuffer.WriteTo(uintptr(ms.mountFd),req.readNumBytesInChan) 
-		fmt.Printf("Wrote %d bytes from splice out of %d in pipe\n",n,req.readNumBytesInChan)
+		_,err = req.readBuffer.WriteTo(uintptr(ms.mountFd),req.readNumBytesInChan) 
 		splice.Done(req.readBuffer)
 		req.readBuffer = nil
 	} else {

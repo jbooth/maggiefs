@@ -54,7 +54,7 @@ func loadVolume(volRoot string, fp *FilePool) (*volume, error) {
 	d := json.NewDecoder(dnInfoFile)
 	dnInfo := maggiefs.DataNodeInfo{}
 	d.Decode(&dnInfo)
-	fmt.Printf("Loading existing volume id %d, dnInfo %+v\n",id,dnInfo) 
+	//fmt.Printf("Loading existing volume id %d, dnInfo %+v\n",id,dnInfo) 
 	db, err := levigo.Open(volRoot+"/meta", openOpts)
 	if err != nil {
 		db.Close()
@@ -148,7 +148,7 @@ func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
 	if err != nil {
 		return stat, err
 	}
-	fmt.Printf("HeartBeat for volume id %d, dnInfo %+v\n",v.id,v.info)
+	//fmt.Printf("HeartBeat for volume id %d, dnInfo %+v\n",v.id,v.info)
 	stat.VolumeInfo = v.info
 	// these sizes are in blocks of 512
 	stat.Size = sysstat.Blocks * uint64(sysstat.Bsize)
@@ -350,7 +350,7 @@ func (v *volume) serveWrite(client Endpoint, req *RequestHeader, datas *DataClie
 			}
 		}
 		req.Blk.Volumes = remainingVolumes
-		fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
+		//fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
 		
 		// wrap func to do the pipeline around our vars
 		doPipeline := func(nextInLine Endpoint) error {
@@ -378,7 +378,6 @@ func (v *volume) serveWrite(client Endpoint, req *RequestHeader, datas *DataClie
 			// nil nextInLine, just compute here
 			pipelineErr = doPipeline(nil)
 		}
-		fmt.Printf("Server side pipeline finished wtih err: %s\n",pipelineErr)
 		return pipelineErr
 	})
 
