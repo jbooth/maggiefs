@@ -94,6 +94,8 @@ func (w *InodeWriter) expireLease() (err error) {
 
 // calls out to name service to truncate this file by repeatedly shrinking blocks
 func (w *InodeWriter) Truncate(length uint64) error {
+	w.l.Lock()
+	defer w.l.Unlock()
 	// expire/flush any previous lease
 	err := w.expireLease()
 	if err != nil {
@@ -151,12 +153,13 @@ func (w *InodeWriter) doWriteAt(p []byte, off uint64, length uint32) (nWritten u
 		if err != nil {
 			return 0, err
 		}
+	}
+	if w.currInode == nil {
 		w.currInode, err = w.names.GetInode(w.inodeid)
 		if err != nil {
 			return 0, err
 		}
 	}
-	
 	// confirm inode long enough to hold our write
 	if off + uint64(length) > w.currInode.Length {
 		w.addBlocksForFileWrite(off,length)
@@ -245,10 +248,14 @@ func blockwrites(i *maggiefs.Inode, p []byte, off uint64, length uint32) []block
 }
 
 func (w *InodeWriter) Fsync() (err error) {
+	w.l.Lock()
+	defer w.l.Unlock()
 	return w.expireLease()
 }
 
 func (w *InodeWriter) Close() (err error) {
+	w.l.Lock()
+	defer w.l.Unlock()
 	err = w.expireLease()
 	w.closed = true
 	return
@@ -301,6 +308,9 @@ func (w *InodeWriter) addBlocksForFileWrite(off uint64, length uint32) error {
 				return err
 			}
 			// patch up local copy
+			if w.currInode.Blocks == nil {
+				w.currInode.Blocks = make([]maggiefs.Block,0,0)
+			}
 			w.currInode.Blocks = append(w.currInode.Blocks, newBlock)
 			w.currInode.Length += newBlockLength
 		}
