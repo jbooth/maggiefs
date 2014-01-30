@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"github.com/jbooth/maggiefs/fuse"
+	"runtime/debug"
 )
 
 type Mount struct {
@@ -31,6 +32,7 @@ func (m *Mount) Serve() error {
 	defer func() {
 		if x := recover(); x != nil {
 			fmt.Printf("run time panic serving mountpoint %s : %v\n", m.MountPoint, x)
+			fmt.Printf("stacktrace: %s\n",string(debug.Stack()))
 			m.Close()
 		}
 	}()

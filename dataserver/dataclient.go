@@ -11,18 +11,17 @@ import (
 // compile-time check for type safety
 var typeCheck maggiefs.DataService = &DataClient{}
 
-
 type DataClient struct {
-	names   maggiefs.NameService
-	volMap  map[uint32]*net.TCPAddr
-	volLock *sync.RWMutex // guards volMap
-	pool    *connPool
-	localDS *DataServer
+	names     maggiefs.NameService
+	volMap    map[uint32]*net.TCPAddr
+	volLock   *sync.RWMutex // guards volMap
+	pool      *connPool
+	localDS   *DataServer
 	localVols []uint32
 }
 
 func NewDataClient(names maggiefs.NameService, connsPerDn int) (*DataClient, error) {
-	return &DataClient{names, make(map[uint32]*net.TCPAddr), &sync.RWMutex{}, newConnPool(connsPerDn, true),nil,nil}, nil
+	return &DataClient{names, make(map[uint32]*net.TCPAddr), &sync.RWMutex{}, newConnPool(connsPerDn, true), nil, nil}, nil
 }
 
 func pickVol(vols []uint32) uint32 {
@@ -34,9 +33,11 @@ func (dc *DataClient) isLocal(vols []uint32) bool {
 		return false
 	}
 	// both lists are short, double for loop is fine
-	for _,volId := range vols {
-		for _,localVolId := range dc.localVols {
-			if localVolId == volId { return true }
+	for _, volId := range vols {
+		for _, localVolId := range dc.localVols {
+			if localVolId == volId {
+				return true
+			}
 		}
 	}
 	return false
@@ -62,9 +63,9 @@ func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr, error) {
 
 // read some bytes
 func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) (err error) {
-	if (dc.isLocal(blk.Volumes)) {
+	if dc.isLocal(blk.Volumes) {
 		// local direct read
-		return dc.localDS.DirectRead(blk,buf,pos,length)
+		return dc.localDS.DirectRead(blk, buf, pos, length)
 	}
 	return dc.withConn(pickVol(blk.Volumes), func(d Endpoint) error {
 		// send req
@@ -85,19 +86,18 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 			return fmt.Errorf("Error code %d from DN", resp.Stat)
 		}
 		// put header into response buffer
-		err = buf.WriteHeader(0,int(length))
+		err = buf.WriteHeader(0, int(length))
 		if err != nil {
-			return fmt.Errorf("Error writing resp header to splice pipe : %s",err)
+			return fmt.Errorf("Error writing resp header to splice pipe : %s", err)
 		}
-		
-		
+
 		// read resp bytes
 		//fmt.Printf("Entering loop to read %d bytes\n",length)
 		numRead := 0
 		for uint32(numRead) < length {
 			//			fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length - uint32(numRead), d, numRead, int(length))
 			//			fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
-			n, err := buf.SpliceBytes(uintptr(d.Rfd()),int(length) - numRead)
+			n, err := buf.SpliceBytes(uintptr(d.Rfd()), int(length)-numRead)
 			//			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
 			if err != nil {
 				return err
@@ -112,39 +112,39 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 func (dc *DataClient) WriteSession(blk maggiefs.Block) (writer maggiefs.BlockWriter, err error) {
 	if dc.isLocal(blk.Volumes) {
 		// local shortcut, return write session from an in-memory pipe
-		local,remote := PipeEndpoints()
+		local, remote := PipeEndpoints()
 		go dc.localDS.serveClientConn(remote)
 		return newClientPipeline(
-		local,
-		blk,
-		64*1024*1024, // 64MB max for unack'd bytes in flight
-		func() {
-			local.Close()  // kill in-memory pipe when finished
-		},
-	)
-		
+			local,
+			blk,
+			64*1024*1024, // 64MB max for unack'd bytes in flight
+			func() {
+				local.Close() // kill in-memory pipe when finished
+			},
+		)
+
 	}
 	// return write session over the netwrok
-	
+
 	// find host
 	raddr, err := dc.VolHost(pickVol(blk.Volumes))
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	// get conn
-	conn,err := dc.pool.getConn(raddr)
+	conn, err := dc.pool.getConn(raddr)
 	if err != nil {
 		if conn != nil {
 			conn.Close()
 		}
-		return nil,err
+		return nil, err
 	}
 	return newClientPipeline(
 		conn,
 		blk,
 		64*1024*1024, // 64MB max for unack'd bytes in flight
 		func() {
-			dc.pool.returnConn(raddr,conn) // return to pool on done
+			dc.pool.returnConn(raddr, conn) // return to pool on done
 		},
 	)
 }
@@ -209,7 +209,7 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c Endpoint) error) (err
 		p.l.Unlock()
 	}
 
-	// get object
+	// get conn
 	var conn Endpoint
 	select {
 	case conn = <-ch:
@@ -227,6 +227,17 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c Endpoint) error) (err
 	}
 	// do our stuff
 	err = with(conn)
+	for err != nil {
+		fmt.Printf("Error with conn to %s : %s\n", conn, err)
+		conn.Close()
+		conn, err = p.getConn(host)
+		if err != nil {
+			if conn != nil {
+				conn.Close()
+			}
+			return err
+		}
+	}
 	if err != nil {
 		// don't re-use conn on error, might be crap left in the pipe
 		conn.Close()
@@ -245,7 +256,6 @@ func (p *connPool) withConn(host *net.TCPAddr, with func(c Endpoint) error) (err
 	}
 	return err
 }
-
 
 // direct access to conn pool, be careful to return!
 func (p *connPool) getConn(host *net.TCPAddr) (Endpoint, error) {
@@ -300,13 +310,13 @@ func (p *connPool) returnConn(host *net.TCPAddr, conn Endpoint) {
 	}
 	// return	to pool
 	select {
-		case ch <- conn:
-			// successfully added back to freelist
-			//fmt.Printf("Added conn back to pool for host %s, local %s\n", host.String(), conn)
-		default:
-			// freelist full, dispose of that trash
-			//fmt.Printf("Closing conn for host %s, local %s\n", host.String(), conn)
-			_ = conn.Close()
+	case ch <- conn:
+		// successfully added back to freelist
+		//fmt.Printf("Added conn back to pool for host %s, local %s\n", host.String(), conn)
+	default:
+		// freelist full, dispose of that trash
+		//fmt.Printf("Closing conn for host %s, local %s\n", host.String(), conn)
+		_ = conn.Close()
 	}
 }
 

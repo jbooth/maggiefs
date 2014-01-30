@@ -177,10 +177,11 @@ func (ds *DataServer) serveClientConn(conn Endpoint) {
 	for {
 		req := &RequestHeader{}
 		_, err := req.ReadFrom(conn)
+		
 		if err != nil {
 			// don't log error for remote closed connection
 			if err != io.EOF && err != io.ErrClosedPipe {
-				fmt.Printf("Err serving conn %s : %s\n", conn.String(), err.Error())
+				fmt.Printf("Err serving conn while reading header %s : %s\n", conn.String(), err.Error())
 			}
 			return
 		}
