@@ -46,6 +46,7 @@ func (w *InodeWriter) checkLease() {
 	for {
 		// sleep 1 second in between checks
 		time.Sleep(1 * time.Second)
+		fmt.Printf("Acquiring lock to expire lease")
 		w.l.Lock()
 		now := time.Now()
 		// if lease is held and we've held it too long
@@ -53,7 +54,7 @@ func (w *InodeWriter) checkLease() {
 			err := w.expireLease()
 			if err != nil {
 				// already marked close, just bail this goroutine
-				fmt.Printf("Error expiring lease for writer on inode %d!, closing..\n", w.inodeid)
+				fmt.Printf("Error expiring lease for writer on inode %d! %s, closing..\n", w.inodeid, err)
 				w.l.Unlock()
 				return
 			}
@@ -65,14 +66,19 @@ func (w *InodeWriter) checkLease() {
 // commits all changes and drops our lease
 // expects lock held
 func (w *InodeWriter) expireLease() (err error) {
+	fmt.Printf("Expiring lease\n")
 	if w.currInode != nil {
+		fmt.Println("Setting inode")
 		err = w.names.SetInode(w.currInode)
+		fmt.Println("Done")
 		if err != nil {
 			w.closed = true
+			fmt.Printf("Err setting inode in writer.expireLease() : %s\n", err)
 			return
 		}
 	}
 	if w.currPipeline != nil {
+		fmt.Printf("Syncing..")
 		err = w.currPipeline.SyncAndClose()
 		if err != nil {
 			w.closed = true
@@ -80,6 +86,7 @@ func (w *InodeWriter) expireLease() (err error) {
 		}
 	}
 	if w.currLease != nil {
+		fmt.Printf("Releasing our writeLease..")
 		err = w.currLease.Release()
 		if err != nil {
 			w.closed = true
@@ -120,7 +127,7 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uin
 	w.l.Lock()
 	defer w.l.Unlock()
 	if len(p) < int(length) {
-		return 0,fmt.Errorf("Called writer.WriteAt with bad arguments:  array of length %d, writing to file at off %d len %d",len(p),off,length)
+		return 0, fmt.Errorf("Called writer.WriteAt with bad arguments:  array of length %d, writing to file at off %d len %d", len(p), off, length)
 	}
 	nWritten = 0
 	origLength := length
@@ -134,16 +141,16 @@ func (w *InodeWriter) WriteAt(p []byte, off uint64, length uint32) (nWritten uin
 		if int(lengthToWrite) > len(toWrite) {
 			lengthToWrite = uint32(len(toWrite))
 		}
-		n,err := w.doWriteAt(toWrite,off,lengthToWrite)
+		n, err := w.doWriteAt(toWrite, off, lengthToWrite)
 		if err != nil {
-			return nWritten,err
+			return nWritten, err
 		}
 		nWritten += n
 		off += uint64(n)
 		length -= n
 	}
-	return nWritten,nil
-	
+	return nWritten, nil
+
 }
 
 func (w *InodeWriter) doWriteAt(p []byte, off uint64, length uint32) (nWritten uint32, err error) {
@@ -161,8 +168,8 @@ func (w *InodeWriter) doWriteAt(p []byte, off uint64, length uint32) (nWritten u
 		}
 	}
 	// confirm inode long enough to hold our write
-	if off + uint64(length) > w.currInode.Length {
-		w.addBlocksForFileWrite(off,length)
+	if off+uint64(length) > w.currInode.Length {
+		w.addBlocksForFileWrite(off, length)
 	}
 	// get list of blockwrites
 	writes := blockwrites(w.currInode, p, off, length)
@@ -170,13 +177,13 @@ func (w *InodeWriter) doWriteAt(p []byte, off uint64, length uint32) (nWritten u
 	if len(writes) == 0 {
 		return 0, fmt.Errorf("Couldn't write to inode %+v at off %d len %d", w.currInode, off, length)
 	}
-	
+
 	nWritten = 0
 	// if first write can be served from curr pipeline, do it
 	if w.currBlock.Id == writes[0].b.Id && w.currPipeline != nil {
 		err := w.currPipeline.Write(writes[0].p, writes[0].posInBlock)
 		if err != nil {
-			return nWritten,err
+			return nWritten, err
 		}
 		nWritten += uint32(len(writes[0].p))
 		if len(writes) > 1 {
@@ -195,9 +202,9 @@ func (w *InodeWriter) doWriteAt(p []byte, off uint64, length uint32) (nWritten u
 			}
 		}
 		w.currBlock = write.b
-		w.currPipeline,err = w.datas.WriteSession(w.currBlock)
+		w.currPipeline, err = w.datas.WriteSession(w.currBlock)
 		if err != nil {
-			return nWritten,err
+			return nWritten, err
 		}
 		err = w.currPipeline.Write(write.p, write.posInBlock)
 		if err != nil {
@@ -236,7 +243,7 @@ func blockwrites(i *maggiefs.Inode, p []byte, off uint64, length uint32) []block
 			}
 			startIdx := nWritten
 			endIdx := startIdx + writeLength
-			
+
 			ret = append(ret, blockwrite{b, p[startIdx:endIdx], posInBlock})
 			nWritten += writeLength
 			//fmt.Printf("Writing %d bytes to block %+v pos %d startIdx %d endIdx %d\n", b, posInBlock, startIdx, endIdx)
@@ -260,7 +267,6 @@ func (w *InodeWriter) Close() (err error) {
 	w.closed = true
 	return
 }
-
 
 // acquires lease, then adds the blocks to the namenode,
 // patching up the referenced inode to match
@@ -309,7 +315,7 @@ func (w *InodeWriter) addBlocksForFileWrite(off uint64, length uint32) error {
 			}
 			// patch up local copy
 			if w.currInode.Blocks == nil {
-				w.currInode.Blocks = make([]maggiefs.Block,0,0)
+				w.currInode.Blocks = make([]maggiefs.Block, 0, 0)
 			}
 			w.currInode.Blocks = append(w.currInode.Blocks, newBlock)
 			w.currInode.Length += newBlockLength

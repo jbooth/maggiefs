@@ -54,7 +54,7 @@ func loadVolume(volRoot string, fp *FilePool) (*volume, error) {
 	d := json.NewDecoder(dnInfoFile)
 	dnInfo := maggiefs.DataNodeInfo{}
 	d.Decode(&dnInfo)
-	//fmt.Printf("Loading existing volume id %d, dnInfo %+v\n",id,dnInfo) 
+	//fmt.Printf("Loading existing volume id %d, dnInfo %+v\n",id,dnInfo)
 	db, err := levigo.Open(volRoot+"/meta", openOpts)
 	if err != nil {
 		db.Close()
@@ -232,7 +232,7 @@ func (v *volume) BlockReport() ([]maggiefs.Block, error) {
 
 func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 	path := v.resolvePath(id)
-	return v.fp.WithFile(path,op)
+	return v.fp.WithFile(path, op)
 }
 
 func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) (err error) {
@@ -251,13 +251,13 @@ func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) 
 			zerosLength = int(uint32(req.Length) - uint32(sendLength))
 		}
 		// send header
-		err := result.WriteHeader(0,int(req.Length))
+		err := result.WriteHeader(0, int(req.Length))
 		if err != nil {
 			return err
 		}
 		// send data
 		//		fmt.Printf("splicing data from pos %d length %d\n", sendPos, sendLength)
-		_, err = result.SpliceBytesAt(file.Fd(),int(sendLength),sendPos)
+		_, err = result.SpliceBytesAt(file.Fd(), int(sendLength), sendPos)
 		if err != nil {
 			return err
 		}
@@ -276,8 +276,8 @@ func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) 
 		return nil
 	})
 	return err
-	
-} 
+
+}
 
 func (v *volume) serveRead(client Endpoint, req *RequestHeader) (err error) {
 	err = v.withFile(req.Blk.Id, func(file *os.File) error {
@@ -331,64 +331,61 @@ func (v *volume) serveRead(client Endpoint, req *RequestHeader) (err error) {
 func (v *volume) serveWrite(client Endpoint, req *RequestHeader, datas *DataClient) error {
 
 	// should we check block.Version here?  skipping for now
-	err := v.withFile(req.Blk.Id, func(file *os.File) error {
-		//		fmt.Printf("vol %d pipelining write to following vol IDs %+v\n", v.id, req.Blk.Volumes)
-		// remove ourself from pipeline remainder
-		var remainingVolumes []uint32 = nil
-		for idx, volId := range req.Blk.Volumes {
-			if volId == v.id {
-				if idx == 0 {
-					remainingVolumes = req.Blk.Volumes[1:]
+	//		fmt.Printf("vol %d pipelining write to following vol IDs %+v\n", v.id, req.Blk.Volumes)
+	// remove ourself from pipeline remainder
+	var remainingVolumes []uint32 = nil
+	for idx, volId := range req.Blk.Volumes {
+		if volId == v.id {
+			if idx == 0 {
+				remainingVolumes = req.Blk.Volumes[1:]
+			} else {
+				if idx < len(req.Blk.Volumes) {
+					remainingVolumes = append(req.Blk.Volumes[:idx], req.Blk.Volumes[idx+1:]...)
 				} else {
-					if idx < len(req.Blk.Volumes) {
-						remainingVolumes = append(req.Blk.Volumes[:idx], req.Blk.Volumes[idx+1:]...)
-					} else {
-						remainingVolumes = req.Blk.Volumes[:idx]
-					}
+					remainingVolumes = req.Blk.Volumes[:idx]
 				}
-				break
 			}
+			break
 		}
-		req.Blk.Volumes = remainingVolumes
-		//fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
-		
-		// wrap func to do the pipeline around our vars
-		doPipeline := func(nextInLine Endpoint) error {
-			pipeline := newServerPipeline(client,nextInLine,req,file)
-			sendErrChan := make(chan error)
-			ackErrChan := make(chan error)
-			go func() {
-				sendErrChan <- pipeline.run()
-			}()
-			go func() {
-				ackErrChan <- pipeline.ack()
-			}()
-			sendErr := <- sendErrChan
-			ackErr := <- ackErrChan
-			if sendErr != nil {
-				return sendErr
-			}
-			return ackErr
+	}
+	req.Blk.Volumes = remainingVolumes
+	//fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
+
+	// wrap func to do the pipeline around our vars
+	doPipeline := func(nextInLine Endpoint) error {
+		pipeline := newServerPipeline(client, nextInLine, req, v, req.Blk.Id)
+		sendErrChan := make(chan error)
+		ackErrChan := make(chan error)
+		go func() {
+			sendErrChan <- pipeline.run()
+		}()
+		go func() {
+			ackErrChan <- pipeline.ack()
+		}()
+		sendErr := <-sendErrChan
+		ackErr := <-ackErrChan
+		if sendErr != nil {
+			return sendErr
 		}
-		
-		var pipelineErr error = nil
-		if len(remainingVolumes) > 0 {
-			pipelineErr = datas.withConn(remainingVolumes[0],doPipeline)
-		} else {
-			// nil nextInLine, just compute here
-			pipelineErr = doPipeline(nil)
-		}
-		return pipelineErr
-	})
+		return ackErr
+	}
+
+	var pipelineErr error = nil
+	if len(remainingVolumes) > 0 {
+		pipelineErr = datas.withConn(remainingVolumes[0], doPipeline)
+	} else {
+		// nil nextInLine, just compute here
+		pipelineErr = doPipeline(nil)
+	}
+	return pipelineErr
 
 	// no response, response is implicit in acks that are sent along
-//	resp := ResponseHeader{STAT_OK}
-//	//	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
-//	if err != nil {
-//		resp.Stat = STAT_ERR
-//	}
-//	resp.WriteTo(client)
-	return err
+	//	resp := ResponseHeader{STAT_OK}
+	//	//	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
+	//	if err != nil {
+	//		resp.Stat = STAT_ERR
+	//	}
+	//	resp.WriteTo(client)
 }
 
 func checkResponse(c *net.TCPConn) error {

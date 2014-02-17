@@ -126,14 +126,15 @@ type serverPipeline struct {
 	client           Endpoint
 	nextInLine       Endpoint
 	remainingVolumes []uint32 // list of volumes with ourself removed, forwarded to rest of chain
-	f                *os.File
+	volForBlock      *volume
+	blockId          uint64
 	buff             []byte
 	ackRequired      chan bool // channel representing the number of acks we need to receive, ack() reads from this
 	allAcksReceived  chan bool // ack() sends to this exactly once when finished
 }
 
 // RequestHeader's block member should already have our volume removed, so it just contains remainingVolumes
-func newServerPipeline(client Endpoint, nextInLine Endpoint, req *RequestHeader, f *os.File) *serverPipeline {
+func newServerPipeline(client Endpoint, nextInLine Endpoint, req *RequestHeader, v *volume, blockId uint64) *serverPipeline {
 	// forward request to nextInLine
 	if nextInLine != nil {
 		req.WriteTo(nextInLine)
@@ -144,7 +145,8 @@ func newServerPipeline(client Endpoint, nextInLine Endpoint, req *RequestHeader,
 		client,
 		nextInLine,
 		req.Blk.Volumes,
-		f,
+		v,
+		blockId,
 		maggiefs.GetBuff(),
 		make(chan bool, 64),
 		make(chan bool),
@@ -166,9 +168,6 @@ PIPELINE:
 		// if this is a sync request, break the loop and sync
 		if req.Op == OP_COMMIT_WRITE {
 			//fmt.Printf("Breaking server side pipeline\n")
-
-			b := make([]byte, 5)
-			s.f.ReadAt(b, 0)
 			// forward the op
 			if s.nextInLine != nil {
 				req.Blk.Volumes = s.remainingVolumes
@@ -205,7 +204,10 @@ PIPELINE:
 			}
 		}
 		// write to disk
-		_, err = s.f.WriteAt(myBuf, int64(req.Pos))
+		err = s.volForBlock.withFile(s.blockId, func(f *os.File) error {
+			_, e1 := f.WriteAt(myBuf, int64(req.Pos))
+			return e1
+		})
 		if err != nil {
 			return fmt.Errorf("Error flushing bytes to disk in pipelined write : %s", err)
 		}
@@ -215,7 +217,7 @@ PIPELINE:
 			_, _ = resp.WriteTo(s.client)
 			return err
 		}
-		if (s.nextInLine != nil) {
+		if s.nextInLine != nil {
 			// if we're not the last, mark ack required
 			s.ackRequired <- true
 		} else {
@@ -226,15 +228,15 @@ PIPELINE:
 	}
 
 	// fsync
-	s.f.Sync()
-	b := make([]byte, 5)
-	s.f.ReadAt(b, 0)
-	//fmt.Printf("First 5 in file with remaining volumes %+v : %x\n", s.remainingVolumes, b)
-	// wait till all acks received
+
+	err := s.volForBlock.withFile(s.blockId, func(f *os.File) error {
+		e1 := f.Sync()
+		return e1
+	})
 	close(s.ackRequired)
 	<-s.allAcksReceived
 	//fmt.Printf("server pipeline returning")
-	return nil
+	return err
 }
 
 // runs in a loop processing acks from nextInLine and passing them back to client

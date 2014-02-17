@@ -110,24 +110,24 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 
 // returns a write session
 func (dc *DataClient) WriteSession(blk maggiefs.Block) (writer maggiefs.BlockWriter, err error) {
-	if dc.isLocal(blk.Volumes) {
-		// local shortcut, return write session from an in-memory pipe
-		local, remote := PipeEndpoints()
-		go dc.localDS.serveClientConn(remote)
-		return newClientPipeline(
-			local,
-			blk,
-			64*1024*1024, // 64MB max for unack'd bytes in flight
-			func() {
-				local.Close() // kill in-memory pipe when finished
-			},
-		)
+	//if dc.isLocal(blk.Volumes) {
+	//	// local shortcut, return write session from an in-memory pipe
+	//	local, remote := PipeEndpoints()
+	//	go dc.localDS.serveClientConn(remote)
+	//	return newClientPipeline(
+	//		local,
+	//		blk,
+	//		64*1024*1024, // 64MB max for unack'd bytes in flight
+	//		func() {
+	//			local.Close() // kill in-memory pipe when finished
+	//		},
+	//	)
 
-	}
+	//}
 	// return write session over the netwrok
 
 	// find host
-	raddr, err := dc.VolHost(pickVol(blk.Volumes))
+	raddr, err := dc.VolHost(blk.Volumes[0])
 	if err != nil {
 		return nil, err
 	}
