@@ -3,7 +3,6 @@ package leaseserver
 import (
 	"encoding/binary"
 	"encoding/gob"
-	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"net"
 )
@@ -29,12 +28,10 @@ func newRawClient(addr string) (*rawclient, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("connecting to %s\n", addr)
 	c, err := net.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("connected")
 	c.SetNoDelay(true)
 	c.SetKeepAlive(true)
 	idBuff := make([]byte, 8, 8)
@@ -81,13 +78,11 @@ func (c *rawclient) mux() {
 			// write the req to socket
 			err := reqEncoder.Encode(req.r)
 			if err != nil {
-				fmt.Printf("error encoding req %+v : %s\n", req, err.Error())
 				continue
 			}
 		case resp := <-c.responses:
 			if resp.Status == STATUS_NOTIFY {
 				// this is a notification so forward to the notification chan
-				fmt.Printf("Got notify resp %+v", resp)
 				c.notifier <- NotifyEvent{inodeid: resp.Inodeid, ackid: resp.Reqno, c: c}
 			} else {
 				// response to a request, forward to it's response chan

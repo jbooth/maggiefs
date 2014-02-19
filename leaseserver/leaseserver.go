@@ -15,15 +15,13 @@ import (
 
 // host -> list of pointers to inode/lease pairs
 
-// inode -> list of readleases/host + writelease/host
+// inode -> list of readleases/host
 
 // on actions
 
 // readlease()  -- set it up, return unique id
 // readlease.release() -- remove from this inode with this id
-// writelease() -- set it up
-// writelease.release() -- remove from this inode
-// writelease.commit() -- notify all readleases
+// notify() -- notify all readleases
 
 // workflow
 
@@ -31,10 +29,9 @@ import (
 // mux() pulls requests from conns and feeds them responses
 
 type lease struct {
-	leaseid    uint64
-	inodeid    uint64
-	writeLease bool
-	client     *clientConn
+	leaseid uint64
+	inodeid uint64
+	client  *clientConn
 }
 
 type clientConn struct {
@@ -220,8 +217,8 @@ func NewLeaseServer(bindAddr string) (*LeaseServer, error) {
 		go func() {
 			defer func() {
 				if x := recover(); x != nil {
-						fmt.Printf("run time panic on LeaseServ reading requests for client %s : %s, shutting down \n", client.String(),x)
-						client.closeAndDie()
+					fmt.Printf("run time panic on LeaseServ reading requests for client %s : %s, shutting down \n", client.String(), x)
+					client.closeAndDie()
 				}
 			}()
 			client.readRequests()
@@ -229,8 +226,8 @@ func NewLeaseServer(bindAddr string) (*LeaseServer, error) {
 		go func() {
 			defer func() {
 				if x := recover(); x != nil {
-						fmt.Printf("run time panic on LeaseServ sending responses from client %s, shutting down \n", client.String(),x)
-						client.closeAndDie()
+					fmt.Printf("run time panic on LeaseServ sending responses from client %s, shutting down \n", client.String(), x)
+					client.closeAndDie()
 				}
 			}()
 			client.sendResponses()
@@ -267,24 +264,23 @@ func (ls *LeaseServer) process() {
 		// execute
 		switch qr.req.Op {
 		case OP_READLEASE:
-			resp, err = ls.createLease(qr.req, qr.conn, false)
-		case OP_WRITELEASE:
-			resp, err = ls.createLease(qr.req, qr.conn, true)
+			resp, err = ls.createLease(qr.req, qr.conn)
+		case OP_NOTIFY:
+			// notify will dispatch a goroutine and eventually queue OP_NOTIFY_DONE
+			err = ls.notify(qr.req, qr.conn)
+			// no response from this loop, notify spins off a goroutine to respond
+			continue
 		case OP_READLEASE_RELEASE:
 			resp, err = ls.releaseLease(qr.req, qr.conn)
-		case OP_WRITELEASE_RELEASE:
-			err = ls.commitWriteLease(qr.req, qr.conn)
 			if err != nil {
-				fmt.Printf("Error committing writelease: %s\n", err.Error())
+				fmt.Printf("Error releasing readlease: %s\n", err.Error())
 			}
-			// commit will dispatch a goroutine and eventually queue OP_WRITELEASE_DONE
-			continue
-		case OP_WRITELEASE_RELEASE_DONE:
-			// this comes from a previous invocation of WRITELEASE_RELEASE
+		case OP_NOTIFY_DONE:
+			// this comes from a previous invocation of NOTIFY
 			// response finally goes to the original calling client
-			resp, err = ls.releaseLease(qr.req, qr.conn)
+			resp = response{qr.req.Reqno, 0, 0, STATUS_OK}
 		case OP_ACKNOWLEDGE:
-			fmt.Printf("got ack for client id %d, ackid %d\n", qr.conn.id, qr.req.Leaseid)
+			//fmt.Printf("got ack for client id %d, ackid %d\n", qr.conn.id, qr.req.Leaseid)
 			qr.conn.ack(qr.req.Leaseid)
 			// no response
 			continue
@@ -305,36 +301,18 @@ func (ls *LeaseServer) process() {
 			fmt.Printf("error processing request %+v, error: %s", qr.req, err)
 			qr.conn.resp <- response{0, 0, 0, STATUS_ERR}
 		} else {
+			//fmt.Printf("processed request %+v, sending response %+v\n", qr.req, resp)
 			qr.conn.resp <- resp
 		}
 	}
 
 }
 
-func (ls *LeaseServer) createLease(r request, c *clientConn, isWriteLease bool) (response, error) {
-	// if write request, we can only have one taken at a time
-	if isWriteLease {
-		writeLeaseAlreadyTaken := false
-		leases := ls.leasesByInode[r.Inodeid]
-		if leases != nil {
-			for _, l := range ls.leasesByInode[r.Inodeid] {
-				if l.writeLease {
-					fmt.Printf("Write lease already taken for inode %d, leases : %+v\n", r.Inodeid, ls.leasesByInode[r.Inodeid])
-					writeLeaseAlreadyTaken = true
-					break
-				}
-			}
-		}
-		if writeLeaseAlreadyTaken {
-			// return wait response
-			return response{r.Reqno, 0, 0, STATUS_WAIT}, nil
-		}
-	}
-
-	// else generate new lease
+func (ls *LeaseServer) createLease(r request, c *clientConn) (response, error) {
+	// generate new lease
 	ls.leaseIdCounter += 1
 	leaseid := ls.leaseIdCounter
-	l := lease{leaseid, r.Inodeid, isWriteLease, c}
+	l := lease{leaseid, r.Inodeid, c}
 	// record lease in ls.inodeLeases under inode id
 	leasesForInode, exists := ls.leasesByInode[r.Inodeid]
 	if !exists {
@@ -367,18 +345,18 @@ func (ls *LeaseServer) releaseLease(r request, c *clientConn) (response, error) 
 		delete(ls.leasesByInode, inodeid)
 	}
 	// done
-	return response{r.Reqno, 0, 0, STATUS_OK}, nil
+	resp := response{r.Reqno, 0, 0, STATUS_OK}
+	return resp, nil
 }
 
 // release all belonging to a given client
 func (ls *LeaseServer) releaseAll(c *clientConn) error {
-	fmt.Printf("Releasing all belonging to client %d\n", c.id)
 	// iterate all leases
 	for _, inodeLeases := range ls.leasesByInode {
 		for idx, lease := range inodeLeases {
-			fmt.Printf("Checking if lease on inode %d belongs to our client :  %d == %d\n", lease.inodeid, lease.client.id, c.id)
+			//fmt.Printf("Checking if lease on inode %d belongs to our client :  %d == %d\n", lease.inodeid, lease.client.id, c.id)
 			if lease.client.id == c.id {
-				fmt.Printf("Deleting\n")
+				//fmt.Printf("Deleting\n")
 				// belongs to this client so kill it
 				delete(ls.leasesById, lease.leaseid)
 				ls.leasesByInode[lease.inodeid] = append(inodeLeases[:idx], inodeLeases[idx+1:]...)
@@ -391,13 +369,13 @@ func (ls *LeaseServer) releaseAll(c *clientConn) error {
 	return nil
 }
 
-func (ls *LeaseServer) commitWriteLease(r request, c *clientConn) error {
+func (ls *LeaseServer) notify(r request, c *clientConn) error {
 	// find all readleases attached to this inode id
 	readLeases := ls.leasesByInode[r.Inodeid]
 	readLeasesWithoutCommitter := make([]lease, 0, len(readLeases))
-	// omit the connection that sent the commit request -- we don't want to blow our own cache while writing
 	for _, rl := range readLeases {
-		if rl.client.id != c.id && !rl.writeLease {
+		// omit the connection that sent the commit request -- we don't want to blow our own cache while writing
+		if rl.client.id != c.id {
 			readLeasesWithoutCommitter = append(readLeasesWithoutCommitter, rl)
 		}
 	}
@@ -414,16 +392,15 @@ func (ls *LeaseServer) commitWriteLease(r request, c *clientConn) error {
 		for _, ack := range pendingAcks {
 			ack.waitAcknowledged()
 		}
-		// queue response to be sent to writer
-		r.Op = OP_WRITELEASE_RELEASE_DONE
-		ls.req <- queuedServerRequest{r, c}
+		// queue response to be sent to the client who committed
+		c.resp <- response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_OK}
 	}()
 	return nil
 }
 
 func (ls *LeaseServer) checkLeases(r request, c *clientConn) (response, error) {
 	inodeLeases := ls.leasesByInode[r.Inodeid]
-	fmt.Printf("Checking leases for inode %d : %+v\n", r.Inodeid, inodeLeases)
+	//fmt.Printf("Checking leases for inode %d : %+v\n", r.Inodeid, inodeLeases)
 	if inodeLeases != nil && len(inodeLeases) > 0 {
 		return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_WAIT}, nil
 	}

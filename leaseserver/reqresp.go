@@ -3,15 +3,14 @@ package leaseserver
 import ()
 
 const (
-	LEASESERVER_PORT           = 1111
-	OP_READLEASE               = iota
-	OP_READLEASE_RELEASE       = iota
-	OP_WRITELEASE              = iota
-	OP_WRITELEASE_RELEASE      = iota
-	OP_WRITELEASE_RELEASE_DONE = iota // only used within server
-	OP_CHECKLEASES             = iota
-	OP_ACKNOWLEDGE             = iota // used to respond to a notify
-	OP_CLOSE                   = iota
+	LEASESERVER_PORT          = 1111
+	OP_READLEASE         byte = 1
+	OP_READLEASE_RELEASE byte = 2
+	OP_NOTIFY            byte = 3
+	OP_NOTIFY_DONE       byte = 4
+	OP_CHECKLEASES       byte = 5
+	OP_ACKNOWLEDGE       byte = 6 // used to respond to a notify
+	OP_CLOSE             byte = 7
 
 	STATUS_OK     byte = 0
 	STATUS_ERR    byte = 1
