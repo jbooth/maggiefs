@@ -44,8 +44,8 @@ func NewInodeWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs
 // checks every second if we haven't done a write in more than a second
 func (w *InodeWriter) checkLease() {
 	for {
-		// sleep 1 second in between checks
-		time.Sleep(1 * time.Second)
+		// sleep 5 seconds in between checks
+		time.Sleep(5 * time.Second)
 		fmt.Printf("Acquiring lock to expire lease")
 		w.l.Lock()
 		now := time.Now()
