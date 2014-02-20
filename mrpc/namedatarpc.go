@@ -32,15 +32,16 @@ func (s *NameDataIfaceService) HeartBeat(request *NameDataIfaceHeartBeatRequest,
 }
 
 type NameDataIfaceAddBlockRequest struct {
-	Blk   maggiefs.Block
-	VolId uint32
+	Blk       maggiefs.Block
+	VolId     uint32
+	Fallocate bool
 }
 
 type NameDataIfaceAddBlockResponse struct {
 }
 
 func (s *NameDataIfaceService) AddBlock(request *NameDataIfaceAddBlockRequest, response *NameDataIfaceAddBlockResponse) (err error) {
-	err = s.impl.AddBlock(request.Blk, request.VolId)
+	err = s.impl.AddBlock(request.Blk, request.VolId, request.Fallocate)
 	return
 }
 
@@ -100,8 +101,8 @@ func (_c *NameDataIfaceClient) HeartBeat() (stat *maggiefs.DataNodeStat, err err
 	return _response.Stat, err
 }
 
-func (_c *NameDataIfaceClient) AddBlock(blk maggiefs.Block, volId uint32) (err error) {
-	_request := &NameDataIfaceAddBlockRequest{blk, volId}
+func (_c *NameDataIfaceClient) AddBlock(blk maggiefs.Block, volId uint32, fallocate bool) (err error) {
+	_request := &NameDataIfaceAddBlockRequest{blk, volId, fallocate}
 	_response := &NameDataIfaceAddBlockResponse{}
 	err = _c.client.Call(_c.service+".AddBlock", _request, _response)
 	return err

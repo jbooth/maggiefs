@@ -3,8 +3,7 @@
 package mrpc
 
 import (
-	"encoding/gob"
-	"fmt"
+	"github.com/jbooth/maggiefs/fuse"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"net/rpc"
 )
@@ -46,10 +45,6 @@ func (s *NameServiceService) StatFs(request *NameServiceStatFsRequest, response 
 	return
 }
 
-func init() {
-	gob.RegisterName("NameServiceAddInodeRequest", &NameServiceAddInodeRequest{})
-}
-
 type NameServiceAddInodeRequest struct {
 	Node *maggiefs.Inode
 }
@@ -63,28 +58,59 @@ func (s *NameServiceService) AddInode(request *NameServiceAddInodeRequest, respo
 	return
 }
 
-type NameServiceSetInodeRequest struct {
-	Node *maggiefs.Inode
+type NameServiceSetAttrRequest struct {
+	Arg *fuse.SetAttrIn
 }
 
-type NameServiceSetInodeResponse struct {
+type NameServiceSetAttrResponse struct {
+	NewNode *maggiefs.Inode
 }
 
-func (s *NameServiceService) SetInode(request *NameServiceSetInodeRequest, response *NameServiceSetInodeResponse) (err error) {
-	err = s.impl.SetInode(request.Node)
+func (s *NameServiceService) SetAttr(request *NameServiceSetAttrRequest, response *NameServiceSetAttrResponse) (err error) {
+	response.NewNode, err = s.impl.SetAttr(request.Arg)
 	return
 }
 
-type NameServiceTruncateRequest struct {
-	Nodeid  uint64
-	NewSize uint64
+type NameServiceSetXAttrRequest struct {
+	Nodeid uint64
+	Name   []byte
+	Val    []byte
 }
 
-type NameServiceTruncateResponse struct {
+type NameServiceSetXAttrResponse struct {
 }
 
-func (s *NameServiceService) Truncate(request *NameServiceTruncateRequest, response *NameServiceTruncateResponse) (err error) {
-	err = s.impl.Truncate(request.Nodeid, request.NewSize)
+func (s *NameServiceService) SetXAttr(request *NameServiceSetXAttrRequest, response *NameServiceSetXAttrResponse) (err error) {
+	err = s.impl.SetXAttr(request.Nodeid, request.Name, request.Val)
+	return
+}
+
+type NameServiceDelXAttrRequest struct {
+	Nodeid uint64
+	Name   []byte
+}
+
+type NameServiceDelXAttrResponse struct {
+}
+
+func (s *NameServiceService) DelXAttr(request *NameServiceDelXAttrRequest, response *NameServiceDelXAttrResponse) (err error) {
+	err = s.impl.DelXAttr(request.Nodeid, request.Name)
+	return
+}
+
+type NameServiceSetLengthRequest struct {
+	Nodeid        uint64
+	NewLen        uint64
+	RequestedDnId *uint32
+	Fallocate     bool
+}
+
+type NameServiceSetLengthResponse struct {
+	NewNode *maggiefs.Inode
+}
+
+func (s *NameServiceService) SetLength(request *NameServiceSetLengthRequest, response *NameServiceSetLengthResponse) (err error) {
+	response.NewNode, err = s.impl.SetLength(request.Nodeid, request.NewLen, request.RequestedDnId, request.Fallocate)
 	return
 }
 
@@ -113,21 +139,6 @@ type NameServiceUnlinkResponse struct {
 
 func (s *NameServiceService) Unlink(request *NameServiceUnlinkRequest, response *NameServiceUnlinkResponse) (err error) {
 	err = s.impl.Unlink(request.Parent, request.Name)
-	return
-}
-
-type NameServiceAddBlockRequest struct {
-	Nodeid uint64
-	Length uint32
-	RequestedDnId *uint32
-}
-
-type NameServiceAddBlockResponse struct {
-	NewBlock maggiefs.Block
-}
-
-func (s *NameServiceService) AddBlock(request *NameServiceAddBlockRequest, response *NameServiceAddBlockResponse) (err error) {
-	response.NewBlock, err = s.impl.AddBlock(request.Nodeid, request.Length, request.RequestedDnId)
 	return
 }
 
@@ -198,18 +209,32 @@ func (_c *NameServiceClient) AddInode(node *maggiefs.Inode) (id uint64, err erro
 	return _response.Id, err
 }
 
-func (_c *NameServiceClient) SetInode(node *maggiefs.Inode) (err error) {
-	_request := &NameServiceSetInodeRequest{node}
-	_response := &NameServiceSetInodeResponse{}
-	err = _c.client.Call(_c.service+".SetInode", _request, _response)
+func (_c *NameServiceClient) SetAttr(arg *fuse.SetAttrIn) (newNode *maggiefs.Inode, err error) {
+	_request := &NameServiceSetAttrRequest{arg}
+	_response := &NameServiceSetAttrResponse{}
+	err = _c.client.Call(_c.service+".SetAttr", _request, _response)
+	return _response.NewNode, err
+}
+
+func (_c *NameServiceClient) SetXAttr(nodeid uint64, name []byte, val []byte) (err error) {
+	_request := &NameServiceSetXAttrRequest{nodeid, name, val}
+	_response := &NameServiceSetXAttrResponse{}
+	err = _c.client.Call(_c.service+".SetXAttr", _request, _response)
 	return err
 }
 
-func (_c *NameServiceClient) Truncate(nodeid uint64, newSize uint64) (err error) {
-	_request := &NameServiceTruncateRequest{nodeid, newSize}
-	_response := &NameServiceTruncateResponse{}
-	err = _c.client.Call(_c.service+".Truncate", _request, _response)
+func (_c *NameServiceClient) DelXAttr(nodeid uint64, name []byte) (err error) {
+	_request := &NameServiceDelXAttrRequest{nodeid, name}
+	_response := &NameServiceDelXAttrResponse{}
+	err = _c.client.Call(_c.service+".DelXAttr", _request, _response)
 	return err
+}
+
+func (_c *NameServiceClient) SetLength(nodeid uint64, newLen uint64, requestedDnId *uint32, fallocate bool) (newNode *maggiefs.Inode, err error) {
+	_request := &NameServiceSetLengthRequest{nodeid, newLen, requestedDnId, fallocate}
+	_response := &NameServiceSetLengthResponse{}
+	err = _c.client.Call(_c.service+".SetLength", _request, _response)
+	return _response.NewNode, err
 }
 
 func (_c *NameServiceClient) Link(parent uint64, child uint64, name string, force bool) (err error) {
@@ -224,14 +249,6 @@ func (_c *NameServiceClient) Unlink(parent uint64, name string) (err error) {
 	_response := &NameServiceUnlinkResponse{}
 	err = _c.client.Call(_c.service+".Unlink", _request, _response)
 	return err
-}
-
-func (_c *NameServiceClient) AddBlock(nodeid uint64, length uint32, requestedDnId *uint32) (newBlock maggiefs.Block, err error) {
-	_request := &NameServiceAddBlockRequest{nodeid, length, requestedDnId}
-	_response := &NameServiceAddBlockResponse{}
-	err = _c.client.Call(_c.service+".AddBlock", _request, _response)
-	fmt.Printf(" %+v\n", _response)
-	return _response.NewBlock, err
 }
 
 func (_c *NameServiceClient) Join(dnId uint32, nameDataAddr string) (err error) {

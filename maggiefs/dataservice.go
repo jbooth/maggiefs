@@ -7,15 +7,15 @@ import (
 type DataService interface {
 	// given a volume ID (see struct Block), get the associated hostname
 	// exposed for hadoop integration
-	VolHost(volId uint32) (*net.TCPAddr,error)
+	VolHost(volId uint32) (*net.TCPAddr, error)
 
 	// read some bytes statelessly
 	Read(blk Block, buf SplicerTo, pos uint64, length uint32) (err error)
 
 	// open a write session
-	// 
+	//
 	WriteSession(blk Block) (writer BlockWriter, err error)
-} 
+}
 
 // represents a stateful write session
 // this is an optimization over stateless writes because we can coalesce
@@ -29,13 +29,13 @@ type BlockWriter interface {
 // or a buffer on non-fuse-supporting platforms (unimplemented)
 type SplicerTo interface {
 	// write the header prior to splicing any bytes -- code should be 0 on OK, or a syscall value like syscall.EIO on error
-	WriteHeader(code int32, returnBytesLength int) (error)
+	WriteHeader(code int32, returnBytesLength int) error
 	// splice bytes from the FD to the return buffer
-	SpliceBytes(fd uintptr, length int) (int,error)
+	SpliceBytes(fd uintptr, length int) (int, error)
 	// splice bytes from the FD at the given offset to the return buffer
-	SpliceBytesAt(fd uintptr, length int, offset int64) (int,error)
+	SpliceBytesAt(fd uintptr, length int, offset int64) (int, error)
 	// write bytes to the pipe from an in-memory buffer
-	WriteBytes(b []byte) (int,error)
+	WriteBytes(b []byte) (int, error)
 }
 
 // interface exposed from datanodes to namenode (and tests)
@@ -43,7 +43,7 @@ type NameDataIface interface {
 	// periodic heartbeat with datanode stats so namenode can keep total stats and re-replicate
 	HeartBeat() (stat *DataNodeStat, err error)
 	// add a block to this datanode/volume
-	AddBlock(blk Block, volId uint32) (err error)
+	AddBlock(blk Block, volId uint32, fallocate bool) (err error)
 	// rm block from this datanode/volume
 	RmBlock(id uint64, volId uint32) (err error)
 	// truncate a block
