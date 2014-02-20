@@ -1,7 +1,6 @@
 package leaseserver
 
 import (
-	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"time"
 )
