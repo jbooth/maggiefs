@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
+	"io"
 	"net"
 	"sync"
-	"io"
 )
 
 type DataServer struct {
@@ -17,7 +17,7 @@ type DataServer struct {
 	volumes map[uint32]*volume
 	// accepts data conns for read/write requests
 	dataClientAddr *net.TCPAddr
-	dataIface *net.TCPListener
+	dataIface      *net.TCPListener
 	// accepts conn from namenode
 	nameDataIface *mrpc.CloseableServer
 	nameDataAddr  string
@@ -177,7 +177,7 @@ func (ds *DataServer) serveClientConn(conn Endpoint) {
 	for {
 		req := &RequestHeader{}
 		_, err := req.ReadFrom(conn)
-		
+
 		if err != nil {
 			// don't log error for remote closed connection
 			if err != io.EOF && err != io.ErrClosedPipe {
@@ -235,7 +235,7 @@ func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos
 	// figure out which of our volumes
 	volForBlock := uint32(0)
 	var volWithBlock *volume = nil
-	for volId,vol  := range ds.volumes {
+	for volId, vol := range ds.volumes {
 		for _, blockVolId := range req.Blk.Volumes {
 			if blockVolId == volId {
 				volForBlock = blockVolId
@@ -263,12 +263,12 @@ func (ds *DataServer) HeartBeat() (stat *maggiefs.DataNodeStat, err error) {
 	return &ret, nil
 }
 
-func (ds *DataServer) AddBlock(blk maggiefs.Block, volId uint32) (err error) {
+func (ds *DataServer) AddBlock(blk maggiefs.Block, volId uint32, fallocate bool) (err error) {
 	vol, exists := ds.volumes[volId]
 	if !exists {
 		return fmt.Errorf("No volume for volID %d", volId)
 	}
-	return vol.AddBlock(blk)
+	return vol.AddBlock(blk, fallocate)
 }
 
 func (ds *DataServer) RmBlock(id uint64, volId uint32) (err error) {

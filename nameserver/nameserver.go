@@ -2,6 +2,7 @@ package nameserver
 
 import (
 	"fmt"
+	"github.com/jbooth/maggiefs/fuse"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 )
+
 // compile time typecheck
 var typeCheck maggiefs.NameService = &NameServer{}
 
@@ -40,7 +42,7 @@ func NewNameServer(ls maggiefs.LeaseService, nameAddr string, webAddr string, da
 	ns.webServer = newNameWebServer(ns, webAddr)
 	ns.rpcServer, err = mrpc.CloseableRPC(ns.listenAddr, mrpc.NewNameServiceService(ns), "NameService")
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	ns.clos = sync.NewCond(new(sync.Mutex))
 	ns.closed = false
@@ -56,14 +58,13 @@ type NameServer struct {
 	rpcServer   *mrpc.CloseableServer // created at start time, need to be closed
 	webListen   net.Listener
 	webServer   *http.Server
-	clos *sync.Cond
-	closed bool
-	
+	clos        *sync.Cond
+	closed      bool
 }
 
 func (ns *NameServer) Serve() error {
 	var err error = nil
-	errChan := make(chan error,3)
+	errChan := make(chan error, 3)
 	go func() {
 		defer func() {
 			if x := recover(); x != nil {
@@ -83,7 +84,7 @@ func (ns *NameServer) Serve() error {
 		}()
 		errChan <- ns.webServer.Serve(ns.webListen)
 	}()
-	err = <- errChan
+	err = <-errChan
 	return err
 }
 
@@ -113,7 +114,7 @@ func (ns *NameServer) Close() error {
 
 func (ns *NameServer) WaitClosed() error {
 	ns.clos.L.Lock()
-	for ! ns.closed {
+	for !ns.closed {
 		ns.clos.Wait()
 	}
 	ns.clos.L.Unlock()
@@ -132,9 +133,9 @@ func (ns *NameServer) AddInode(node *maggiefs.Inode) (id uint64, err error) {
 	return ns.nd.AddInode(node)
 }
 
-func (ns *NameServer) SetInode(node *maggiefs.Inode) (err error) {
-	return ns.nd.SetInode(node)
-}
+//func (ns *NameServer) SetInode(node *maggiefs.Inode) (err error) {
+//	return ns.nd.SetInode(node)
+//}
 
 func (ns *NameServer) Link(parent uint64, child uint64, name string, force bool) (err error) {
 	ns.dirTreeLock.Lock()
@@ -231,12 +232,16 @@ func (ns *NameServer) doUnlink(parent uint64, name string) (err error) {
 func (ns *NameServer) del(inodeid uint64) {
 	// wait until no clients have this file open (posix convention)
 	// don't bother with this for now, screw posix
-//	err := ns.ls.WaitAllReleased(inodeid)
-//	if err != nil {
-//		fmt.Printf("error waiting all released for node %d : %s\n", inodeid, err.Error())
-//	}
+	//	err := ns.ls.WaitAllReleased(inodeid)
+	//	if err != nil {
+	//		fmt.Printf("error waiting all released for node %d : %s\n", inodeid, err.Error())
+	//	}
 	// truncating to 0 bytes will remove all blocks
-	err := ns.Truncate(inodeid, 0)
+	ino, err := ns.nd.GetInode(inodeid)
+	if err != nil {
+		fmt.Printf("error truncating node %d : %s\n", inodeid, err.Error())
+	}
+	_, err = ns.truncate(ino, 0)
 	if err != nil {
 		fmt.Printf("error truncating node %d : %s\n", inodeid, err.Error())
 	}
@@ -251,11 +256,21 @@ func (ns *NameServer) StatFs() (stat maggiefs.FsStat, err error) {
 	return ns.rm.FsStat()
 }
 
-func (ns *NameServer) AddBlock(nodeid uint64, length uint32, requestedDnId *uint32) (newBlock maggiefs.Block, err error) {
-	i, err := ns.nd.GetInode(nodeid)
+func (ns *NameServer) SetLength(nodeid uint64, newLen uint64, requestedDnId *uint32, fallocate bool) (newNode *maggiefs.Inode, err error) {
+	// get current inode
+	ino, err := ns.nd.GetInode(nodeid)
 	if err != nil {
-		return maggiefs.Block{}, nil
+		return nil, err
 	}
+	if newLen > ino.Length {
+		ino, err = ns.extend(ino, newLen, requestedDnId, fallocate)
+	} else {
+		ino, err = ns.truncate(ino, newLen)
+	}
+	return ino, nil
+}
+
+func (ns *NameServer) addBlock(i *maggiefs.Inode, length uint32, requestedDnId *uint32, fallocate bool) (newBlock maggiefs.Block, err error) {
 	// check which hosts we want
 	vols, err := ns.rm.volumesForNewBlock(nil)
 	if err != nil {
@@ -292,18 +307,36 @@ func (ns *NameServer) AddBlock(nodeid uint64, length uint32, requestedDnId *uint
 	}
 
 	// replicate block to datanodes
-	err = ns.rm.AddBlock(b)
+	err = ns.rm.AddBlock(b, fallocate)
 	return b, err
 }
 
-func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
-
-	inode, err := ns.nd.GetInode(nodeid)
+func (ns *NameServer) truncate(inode *maggiefs.Inode, newSize uint64) (*maggiefs.Inode, error) {
+	var err error
 	if len(inode.Blocks) > 0 {
 		delset := make([]maggiefs.Block, 0, 0)
 		var truncBlock *maggiefs.Block = nil
 		var truncLength uint32 = 0
-
+		// remove blocks from inode
+		_, err = ns.nd.Mutate(inode.Inodeid, func(i *maggiefs.Inode) error {
+			for idx := len(i.Blocks) - 1; idx >= 0; idx-- {
+				blk := i.Blocks[idx]
+				if blk.EndPos > newSize {
+					// either delete or truncate
+					if blk.StartPos >= newSize {
+						// delete
+						delset = append(delset, blk)
+						i.Blocks = i.Blocks[:len(i.Blocks)-1]
+					} else {
+						// truncate
+						truncLength = uint32(newSize - blk.StartPos)
+						truncBlock = &blk
+					}
+				}
+			}
+			i.Length = newSize
+			return nil
+		})
 		for idx := len(inode.Blocks) - 1; idx >= 0; idx-- {
 			blk := inode.Blocks[idx]
 			if blk.EndPos > newSize {
@@ -319,10 +352,11 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 				}
 			}
 		}
+		// remove blocks from datanodes
 		for _, rmblk := range delset {
 			err = ns.rm.RmBlock(rmblk)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 		if truncBlock != nil {
@@ -330,8 +364,105 @@ func (ns *NameServer) Truncate(nodeid uint64, newSize uint64) (err error) {
 		}
 
 	}
-	inode.Length = newSize
-	return ns.nd.SetInode(inode)
+	return inode, nil
+}
+
+func (ns *NameServer) extend(inode *maggiefs.Inode, newSize uint64, requestedDnId *uint32, fallocate bool) (*maggiefs.Inode, error) {
+	//fmt.Printf("Adding/extending blocks for write at off %d length %d\n", off, length)
+	var err error
+	if newSize > inode.Length {
+		// if we have a last block and it's less than max length,
+		// extend last block to max block length first
+		if inode != nil && len(inode.Blocks) > 0 {
+			idx := int(len(inode.Blocks) - 1)
+			lastBlock := inode.Blocks[idx]
+			if lastBlock.Length() < maggiefs.BLOCKLENGTH {
+				extendLength := maggiefs.BLOCKLENGTH - lastBlock.Length()
+				if lastBlock.EndPos+extendLength > newSize {
+					// only extend as much as we need to
+					extendLength = newSize - (lastBlock.EndPos + 1)
+				}
+				lastBlock.EndPos = lastBlock.EndPos + extendLength
+				// extend last block to cover as much as we can
+				inode, err = ns.nd.Mutate(inode.Inodeid, func(i *maggiefs.Inode) error {
+					i.Mtime = time.Now().Unix()
+					i.Blocks[idx] = lastBlock
+					i.Length += extendLength
+					return nil
+				})
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		// and add new blocks as necessary
+		for newSize > inode.Length {
+			//fmt.Printf("New end pos %d still greater than inode length %d\n", newEndPos, inode.Length)
+			newBlockLength := newSize - inode.Length
+			// make sure we are at most BLOCKLENGTH per block
+			if newBlockLength > maggiefs.BLOCKLENGTH {
+				newBlockLength = maggiefs.BLOCKLENGTH
+			}
+			// add to cluster
+			newBlock, err := ns.addBlock(inode, uint32(newBlockLength), requestedDnId, fallocate)
+			if err != nil {
+				return nil, err
+			}
+			// add to inode
+			inode, err = ns.nd.Mutate(inode.Inodeid, func(i *maggiefs.Inode) error {
+				i.Mtime = time.Now().Unix()
+				i.Blocks = append(i.Blocks, newBlock)
+				i.Length += newBlockLength
+				return nil
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return inode, nil
+}
+
+func (ns *NameServer) SetAttr(input *fuse.SetAttrIn) (inode *maggiefs.Inode, err error) {
+	// if this is a truncate, handle the truncation separately from other mutations, it requires a special call
+	// we don't handle size here, that should be forwatded to SetLength from the client side
+	// other mutations, if applicable
+	return ns.nd.Mutate(input.NodeId, func(inode *maggiefs.Inode) error {
+		if input.Valid&fuse.FATTR_MODE != 0 {
+			// chmod
+			inode.Mode = uint32(07777) & input.Mode
+		}
+		if input.Valid&(fuse.FATTR_UID|fuse.FATTR_GID) != 0 {
+			// chown
+			inode.Uid = input.Uid
+			inode.Gid = input.Gid
+		}
+		if input.Valid&(fuse.FATTR_MTIME|fuse.FATTR_MTIME_NOW) != 0 {
+			// MTIME, not supporting ATIME
+			if input.Valid&fuse.FATTR_MTIME_NOW != 0 {
+				inode.Mtime = time.Now().UnixNano()
+			} else {
+				inode.Mtime = int64(input.Mtime*1e9) + int64(input.Mtimensec)
+			}
+		}
+		return nil
+	})
+}
+
+func (ns *NameServer) SetXAttr(nodeid uint64, name []byte, val []byte) (err error) {
+	_, err = ns.nd.Mutate(nodeid, func(inode *maggiefs.Inode) error {
+		inode.Xattr[string(name)] = val
+		return nil
+	})
+	return err
+}
+
+func (ns *NameServer) DelXAttr(nodeid uint64, name []byte) (err error) {
+	_, err = ns.nd.Mutate(nodeid, func(inode *maggiefs.Inode) error {
+		delete(inode.Xattr, string(name))
+		return nil
+	})
+	return err
 }
 
 func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {

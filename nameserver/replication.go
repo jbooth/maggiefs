@@ -140,7 +140,7 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *uint32) (volumes [
 	ret := make([]maggiefs.VolumeStat, rm.replicationFactor)
 	if suggestedDN != nil {
 		// first add one from the suggested DN
-		for i := 0 ; i < len(sortedVolumes) ; i++ {
+		for i := 0; i < len(sortedVolumes); i++ {
 			v := sortedVolumes[i]
 			if v.DnInfo.DnId == *suggestedDN {
 				// add it
@@ -150,7 +150,7 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *uint32) (volumes [
 			}
 		}
 	}
-	fmt.Printf("Picking %d volumes out of %d for replication\n",rm.replicationFactor,len(sortedVolumes))
+	fmt.Printf("Picking %d volumes out of %d for replication\n", rm.replicationFactor, len(sortedVolumes))
 	for i := added; i < len(sortedVolumes); i++ {
 		// check if this DN is in our added list
 		v := sortedVolumes[i]
@@ -168,16 +168,16 @@ func (rm *replicationManager) volumesForNewBlock(suggestedDN *uint32) (volumes [
 		}
 	}
 	if added < int(rm.replicationFactor) {
-		fmt.Printf("Added (%d) < replicationFactor, added volumes: \n",added)
-		fmt.Printf("%+v\n%+v\n",ret,addedDNs)
+		fmt.Printf("Added (%d) < replicationFactor, added volumes: \n", added)
+		fmt.Printf("%+v\n%+v\n", ret, addedDNs)
 		return nil, fmt.Errorf("Not enough datanodes available for replication factor %d -- only nodes available were %+v", rm.replicationFactor, ret)
 	}
 	return ret, nil
 }
 
-func (rm *replicationManager) AddBlock(blk maggiefs.Block) error {
+func (rm *replicationManager) AddBlock(blk maggiefs.Block, fallocate bool) error {
 	for _, volId := range blk.Volumes {
-		err := rm.volumes[volId].conn.AddBlock(blk, volId)
+		err := rm.volumes[volId].conn.AddBlock(blk, volId, fallocate)
 		if err != nil {
 			return err
 		}

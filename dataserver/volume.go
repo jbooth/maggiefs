@@ -157,12 +157,19 @@ func (v *volume) HeartBeat() (stat maggiefs.VolumeStat, err error) {
 	return stat, nil
 }
 
-func (v *volume) AddBlock(blk maggiefs.Block) error {
+func (v *volume) AddBlock(blk maggiefs.Block, fallocate bool) error {
 	// TODO should blow up here if blk already exists
 	// create file representing block
 	f, err := os.Create(v.resolvePath(blk.Id))
 	if err != nil {
 		return fmt.Errorf("Error creating block for %d : %s\n", blk.Id, err.Error())
+	}
+	if fallocate {
+		stat, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		syscall.Fallocate(int(f.Fd()), uint32(stat.Mode()), 0, int64(blk.Length()))
 	}
 	defer f.Close()
 	// add to blockmeta db
