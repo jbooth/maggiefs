@@ -26,9 +26,9 @@ type MaggieFuse struct {
 	names          maggiefs.NameService
 	datas          maggiefs.DataService
 	localDnId      *uint32
-	openFiles      openFileMap                                // maps FD numbers to open files
-	fdCounter      uint64                                     // used to get unique FD numbers
-	changeNotifier chan maggiefs.NotifyEvent                  // remote changes to inodes are notified through this chan
+	openFiles      openFileMap                                            // maps FD numbers to open files
+	fdCounter      uint64                                                 // used to get unique FD numbers
+	changeNotifier chan maggiefs.NotifyEvent                              // remote changes to inodes are notified through this chan
 	inodeNotify    func(node uint64, off int64, length int64) fuse.Status // used to signal to OS that a remote inode changed
 	log            *log.Logger
 }
@@ -49,9 +49,9 @@ func NewMaggieFuse(leases maggiefs.LeaseService, names maggiefs.NameService, dat
 		log.New(os.Stderr, "maggie-fuse", 0),
 	}
 	nc := NewNameCache(names, leases, func(n maggiefs.NotifyEvent) {
-		stat := m.inodeNotify(n.Inodeid(),0,1<<63 - 1)
+		stat := m.inodeNotify(n.Inodeid(), 0, 1<<63-1)
 		if stat != fuse.OK {
-			fmt.Printf("fuse got bad stat trying to notify host of change to inode %d\n",n.Inodeid())
+			fmt.Printf("fuse got bad stat trying to notify host of change to inode %d\n", n.Inodeid())
 		} else {
 			fmt.Printf("fuse connector notified for inode %d, got value %+v", n.Inodeid(), stat)
 		}
@@ -212,7 +212,7 @@ func (m *MaggieFuse) Open(input *fuse.OpenIn, out *fuse.OpenOut) (status fuse.St
 	if err != nil {
 		return fuse.EROFS
 	}
-	fmt.Printf("Open got inode: %+v\n",inode)
+	fmt.Printf("Open got inode: %+v\n", inode)
 
 	if truncate {
 		// clear file before writing
@@ -279,55 +279,9 @@ func (m *MaggieFuse) SetDebug(debug bool) {
 }
 
 func (m *MaggieFuse) SetAttr(input *fuse.SetAttrIn, out *fuse.AttrOut) (code fuse.Status) {
-	// if this is a truncate, handle the truncation separately from other mutations, it requires a special call
-	if input.Valid&fuse.FATTR_SIZE != 0 {
-		w, err := NewInodeWriter(input.InHeader.NodeId, m.leases, m.names, m.datas, m.localDnId)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "fuseconnector: error opening writer to truncate inode %d to size %d : %s\n", input.InHeader.NodeId, input.Size, err.Error())
-			return fuse.EROFS
-		}
-		err = w.Truncate(input.Size)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "fuseconnector: error truncating inode %d to size %d : %s\n", input.InHeader.NodeId, input.Size, err.Error())
-			return fuse.EROFS
-		}
-	}
-
-	// other mutations, if applicable
+	// only make the call if we have a valid param
 	if input.Valid&(fuse.FATTR_MODE|fuse.FATTR_UID|fuse.FATTR_GID|fuse.FATTR_MTIME|fuse.FATTR_MTIME_NOW|fuse.FATTR_MTIME|fuse.FATTR_MTIME_NOW|fuse.FATTR_SIZE) != 0 {
-		header := input.InHeader
-
-		wl, err := m.leases.WriteLease(header.NodeId)
-		defer wl.Release()
-		if err != nil {
-			return fuse.EROFS
-		}
-		inode, err := m.names.GetInode(header.NodeId)
-		if err != nil {
-			return fuse.EROFS
-		}
-		if input.Valid&fuse.FATTR_MODE != 0 {
-			// chmod
-			inode.Mode = uint32(07777) & input.Mode
-		}
-		if input.Valid&(fuse.FATTR_UID|fuse.FATTR_GID) != 0 {
-			// chown
-			inode.Uid = input.Uid
-			inode.Gid = input.Gid
-		}
-		if input.Valid&(fuse.FATTR_MTIME|fuse.FATTR_MTIME_NOW) != 0 {
-			// MTIME, not supporting ATIME
-			if input.Valid&fuse.FATTR_MTIME_NOW != 0 {
-				inode.Mtime = time.Now().UnixNano()
-			} else {
-				inode.Mtime = int64(input.Mtime*1e9) + int64(input.Mtimensec)
-			}
-		}
-		// set on nameserver and on argument back out to fuse
-		err = m.names.SetInode(inode)
-		if err != nil {
-			return fuse.EROFS
-		}
+		ino, err := m.names.SetAttr(input)
 		fmt.Printf("SetAttr filling attr out with ino %+v\n", inode)
 		fillAttrOut(out, inode)
 	}
@@ -601,7 +555,7 @@ func (m *MaggieFuse) ListXAttr(header *fuse.InHeader) (data []byte, code fuse.St
 		b.Write([]byte(k))
 		b.WriteByte(0)
 	}
-	return b.Bytes(), fuse.ENOSYS
+	return b.Bytes(), fuse.OK
 }
 
 func (m *MaggieFuse) RemoveXAttr(header *fuse.InHeader, attr string) fuse.Status {
@@ -614,6 +568,7 @@ func (m *MaggieFuse) RemoveXAttr(header *fuse.InHeader, attr string) fuse.Status
 	}
 	return fuse.OK
 }
+
 // this is an optimization call -- can just return OK for now
 func (m *MaggieFuse) Fallocate(input *fuse.FallocateIn) (code fuse.Status) {
 	// TODO implement, Fallocate should write 0s to the allocated range
@@ -629,26 +584,26 @@ func (m *MaggieFuse) Access(input *fuse.AccessIn) (code fuse.Status) {
 func (m *MaggieFuse) Create(input *fuse.CreateIn, name string, out *fuse.CreateOut) (code fuse.Status) {
 	header := input.InHeader
 	// call mknod and then open
-	
+
 	mknodin := fuse.MknodIn{
 		InHeader: header,
-		Mode:input.Mode, 
-		Rdev: uint32(0), 
-		Umask: input.Umask, 
-		Padding: input.Padding}
+		Mode:     input.Mode,
+		Rdev:     uint32(0),
+		Umask:    input.Umask,
+		Padding:  input.Padding}
 	mknodOut := &fuse.EntryOut{}
 	stat := m.Mknod(&mknodin, name, mknodOut)
 	if !stat.Ok() {
 		return stat
 	}
-	openInHeader := fuse.InHeader {
-		NodeId: mknodOut.NodeId,	
+	openInHeader := fuse.InHeader{
+		NodeId: mknodOut.NodeId,
 	}
-	
+
 	openin := fuse.OpenIn{
 		InHeader: openInHeader,
-		Flags: input.Flags, 
-		Unused: uint32(0),
+		Flags:    input.Flags,
+		Unused:   uint32(0),
 	}
 	// set header.NodeId to child, because that's what we actually open
 	stat = m.Open(&openin, &out.OpenOut)
@@ -656,12 +611,12 @@ func (m *MaggieFuse) Create(input *fuse.CreateIn, name string, out *fuse.CreateO
 		return stat
 	}
 	// this is inefficient since we had inode in open.. oh well, we have a cache
-	ino,err := m.names.GetInode(mknodOut.NodeId)
+	ino, err := m.names.GetInode(mknodOut.NodeId)
 	if err != nil {
-		fmt.Printf("Error getting ino we just CREATEd %s",err)
+		fmt.Printf("Error getting ino we just CREATEd %s", err)
 		return fuse.EROFS
 	}
-	fillEntryOut(&out.EntryOut,ino)
+	fillEntryOut(&out.EntryOut, ino)
 	return fuse.OK
 }
 
@@ -670,16 +625,16 @@ func (m *MaggieFuse) OpenDir(input *fuse.OpenIn, out *fuse.OpenOut) (status fuse
 	return fuse.OK
 }
 
-func (m *MaggieFuse) Read(input *fuse.ReadIn, buf fuse.ReadPipe) (fuse.Status) {
+func (m *MaggieFuse) Read(input *fuse.ReadIn, buf fuse.ReadPipe) fuse.Status {
 	reader := m.openFiles.get(input.Fh).r
 	// reader.ReadAt buffers our response header and bytes into the supplied pipe
-	err := reader.ReadAt(buf,input.Offset,input.Size)
+	err := reader.ReadAt(buf, input.Offset, input.Size)
 	if err != nil {
 		if err == io.EOF {
 			return fuse.OK
 		}
 		return fuse.EIO
-	} 
+	}
 	return fuse.OK
 }
 
@@ -758,7 +713,7 @@ func (m *MaggieFuse) ReadDir(input *fuse.ReadIn, l *fuse.DirEntryList) fuse.Stat
 		if err != nil {
 			return fuse.EROFS
 		}
-		success,_ := l.Add(nil,entryList[i].name, entryList[i].Inodeid, inode.FullMode())
+		success, _ := l.Add(nil, entryList[i].name, entryList[i].Inodeid, inode.FullMode())
 		if !success {
 			break
 		}
@@ -780,7 +735,7 @@ func (m *MaggieFuse) ReadDirPlus(input *fuse.ReadIn, l *fuse.DirEntryList) fuse.
 		i++
 	}
 	sort.Sort(entryList)
-	
+
 	// fill until offset
 	d := fuse.DirEntry{}
 	e := &fuse.EntryOut{}
@@ -791,8 +746,8 @@ func (m *MaggieFuse) ReadDirPlus(input *fuse.ReadIn, l *fuse.DirEntryList) fuse.
 		}
 		d.Name = entryList[i].name
 		d.Mode = inode.FullMode()
-		fillEntryOut(e,inode)
-		success,_ := l.AddDirLookupEntry(d,e)
+		fillEntryOut(e, inode)
+		success, _ := l.AddDirLookupEntry(d, e)
 		if !success {
 			break
 		}

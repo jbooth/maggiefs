@@ -7,20 +7,19 @@ import (
 )
 
 const (
-	OP_READ         = uint8(0)
-	OP_START_WRITE  = uint8(1)
-	OP_WRITE_BYTES  = uint8(2)
-	OP_COMMIT_WRITE = uint8(3)
-	
-	STAT_OK         = uint8(0)
-	STAT_ERR        = uint8(1)
-	STAT_NOBLOCK    = uint8(2)
-	STAT_BADVOLUME  = uint8(3)
-	STAT_BADOP      = uint8(4)
+	OP_READ  = uint8(0)
+	OP_WRITE = uint8(1)
+
+	STAT_OK        = uint8(0)
+	STAT_ERR       = uint8(1)
+	STAT_NOBLOCK   = uint8(2)
+	STAT_BADVOLUME = uint8(3)
+	STAT_BADOP     = uint8(4)
 )
 
 type RequestHeader struct {
 	Op     uint8
+	Reqno  uint32
 	Blk    maggiefs.Block
 	Pos    uint64
 	Length uint32
@@ -34,6 +33,7 @@ func (r *RequestHeader) BinSize() int {
 func (r *RequestHeader) ToBytes(b []byte) int {
 	b[0] = r.Op
 	off := 1
+	binary.LittleEndian.PutUint32()
 	off += r.Blk.ToBytes(b[off:])
 	binary.LittleEndian.PutUint64(b[off:], r.Pos)
 	off += 8

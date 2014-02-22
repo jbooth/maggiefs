@@ -6,14 +6,59 @@ import (
 	"sync"
 )
 
-type openFile struct {
-	fh      uint64
-	inodeid uint64
-	r       *Reader
-	w       *InodeWriter
-	lease   maggiefs.ReadLease
+type OpenFileMap struct {
+	l      *sync.RWMutex
+	files  map[uint64]*openFile
+	inodes map[uint64]*openInode
 }
 
+// gets our local leased copy of an inode, if possible, or nil
+func (o *OpenFileMap) GetInode(id uint64) *maggiefs.Inode {
+
+}
+
+func (o *OpenFileMap) Read(fd uint64) {
+
+}
+
+type openInode struct {
+	names       maggiefs.NameService
+	l           *sync.RWMutex
+	ino         *maggiefs.Inode
+	lease       maggiefs.ReadLease
+	refCount    int
+	dirtyLength bool // we don't always update master on length change, specifically
+	newLength   uint64
+}
+
+// flushes all changes to master
+func (i *openInode) Sync() {
+
+}
+
+// sets length, might only set it locally and defer flush to master
+func (i *openInode) SetLength(uint64 newLen) {
+
+}
+
+type openFile struct {
+	fh    uint64
+	ino   *openInode
+	w     *InodeWriter
+	lease maggiefs.ReadLease
+}
+
+func (f *openFile) Read() {
+
+}
+
+func (f *openFile) Write() {
+
+}
+
+func (f *openFile) Fsync() {
+
+}
 func (f *openFile) Close() error {
 	var err error = nil
 	if f.r != nil {
