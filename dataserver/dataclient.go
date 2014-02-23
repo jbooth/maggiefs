@@ -67,30 +67,34 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 		// local direct read
 		return dc.localDS.DirectRead(blk, buf, pos, length)
 	}
-	return dc.withConn(pickVol(blk.Volumes), func(d Endpoint) error {
-		// send req
-		header := RequestHeader{OP_READ, blk, pos, length}
-		//		fmt.Printf("data client writing read header to %s\n", d)
-		//		fmt.Printf("Reading length %d to slice of length %d\n", length, len(p))
-		_, err = header.WriteTo(d)
-		if err != nil {
-			return fmt.Errorf("Error writing header to dn : %s", err.Error())
-		}
+	host, err := dc.VolHost(pickVol(blk.Volumes))
+	if err != nil {
+		return nil
+	}
+
+	conn := dc.pool.getConn(host)
+	// TODO we could commit the read from the other thread instead of blocking and incurring context switch
+	whenDone := make(chan bool, 1)
+	header := RequestHeader{OP_READ, blk, pos, length}
+	conn.DoRequest(header, nil, func(d *os.File) {
+
 		// read resp header
 		resp := &ResponseHeader{}
 		_, err = resp.ReadFrom(d)
 		if err != nil {
-			return fmt.Errorf("Error reading header from dn : %s", err.Error())
+			fmt.Printf("Error reading header from dn : %s", err.Error())
+			return
 		}
 		if resp.Stat == STAT_ERR {
-			return fmt.Errorf("Error code %d from DN", resp.Stat)
+			fmt.Printf("Error code %d from DN", resp.Stat)
+			return
 		}
 		// put header into response buffer
 		err = buf.WriteHeader(0, int(length))
 		if err != nil {
-			return fmt.Errorf("Error writing resp header to splice pipe : %s", err)
+			fmt.Printf("Error writing resp header to splice pipe : %s", err)
+			return
 		}
-
 		// read resp bytes
 		//fmt.Printf("Entering loop to read %d bytes\n",length)
 		numRead := 0
@@ -100,12 +104,16 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 			n, err := buf.SpliceBytes(uintptr(d.Rfd()), int(length)-numRead)
 			//			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
 			if err != nil {
-				return err
+				fmt.Printf("Error while splicing: %s\n", err)
+				return
 			}
 			numRead += n
 		}
-		return nil
+		// done
+		whenDone <- true
 	})
+	<-whenDone
+	return nil
 }
 
 // returns a write session
@@ -149,15 +157,6 @@ func (dc *DataClient) WriteSession(blk maggiefs.Block) (writer maggiefs.BlockWri
 	)
 }
 
-func (dc *DataClient) withConn(volId uint32, f func(d Endpoint) error) error {
-	// normal case, remote dataserver
-	raddr, err := dc.VolHost(volId)
-	if err != nil {
-		return err
-	}
-	return dc.pool.withConn(raddr, f)
-}
-
 func (dc *DataClient) refreshDNs() error {
 	dc.volLock.Lock()
 	defer dc.volLock.Unlock()
@@ -180,152 +179,23 @@ func (dc *DataClient) refreshDNs() error {
 	return nil
 }
 
-// pool impl
 type connPool struct {
-	pool           map[*net.TCPAddr]chan Endpoint
-	l              *sync.RWMutex
-	maxPerKey      int
-	destroyOnError bool
+	conns map[*net.TCPAddr]*RawClient
+	l     *sync.RWMutex
 }
 
-func newConnPool(maxPerKey int, destroyOnError bool) *connPool {
-	return &connPool{make(map[*net.TCPAddr]chan Endpoint), &sync.RWMutex{}, maxPerKey, destroyOnError}
-}
-
-// optimized to only acquire lock and perHost channel once, top and bottom of this are identical to getConn, returnConn
-func (p *connPool) withConn(host *net.TCPAddr, with func(c Endpoint) error) (err error) {
-	//fmt.Printf("Doing something with conn to host %s\n", host.String())
-	// get chan
-	p.l.RLock()
-	ch, exists := p.pool[host]
-	p.l.RUnlock()
-	if !exists {
-		p.l.Lock()
-		ch, exists = p.pool[host]
-		if !exists {
-			ch = make(chan Endpoint, p.maxPerKey)
-			p.pool[host] = ch
-		}
-		p.l.Unlock()
+func (c *connPool) getConn(host *net.TCPAddr) (*RawClient, error) {
+	c.l.RLock()
+	ret := c.conns[host]
+	c.l.RUnlock()
+	if ret != nil {
+		return ret, nil
 	}
-
-	// get conn
-	var conn Endpoint
-	select {
-	case conn = <-ch:
-		// nothing to do
-	default:
-		// create new one
-		//fmt.Printf("Creating new conn to %s\n", host.String())
-		conn, err = p.dial(host)
-		if err != nil {
-			if conn != nil {
-				_ = conn.Close()
-			}
-			return err
-		}
+	c.l.Lock()
+	conn, err := NewRawClient(host, 16)
+	if err == nil {
+		c.conns[host] = conn
 	}
-	// do our stuff
-	err = with(conn)
-	for err != nil {
-		fmt.Printf("Error with conn to %s : %s\n", conn, err)
-		conn.Close()
-		conn, err = p.getConn(host)
-		if err != nil {
-			if conn != nil {
-				conn.Close()
-			}
-			return err
-		}
-	}
-	if err != nil {
-		// don't re-use conn on error, might be crap left in the pipe
-		conn.Close()
-		return err
-	} else {
-		// return	to pool
-		select {
-		case ch <- conn:
-			// successfully added back to freelist
-			//fmt.Printf("Added conn back to pool for host %s, local %s\n", host.String(), conn)
-		default:
-			// freelist full, dispose of that trash
-			//fmt.Printf("Closing conn for host %s, local %s\n", host.String(), conn)
-			_ = conn.Close()
-		}
-	}
-	return err
-}
-
-// direct access to conn pool, be careful to return!
-func (p *connPool) getConn(host *net.TCPAddr) (Endpoint, error) {
-	//fmt.Printf("Doing something with conn to host %s\n", host.String())
-	// get chan
-	p.l.RLock()
-	ch, exists := p.pool[host]
-	p.l.RUnlock()
-	if !exists {
-		p.l.Lock()
-		ch, exists = p.pool[host]
-		if !exists {
-			ch = make(chan Endpoint, p.maxPerKey)
-			p.pool[host] = ch
-		}
-		p.l.Unlock()
-	}
-
-	// get object
-	var conn Endpoint
-	var err error = nil
-	select {
-	case conn = <-ch:
-		// nothing to do
-	default:
-		// create new one
-		//fmt.Printf("Creating new conn to %s\n", host.String())
-		conn, err = p.dial(host)
-		if err != nil {
-			if conn != nil {
-				_ = conn.Close()
-			}
-		}
-	}
+	c.l.Unlock()
 	return conn, err
-}
-
-// direct access to conn pool, be careful to return!
-func (p *connPool) returnConn(host *net.TCPAddr, conn Endpoint) {
-	// get chan
-	p.l.RLock()
-	ch, exists := p.pool[host]
-	p.l.RUnlock()
-	if !exists {
-		p.l.Lock()
-		ch, exists = p.pool[host]
-		if !exists {
-			ch = make(chan Endpoint, p.maxPerKey)
-			p.pool[host] = ch
-		}
-		p.l.Unlock()
-	}
-	// return	to pool
-	select {
-	case ch <- conn:
-		// successfully added back to freelist
-		//fmt.Printf("Added conn back to pool for host %s, local %s\n", host.String(), conn)
-	default:
-		// freelist full, dispose of that trash
-		//fmt.Printf("Closing conn for host %s, local %s\n", host.String(), conn)
-		_ = conn.Close()
-	}
-}
-
-func (p *connPool) dial(host *net.TCPAddr) (Endpoint, error) {
-	conn, err := net.DialTCP("tcp", nil, host)
-	if err != nil {
-		return nil, err
-	}
-	conn.SetNoDelay(true)
-	//fmt.Printf("Connected to host %s with local conn %s\n",conn.RemoteAddr().String(),conn.LocalAddr().String())
-	return BlockingSockEndPoint(conn)
 }

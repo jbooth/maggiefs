@@ -37,7 +37,9 @@ func NewRawClient(host *net.TCPAddr, numStripes int) (*RawClient, error) {
 	conn.Close()
 	syscall.SetNonblock(int(f.Fd()), false)
 	ctr := uint64(0)
-	return &RawClient{f, &ctr, callBacks, stripeLock}, nil
+	ret := &RawClient{f, &ctr, callBacks, stripeLock}
+	go ret.handleResponses()
+	return ret, nil
 }
 
 // sends a request, calling onResp asynchronously when we receive a response
@@ -53,21 +55,21 @@ func (c *RawClient) DoRequest(header ReqHeader, body []byte, onResp func(s *os.F
 	var iovecs []syscall.Iovec
 	if body != nil {
 		iovecs = []syscall.Iovec{
-			syscall.Iovec {
+			syscall.Iovec{
 				Base: &headerBytes[0],
-				Len: uint64(len(headerBytes)),
+				Len:  uint64(len(headerBytes)),
 			},
-			syscall.Iovec {
+			syscall.Iovec{
 				Base: &body[0],
-				Len: uint64(len(body)),
-			}
+				Len:  uint64(len(body)),
+			},
 		}
 	} else {
-		iovecs = []syscall.Iovec {
-			syscall.Iovec {
+		iovecs = []syscall.Iovec{
+			syscall.Iovec{
 				Base: &headerBytes[0],
-				Len: uint64(len(body))
-			}
+				Len:  uint64(len(body)),
+			},
 		}
 	}
 	// register our callback

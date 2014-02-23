@@ -12,9 +12,9 @@ type DataService interface {
 	// read some bytes statelessly
 	Read(blk Block, buf SplicerTo, pos uint64, length uint32) (err error)
 
-	// open a write session
-	//
-	WriteSession(blk Block) (writer BlockWriter, err error)
+	// executes an async write to the provided block, replicating to each volume in the order specified on the block
+	// when done, onDone will be called
+	Write(blk Block, p []byte, pos uint64, onDone func()) (err error)
 }
 
 // represents a stateful write session

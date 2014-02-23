@@ -225,18 +225,6 @@ func (v *volume) BlockReport() ([]maggiefs.Block, error) {
 	return ret, it.GetError()
 }
 
-// NameDataIFace methods
-//  // periodic heartbeat with datanode stats so namenode can keep total stats and re-replicate
-//  HeartBeat() (stat *DataNodeStat, err error)
-//  // add a block to this datanode/volume
-//  AddBlock(blk Block, volId int32) (err error)
-//  // rm block from this datanode/volume
-//  RmBlock(id uint64, volId int32) (err error)
-//  // truncate a block
-//  TruncBlock(blk Block, volId int32, newSize uint32) (err error)
-//  // get the list of all blocks for a volume
-//  BlockReport(volId int32) (blocks []Block, err error)
-
 func (v *volume) withFile(id uint64, op func(*os.File) error) error {
 	path := v.resolvePath(id)
 	return v.fp.WithFile(path, op)
@@ -286,19 +274,18 @@ func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) 
 
 }
 
-func (v *volume) serveRead(client Endpoint, req *RequestHeader) (err error) {
+func (v *volume) serveRead(client *os.File, req *RequestHeader) (err error) {
 	err = v.withFile(req.Blk.Id, func(file *os.File) error {
 		//		fmt.Printf("Serving read to file %s\n", file.Name())
 		// check off
-		resp := ResponseHeader{STAT_OK}
+		resp := ResponseHeader{STAT_OK, req.Reqno}
 		sendPos := int64(req.Pos)
 		stat, _ := file.Stat()
-		// send only the bytes we have, then we'll send zeroes for the rest
+		// send only the bytes we have, then we'll send zeroes for the rest -- this is to support sparse files
 		sendLength := uint64(req.Length)
 		zerosLength := 0
 		fileSize := uint64(stat.Size())
 		if uint64(sendPos)+sendLength > fileSize {
-
 			sendLength = uint64(stat.Size() - sendPos)
 			zerosLength = int(uint32(req.Length) - uint32(sendLength))
 		}
@@ -309,7 +296,7 @@ func (v *volume) serveRead(client Endpoint, req *RequestHeader) (err error) {
 		}
 		// send data
 		//		fmt.Printf("sending data from pos %d length %d\n", sendPos, sendLength)
-		_, err = Copy(client, io.NewSectionReader(file, sendPos, int64(sendLength)), int64(sendLength))
+		_, err = syscall.Sendfile(int(client.Fd()), int(file.Fd()), sendPos, int64(sendLength))
 		if err != nil {
 			return err
 		}
@@ -333,76 +320,6 @@ func (v *volume) serveRead(client Endpoint, req *RequestHeader) (err error) {
 		_, err = resp.WriteTo(client)
 	}
 	return err
-}
-
-func (v *volume) serveWrite(client Endpoint, req *RequestHeader, datas *DataClient) error {
-
-	// should we check block.Version here?  skipping for now
-	//		fmt.Printf("vol %d pipelining write to following vol IDs %+v\n", v.id, req.Blk.Volumes)
-	// remove ourself from pipeline remainder
-	var remainingVolumes []uint32 = nil
-	for idx, volId := range req.Blk.Volumes {
-		if volId == v.id {
-			if idx == 0 {
-				remainingVolumes = req.Blk.Volumes[1:]
-			} else {
-				if idx < len(req.Blk.Volumes) {
-					remainingVolumes = append(req.Blk.Volumes[:idx], req.Blk.Volumes[idx+1:]...)
-				} else {
-					remainingVolumes = req.Blk.Volumes[:idx]
-				}
-			}
-			break
-		}
-	}
-	req.Blk.Volumes = remainingVolumes
-	//fmt.Printf("serving write, volumes after removing self %+v\n", req.Blk.Volumes)
-
-	// wrap func to do the pipeline around our vars
-	doPipeline := func(nextInLine Endpoint) error {
-		pipeline := newServerPipeline(client, nextInLine, req, v, req.Blk.Id)
-		sendErrChan := make(chan error)
-		ackErrChan := make(chan error)
-		go func() {
-			sendErrChan <- pipeline.run()
-		}()
-		go func() {
-			ackErrChan <- pipeline.ack()
-		}()
-		sendErr := <-sendErrChan
-		ackErr := <-ackErrChan
-		if sendErr != nil {
-			return sendErr
-		}
-		return ackErr
-	}
-
-	var pipelineErr error = nil
-	if len(remainingVolumes) > 0 {
-		pipelineErr = datas.withConn(remainingVolumes[0], doPipeline)
-	} else {
-		// nil nextInLine, just compute here
-		pipelineErr = doPipeline(nil)
-	}
-	return pipelineErr
-
-	// no response, response is implicit in acks that are sent along
-	//	resp := ResponseHeader{STAT_OK}
-	//	//	fmt.Printf("vol %d returning resp %+v \n", v.id, resp)
-	//	if err != nil {
-	//		resp.Stat = STAT_ERR
-	//	}
-	//	resp.WriteTo(client)
-}
-
-func checkResponse(c *net.TCPConn) error {
-	resp := ResponseHeader{}
-	resp.ReadFrom(c)
-	if resp.Stat == STAT_OK {
-		return nil
-	}
-	return fmt.Errorf("Response stat not ok : %d", resp.Stat)
-
 }
 
 // paths are resolved using an intermediate hash so that we don't blow up the data dir with millions of entries

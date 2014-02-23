@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"syscall"
 )
 
 type DataServer struct {
@@ -22,7 +23,7 @@ type DataServer struct {
 	nameDataIface *mrpc.CloseableServer
 	nameDataAddr  string
 	// dataservice for pipelining writes
-	dc *DataClient
+	dc maggiefs.DataService
 	// locks to manage shutdown
 	clos   *sync.Cond
 	closed bool
@@ -166,14 +167,24 @@ func (ds *DataServer) serveClientData() error {
 			return err
 		}
 		tcpConn.SetNoDelay(true)
-		tcpConn.SetReadBuffer(128 * 1024)
-		tcpConn.SetWriteBuffer(128 * 1024)
-		go ds.serveClientConn(SockEndpoint(tcpConn))
+		tcpConn.SetReadBuffer(1024 * 1024)
+		tcpConn.SetWriteBuffer(1024 * 1024)
+		f, err := tcpConn.File()
+		if err != nil {
+			return err
+		}
+		err = syscall.SetNonblock(int(f.Fd()), false)
+		if err != nil {
+			return err
+		}
+		go ds.serveClientConn(f)
 	}
 }
 
-func (ds *DataServer) serveClientConn(conn Endpoint) {
+func (ds *DataServer) serveClientConn(conn *os.File) {
 	defer conn.Close()
+	buff := make([]byte, 128*1024, 128*1024)
+	l := new(sync.Mutex)
 	for {
 		req := &RequestHeader{}
 		_, err := req.ReadFrom(conn)
@@ -199,23 +210,65 @@ func (ds *DataServer) serveClientConn(conn Endpoint) {
 			resp := &ResponseHeader{STAT_BADVOLUME}
 			_, err := resp.WriteTo(conn)
 			if err != nil {
-				fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
+				fmt.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
 				return
 			}
 		} else {
 			vol := ds.volumes[volForBlock]
 			if req.Op == OP_READ {
+				l.Lock()
 				err = vol.serveRead(conn, req)
+				l.Unlock()
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
+					fmt.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
 					return
 				}
-			} else if req.Op == OP_START_WRITE {
-				err = vol.serveWrite(conn, req, ds.dc)
+			} else if req.Op == OP_WRITE {
+				writeBuff = buff[:int(req.Length)]
+				_, err := conn.Read(writeBuff)
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
+					fmt.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
 					return
 				}
+				insureWriteFinished := make(chan bool, 1)
+				resp := RespHeader{STAT_OK, req.Reqno}
+				if len(req.Blk.Volumes) > 1 {
+					// forward to next node if appropriate with callback
+					req.Blk.Volumes = req.Blk.Volumes[1:]
+					ds.dc.Write(req.Blk, writeBuff, req.Pos, func() {
+						// wait for local write to complete (should be done before we hear back from remote anyways)
+						<-insureWriteFinished
+						// send response to client
+						l.Lock()
+						_, err := resp.WriteTo(conn)
+						l.Unlock()
+						if err != nil {
+							fmt.Printf("Error sending response to client %s\n", err)
+						}
+					})
+				}
+				// write to our copy of block
+				err = vol.withFile(req.Blk.Id, func(f *os.File) error {
+					_, e1 := f.WriteAt(writeBuff, int64(req.Pos))
+					return e1
+				})
+				if err != nil {
+					fmt.Printf("Err writing to file: %s\n")
+					return
+				}
+				if len(req.Blk.Volumes == 1) {
+					// respond here
+					l.Lock()
+					_, err := resp.WriteTo(conn)
+					l.Unlock()
+					if err != nil {
+						fmt.Printf("Error sending response to client %s\n", err)
+					}
+				} else {
+					// tell the responder thread it's ok to send
+					insureWriteFinished <- true
+				}
+
 			} else {
 				// unrecognized req, send err response
 				resp := &ResponseHeader{STAT_BADOP}

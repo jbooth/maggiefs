@@ -96,44 +96,47 @@ func (req *RequestHeader) ReadFrom(r io.Reader) (n int, err error) {
 }
 
 type ResponseHeader struct {
-	Stat uint8
+	Stat  uint8
+	Reqno uint32
 }
 
 func (r *ResponseHeader) BinSize() int {
-	return 1
+	return 5
 }
 
 func (r *ResponseHeader) ToBytes(b []byte) int {
 	b[0] = r.Stat
-	return 1
+	binary.LittleEndian.PutUint32(b[1:], r.Reqno)
+	return 5
 }
 
 func (r *ResponseHeader) FromBytes(b []byte) int {
 	r.Stat = b[0]
-	return 1
+	r.Reqno = binary.LittleEndian.Uint32(b[1:])
+	return 5
 }
 
 func (resp *ResponseHeader) ReadFrom(r io.Reader) (n int, err error) {
-	buff := [1]byte{}
+	buff := [5]byte{}
 	nRead := 0
-	for nRead < 1 {
+	for nRead < 5 {
 		nRead, err = r.Read(buff[:])
 		if err != nil {
 			return 0, err
 		}
 	}
 	resp.Stat = 0
-	return 1, nil
+	return 5, nil
 }
 
 func (resp *ResponseHeader) WriteTo(w io.Writer) (n int, err error) {
-	buff := [1]byte{resp.Stat}
+	buff := [5]byte{resp.Stat}
 	nWrit := 0
-	for nWrit < 1 {
+	for nWrit < 5 {
 		nWrit, err = w.Write(buff[:])
 		if err != nil {
 			return 0, err
 		}
 	}
-	return 1, nil
+	return 5, nil
 }
