@@ -33,7 +33,7 @@ func (r *RequestHeader) BinSize() int {
 func (r *RequestHeader) ToBytes(b []byte) int {
 	b[0] = r.Op
 	off := 1
-	binary.LittleEndian.PutUint32()
+	binary.LittleEndian.PutUint32(b[off:], r.Reqno)
 	off += r.Blk.ToBytes(b[off:])
 	binary.LittleEndian.PutUint64(b[off:], r.Pos)
 	off += 8

@@ -7,6 +7,7 @@ import (
 	"github.com/jbooth/maggiefs/mrpc"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"syscall"
 )
@@ -192,7 +193,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 		if err != nil {
 			// don't log error for remote closed connection
 			if err != io.EOF && err != io.ErrClosedPipe {
-				fmt.Printf("Err serving conn while reading header %s : %s\n", conn.String(), err.Error())
+				fmt.Printf("Err serving conn while reading header %s : %s\n", "conn", err.Error())
 			}
 			return
 		}
@@ -207,7 +208,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 		}
 		if volForBlock == 0 {
 			// return error and reloop
-			resp := &ResponseHeader{STAT_BADVOLUME}
+			resp := &ResponseHeader{STAT_BADVOLUME, req.Reqno}
 			_, err := resp.WriteTo(conn)
 			if err != nil {
 				fmt.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
@@ -224,14 +225,14 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 					return
 				}
 			} else if req.Op == OP_WRITE {
-				writeBuff = buff[:int(req.Length)]
+				writeBuff := buff[:int(req.Length)]
 				_, err := conn.Read(writeBuff)
 				if err != nil {
 					fmt.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
 					return
 				}
 				insureWriteFinished := make(chan bool, 1)
-				resp := RespHeader{STAT_OK, req.Reqno}
+				resp := ResponseHeader{STAT_OK, req.Reqno}
 				if len(req.Blk.Volumes) > 1 {
 					// forward to next node if appropriate with callback
 					req.Blk.Volumes = req.Blk.Volumes[1:]
@@ -256,7 +257,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 					fmt.Printf("Err writing to file: %s\n")
 					return
 				}
-				if len(req.Blk.Volumes == 1) {
+				if len(req.Blk.Volumes) == 1 {
 					// respond here
 					l.Lock()
 					_, err := resp.WriteTo(conn)
@@ -271,10 +272,10 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 
 			} else {
 				// unrecognized req, send err response
-				resp := &ResponseHeader{STAT_BADOP}
+				resp := &ResponseHeader{STAT_BADOP, req.Reqno}
 				_, err := resp.WriteTo(conn)
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", conn.String(), err.Error())
+					fmt.Printf("Err serving conn %s : %s", "conn", err.Error())
 					return
 				}
 			}
@@ -284,7 +285,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 }
 
 func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) (err error) {
-	req := &RequestHeader{OP_READ, blk, pos, length}
+	req := &RequestHeader{OP_READ, 0, blk, pos, length}
 	// figure out which of our volumes
 	volForBlock := uint32(0)
 	var volWithBlock *volume = nil

@@ -5,6 +5,7 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"math/rand"
 	"net"
+	"os"
 	"sync"
 )
 
@@ -21,7 +22,7 @@ type DataClient struct {
 }
 
 func NewDataClient(names maggiefs.NameService, connsPerDn int) (*DataClient, error) {
-	return &DataClient{names, make(map[uint32]*net.TCPAddr), &sync.RWMutex{}, newConnPool(connsPerDn, true), nil, nil}, nil
+	return &DataClient{names, make(map[uint32]*net.TCPAddr), &sync.RWMutex{}, &connPool{make(map[*net.TCPAddr]*RawClient), new(sync.RWMutex)}, nil, nil}, nil
 }
 
 func pickVol(vols []uint32) uint32 {
@@ -72,23 +73,14 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 		return nil
 	}
 
-	conn := dc.pool.getConn(host)
+	conn, err := dc.pool.getConn(host)
+	if err != nil {
+		return err
+	}
 	// TODO we could commit the read from the other thread instead of blocking and incurring context switch
 	whenDone := make(chan bool, 1)
-	header := RequestHeader{OP_READ, blk, pos, length}
+	header := RequestHeader{OP_READ, 0, blk, pos, length}
 	conn.DoRequest(header, nil, func(d *os.File) {
-
-		// read resp header
-		resp := &ResponseHeader{}
-		_, err = resp.ReadFrom(d)
-		if err != nil {
-			fmt.Printf("Error reading header from dn : %s", err.Error())
-			return
-		}
-		if resp.Stat == STAT_ERR {
-			fmt.Printf("Error code %d from DN", resp.Stat)
-			return
-		}
 		// put header into response buffer
 		err = buf.WriteHeader(0, int(length))
 		if err != nil {
@@ -101,7 +93,7 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 		for uint32(numRead) < length {
 			//			fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length - uint32(numRead), d, numRead, int(length))
 			//			fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
-			n, err := buf.SpliceBytes(uintptr(d.Rfd()), int(length)-numRead)
+			n, err := buf.SpliceBytes(d.Fd(), int(length)-numRead)
 			//			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
 			if err != nil {
 				fmt.Printf("Error while splicing: %s\n", err)
@@ -116,45 +108,21 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 	return nil
 }
 
-// returns a write session
-func (dc *DataClient) WriteSession(blk maggiefs.Block) (writer maggiefs.BlockWriter, err error) {
-	//if dc.isLocal(blk.Volumes) {
-	//	// local shortcut, return write session from an in-memory pipe
-	//	local, remote := PipeEndpoints()
-	//	go dc.localDS.serveClientConn(remote)
-	//	return newClientPipeline(
-	//		local,
-	//		blk,
-	//		64*1024*1024, // 64MB max for unack'd bytes in flight
-	//		func() {
-	//			local.Close() // kill in-memory pipe when finished
-	//		},
-	//	)
-
-	//}
-	// return write session over the netwrok
-
-	// find host
-	raddr, err := dc.VolHost(blk.Volumes[0])
+func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64, onDone func()) (err error) {
+	// always go in order of volumes on block
+	host, err := dc.VolHost(blk.Volumes[0])
 	if err != nil {
-		return nil, err
+		return err
 	}
-	// get conn
-	conn, err := dc.pool.getConn(raddr)
+	conn, err := dc.pool.getConn(host)
 	if err != nil {
-		if conn != nil {
-			conn.Close()
-		}
-		return nil, err
+		return err
 	}
-	return newClientPipeline(
-		conn,
-		blk,
-		64*1024*1024, // 64MB max for unack'd bytes in flight
-		func() {
-			dc.pool.returnConn(raddr, conn) // return to pool on done
-		},
-	)
+	reqHeader := RequestHeader{OP_WRITE, 0, blk, pos, uint32(len(p))}
+	conn.DoRequest(reqHeader, p, func(f *os.File) {
+		onDone()
+	})
+	return nil
 }
 
 func (dc *DataClient) refreshDNs() error {

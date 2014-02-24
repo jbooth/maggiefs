@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jmhodges/levigo"
-	"io"
 	"io/ioutil"
-	"net"
 	"os"
 	"strconv"
 	"syscall"
@@ -296,7 +294,7 @@ func (v *volume) serveRead(client *os.File, req *RequestHeader) (err error) {
 		}
 		// send data
 		//		fmt.Printf("sending data from pos %d length %d\n", sendPos, sendLength)
-		_, err = syscall.Sendfile(int(client.Fd()), int(file.Fd()), sendPos, int64(sendLength))
+		_, err = syscall.Sendfile(int(client.Fd()), int(file.Fd()), &sendPos, int(sendLength))
 		if err != nil {
 			return err
 		}
@@ -316,7 +314,7 @@ func (v *volume) serveRead(client *os.File, req *RequestHeader) (err error) {
 	})
 	if os.IsNotExist(err) {
 		// above function didn't run cause file didn't exist, so return NOBLOCK from here
-		resp := ResponseHeader{STAT_NOBLOCK}
+		resp := ResponseHeader{STAT_NOBLOCK, req.Reqno}
 		_, err = resp.WriteTo(client)
 	}
 	return err
