@@ -70,29 +70,73 @@ func blockForPos(position uint64, inode *maggiefs.Inode) (blk maggiefs.Block, er
 
 // manages async writes
 type Writer struct {
-	pendingWrites chan chan uint64
+	names         maggiefs.NameService
+	inodeid       uint64
+	pendingWrites chan pendingWrite
 	l             *sync.Mutex
 	closed        bool
 }
 
+// represents either an outstanding write or a sync request
 type pendingWrite struct {
-	done chan uint64
+	done   chan uint64
+	isSync bool
 }
 
+// this convoluted function processes finished writes, updating the namenode with a new inode length if necessary
 func (w *Writer) process() {
 	var newLen uint64 = 0
-	var currChan chan uint64 = nil
+	var currPending pendingWrite = pendingWrite{nil, false}
 	var hasMore bool = true
 	for {
-		if hasMore && currChan != nil {
-			
+		if !hasMore {
+			return
 		}
-		// pull as many as we can until we reach one that's incomplete
-		INNER: for {
-			select {
-				case currChan,hasMore = 
+		// make a single blocking call so we don't busy-loop
+		if currPending.done != nil {
+			currPending, hasMore = <-w.pendingWrites
+			if !hasMore {
+				return
 			}
-			newLenChan,ok := 
+		}
+		l := <-currPending.done
+		if l > newLen {
+			newLen = l
+		}
+		currPending = pendingWrite{nil, false}
+		// now pull as many as we can until we reach either a sync, or an incomplete write which would have blocked
+	INNER:
+		for {
+			select {
+			// pull until we get a sync or we would block
+			case currPending, hasMore = <-w.pendingWrites:
+				if !hasMore || currPending.isSync {
+					// channel closed or sync request, break out
+					break INNER
+					// state:  currPending is a sync request or we're about to terminate
+					// will either finish sync on reloop or terminate
+				} else {
+					select {
+					// if this pending write is finished, reloop and pull another
+					case l := <-currPending.done:
+						if l > newLen {
+							newLen = l
+						}
+						currPending = pendingWrite{nil, false}
+						// state:  currPending invalid, reloop INNER and pull another if we can
+					default:
+						break INNER
+						// state:  currPending is valid and unfinished, will block on it on re-loop
+					}
+				}
+			default:
+				break INNER
+			}
+		}
+		// update node length if appropriate before relooping
+		if newLen > 0 {
+			_, err := w.names.Extend(w.inodeid, newLen)
+			newLen = 0
 		}
 	}
 }
