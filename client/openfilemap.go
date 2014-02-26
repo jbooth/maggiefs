@@ -6,18 +6,53 @@ import (
 	"sync"
 )
 
+// responsible for 4 things:
+// 1)  maintaining open FDs and which inode they point to
+// 2)  caching said inode so we don't make 2 rpcs per read
+// 3)  intercepting notifications from the master and invalidating cache as necessary
+// 4)  proving a writeback cache for length changes so that writes are faster
 type OpenFileMap struct {
+	leases maggiefs.LeaseService
+	names  maggiefs.NameService
+	datas  maggiefs.DataService
 	l      *sync.RWMutex
 	files  map[uint64]*openFile
 	inodes map[uint64]*openInode
 }
 
-// gets our local leased copy of an inode, if possible, or nil
-func (o *OpenFileMap) GetInode(id uint64) *maggiefs.Inode {
+// gets our local leased copy of an inode, if possible, or nil if we have no copy of that ino open
+func (o *OpenFileMap) GetInode(id uint64) (*maggiefs.Inode, error) {
+	o.l.Rlock()
+	openIno, exists := o.inodes[id]
+	o.l.RUnlock()
+	if !exists {
+		return nil, nil
+	}
+	var ret *maggiefs.Inode
+	openIno.l.RLock()
+	ret := openIno.ino
+	openIno.l.RUnlock()
+	// if valid, return it
+	if ret != nil {
+		return ret, nil
+	}
+	// could have been invalidated, in which case we should re-acquire a copy
+	openIno.l.Lock()
+	defer openIno.l.Unlock()
+	ino, err := o.names.GetInode(id)
+	if err != nil {
+		return nil, err
+	}
+	openIno.ino = ino
+	return ino, nil
+}
+
+func (o *OpenFileMap) SetLength(inodeid uint64, newLen uint64) error {
+	o.l.RLock()
 
 }
 
-func (o *OpenFileMap) Read(fd uint64) {
+func (o *OpenFileMap) getInodeForFd(fd uint64) (*maggiefs.Inode, error) {
 
 }
 

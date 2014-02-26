@@ -8,26 +8,7 @@ import (
 	"io"
 )
 
-func NewReader(inodeid uint64, names maggiefs.NameService, datas maggiefs.DataService) (r *Reader, err error) {
-	return &Reader{inodeid, names, datas}, nil
-}
-
-// represents an open file
-// maintains a one page buffer for reading
-// for writable or RW files, see OpenWriteFile
-type Reader struct {
-	inodeid uint64
-	names   maggiefs.NameService
-	datas   maggiefs.DataService
-}
-
-func (r *Reader) ReadAt(p fuse.ReadPipe, position uint64, length uint32) (err error) {
-	// have to re-get inode every time because it might have changed
-
-	inode, err := r.names.GetInode(r.inodeid)
-	if err != nil {
-		return err
-	}
+func doRead(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, position uint64, length uint32) (err error) {
 	if position == inode.Length {
 		// write header for OK, 0 bytes at EOF
 		p.WriteHeader(0, 0)
@@ -62,14 +43,14 @@ func (r *Reader) ReadAt(p fuse.ReadPipe, position uint64, length uint32) (err er
 			break
 		}
 		// read bytes
-		//fmt.Printf("reader.go reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
-		err = r.datas.Read(block, p, posInBlock, numBytesFromBlock)
+		//fmt.Printf("reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
+		err = datas.Read(block, p, posInBlock, numBytesFromBlock)
 		if err != nil && err != io.EOF {
 			return fmt.Errorf("reader.go error reading from block %+v : %s", block, err.Error())
 		}
 		nRead += numBytesFromBlock
 		position += uint64(numBytesFromBlock)
-		//fmt.Printf("reader.go finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
+		//fmt.Printf("finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
 	}
 	// sometimes the length can be more bytes than there are in the file, so always just give that back
 	return nil
@@ -84,5 +65,45 @@ func blockForPos(position uint64, inode *maggiefs.Inode) (blk maggiefs.Block, er
 		}
 	}
 	return maggiefs.Block{}, errors.New(fmt.Sprintf("offset %d not found in any blocks for inode %d, bad file?", position, inode.Inodeid))
+
+}
+
+// manages async writes
+type Writer struct {
+	pendingWrites chan chan uint64
+	l             *sync.Mutex
+	closed        bool
+}
+
+type pendingWrite struct {
+	done chan uint64
+}
+
+func (w *Writer) process() {
+	var newLen uint64 = 0
+	var currChan chan uint64 = nil
+	var hasMore bool = true
+	for {
+		if hasMore && currChan != nil {
+			
+		}
+		// pull as many as we can until we reach one that's incomplete
+		INNER: for {
+			select {
+				case currChan,hasMore = 
+			}
+			newLenChan,ok := 
+		}
+	}
+}
+func (w *Writer) doWrite(datas maggiefs.DataService, inode *maggiefs.Inode, p []byte, position uint64, length uint32) (err error) {
+
+}
+
+func (w *Writer) sync() {
+
+}
+
+func (w *Writer) close() {
 
 }

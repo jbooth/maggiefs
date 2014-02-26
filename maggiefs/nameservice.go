@@ -49,7 +49,19 @@ type NameService interface {
 	// special case for SetLength, allows us to coalesce a couple length updates into a single one when appending
 	// will add/remove blocks as necessary, can be used to truncate
 	// attempts to place new blocks on requestedDnId if non-nil
-	SetLength(nodeid uint64, newLen uint64, requestedDnId *uint32, fallocate bool) (newNode *Inode, err error)
+
+	// extends an inode to newLength, no-op if already that long
+	// error condition if this would require new blocks that we haven't allocated yet
+	Extend(nodeid uint64, newLen uint64) (newNode *Inode, err error)
+	// truncates an inode to the provided length, deleting blocks as necessary
+	Truncate(nodeid uint64, newLen uint64) (newNode *Inode, err error)
+	// adds a new block to the end of this inode.  does not modify inode.length, call
+	// you should call Extend after you've written some bytes to the block
+	AddBlock(nodeid uint64, requestedDnId *uint32) (newNode *Inode, err error)
+	// fallocates the inode to the given length
+	Fallocate(nodeid uint64, length uint64) (err error)
+
+	// namespace methods
 	// Links the given child to the given parent, with the given name.  returns error E_EXISTS if force is false and parent already has a child of that name
 	Link(parent uint64, child uint64, name string, force bool) (err error)
 	// Unlinks the child with the given name
