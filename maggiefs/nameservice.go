@@ -1,8 +1,6 @@
 package maggiefs
 
-import (
-	"github.com/jbooth/maggiefs/fuse"
-)
+import ()
 
 // the lease service provides leases (duh), and streams of notifications about file state change
 // it's incumbent on client to Acknowledge() each notification in a timely manner or lose leases
@@ -43,7 +41,7 @@ type NameService interface {
 	// persists a new inode to backing store
 	AddInode(node *Inode) (id uint64, err error)
 	// Sets attributes on an ino (inode id is part of SetAttrIn)
-	SetAttr(arg *fuse.SetAttrIn) (newNode *Inode, err error)
+	SetAttr(nodeid uint64, arg SetAttr) (newNode *Inode, err error)
 	SetXAttr(nodeid uint64, name []byte, val []byte) (err error)
 	DelXAttr(nodeid uint64, name []byte) (err error)
 	// special case for SetLength, allows us to coalesce a couple length updates into a single one when appending
@@ -55,9 +53,9 @@ type NameService interface {
 	Extend(nodeid uint64, newLen uint64) (newNode *Inode, err error)
 	// truncates an inode to the provided length, deleting blocks as necessary
 	Truncate(nodeid uint64, newLen uint64) (newNode *Inode, err error)
-	// adds a new block to the end of this inode.  does not modify inode.length, call
-	// you should call Extend after you've written some bytes to the block
-	AddBlock(nodeid uint64, requestedDnId *uint32) (newNode *Inode, err error)
+	// adds a new block to the end of this inode if one does not already exist at blockStartPos.
+	// does not modify inode.length, you should call Extend after you've written some bytes to the block
+	AddBlock(nodeid uint64, blockStartPos uint64, requestedDnId *uint32) (newNode *Inode, err error)
 	// fallocates the inode to the given length
 	Fallocate(nodeid uint64, length uint64) (err error)
 
@@ -74,4 +72,15 @@ type NameService interface {
 	NextVolId() (id uint32, err error)
 	// called by DNs to obtain a new unique DN id
 	NextDnId() (id uint32, err error)
+}
+
+type SetAttr struct {
+	SetMode  bool
+	Mode     uint32
+	SetUid   bool
+	Uid      uint32
+	SetGid   bool
+	Gid      uint32
+	SetMtime bool
+	Mtime    uint32
 }

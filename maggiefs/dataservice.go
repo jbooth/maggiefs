@@ -14,15 +14,7 @@ type DataService interface {
 
 	// executes an async write to the provided block, replicating to each volume in the order specified on the block
 	// when done, onDone will be called
-	Write(blk Block, p []byte, pos uint64, onDone func()) (err error)
-}
-
-// represents a stateful write session
-// this is an optimization over stateless writes because we can coalesce
-// multiple writes into one inode write and one commit
-type BlockWriter interface {
-	Write(p []byte, pos uint64) (err error)
-	SyncAndClose() (err error)
+	Write(blk Block, p []byte, posInBlock uint64, onDone func()) (err error)
 }
 
 // represents one half of a pipe for splice-based communication with fuse, implemented by fuse.ReadPipe

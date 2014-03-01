@@ -6,6 +6,7 @@ import (
 	"github.com/jbooth/maggiefs/fuse"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"io"
+	"log"
 )
 
 func doRead(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, position uint64, length uint32) (err error) {
@@ -70,11 +71,20 @@ func blockForPos(position uint64, inode *maggiefs.Inode) (blk maggiefs.Block, er
 
 // manages async writes
 type Writer struct {
+	leases        maggiefs.LeaseService
 	names         maggiefs.NameService
+	datas         maggiefs.DataService
+	myDnId        *uint32
 	inodeid       uint64
 	pendingWrites chan pendingWrite
 	l             *sync.Mutex
 	closed        bool
+}
+
+func NewWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, myDnId *uint32) *Writer {
+	ret := &Writer{leases, names, datas, myDnId, inodeid, make(chan pendingWrite, 64), new(sync.Mutex), false}
+	go ret.process()
+	return ret
 }
 
 // represents either an outstanding write or a sync request
@@ -84,12 +94,15 @@ type pendingWrite struct {
 }
 
 // this convoluted function processes finished writes, updating the namenode with a new inode length if necessary
+// it's a bit complicated because we try to pull as many finished writes as we can so that we only update length once,
+// in order to limit total requests, but also want to update asap on the writes we do receive
 func (w *Writer) process() {
 	var newLen uint64 = 0
 	var currPending pendingWrite = pendingWrite{nil, false}
 	var hasMore bool = true
 	for {
 		if !hasMore {
+			// channel closed, terminate
 			return
 		}
 		// make a single blocking call so we don't busy-loop
@@ -136,18 +149,92 @@ func (w *Writer) process() {
 		// update node length if appropriate before relooping
 		if newLen > 0 {
 			_, err := w.names.Extend(w.inodeid, newLen)
+			if err != nil {
+				log.Printf("Error extending ino %d : %s", err)
+			}
+			err = w.leases.Notify(w.inodeid)
 			newLen = 0
 		}
 	}
 }
-func (w *Writer) doWrite(datas maggiefs.DataService, inode *maggiefs.Inode, p []byte, position uint64, length uint32) (err error) {
+func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []byte, position uint64, length uint32) (err error) {
+	w.l.Lock()
+	defer w.l.Unlock()
+	if w.closed {
+		return fmt.Errorf("Can't write, already closed!")
+	}
+	if len(inode.Blocks == 0) || inode.Blocks[len(inode.Blocks)-1].EndPos < position+uint64(length) {
+		inode, err = w.names.AddBlock(inode.Inodeid, inode.Blocks[len(inode.Blocks)-1].EndPos+1)
+	}
+	writes := blockwrites(inode, p, off, length)
+	for _, w := range writes {
+		pending := pendingWrite{make(chan uint64, 1), false}
+		w.pendingWrites <- pending
+		lengthAtEndOfWrite = w.b.StartPos + w.posInBlock + uint64(len(w.p)) + 1
+		w.datas.Write(w.b, w.p, w.posInBlock, func() {
+			pending.done <- lengthAtEndOfWrite
+		})
+	}
 
 }
 
-func (w *Writer) sync() {
-
+func (w *Writer) Sync() error {
+	syncRequest := pendingWrite(make(chan uint64), true)
+	w.l.Lock()
+	if w.closed {
+		w.l.Unlock()
+		return fmt.Errorf("Can't sync, already closed!")
+	}
+	w.pendingWrites <- syncRequest
+	w.l.Unlock()
+	// since syncRequest is unbuffered, this will block until processed
+	syncRequest.done <- 0
 }
 
-func (w *Writer) close() {
+func (w *Writer) Close() {
+	w.l.Lock()
+	defer w.l.Unlock()
+	w.closed = true
+	syncRequest := pendingWrite(make(chan uint64), true)
+	w.pendingWrites <- syncRequest
+	syncRequest.done <- 0
+	close(w.pendingWrites)
+}
 
+type blockwrite struct {
+	b          maggiefs.Block
+	p          []byte
+	posInBlock uint64
+}
+
+// gets the list of block writes
+func blockwrites(i *maggiefs.Inode, p []byte, off uint64, length uint32) []blockwrite {
+	nWritten := 0
+	startOfWritePos := off
+	endOfWritePos := off + uint64(length) - 1
+	ret := make([]blockwrite, 0)
+	for _, b := range i.Blocks {
+		//fmt.Printf("evaluating block %+v for writeStartPos %d endofWritePos %d\n", b, startOfWritePos, endOfWritePos)
+		// TODO do we need that last endOfWritePos <= b.EndPos here?
+		if (b.StartPos <= startOfWritePos && b.EndPos > startOfWritePos) || (b.StartPos < endOfWritePos && endOfWritePos <= b.EndPos) {
+			posInBlock := uint64(0)
+			if b.StartPos < off {
+				posInBlock += off - b.StartPos
+			}
+			//fmt.Printf("nWritten %d off %d len %d endofWritePos %d block %+v posInBlock %d\n", nWritten, off, length, endOfWritePos, b, posInBlock)
+			writeLength := int(length) - nWritten
+			if b.EndPos < endOfWritePos {
+				writeLength = int(b.Length() - posInBlock)
+			}
+			startIdx := nWritten
+			endIdx := startIdx + writeLength
+
+			ret = append(ret, blockwrite{b, p[startIdx:endIdx], posInBlock})
+			nWritten += writeLength
+			//fmt.Printf("Writing %d bytes to block %+v pos %d startIdx %d endIdx %d\n", b, posInBlock, startIdx, endIdx)
+			//      fmt.Printf("Wrote %d bytes to block %+v\n", endIdx-startIdx, b)
+			//      fmt.Printf("Wrote %d, nWritten total %d", writeLength, nWritten)
+		}
+	}
+	return ret
 }
