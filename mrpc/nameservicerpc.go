@@ -140,15 +140,16 @@ func (s *NameServiceService) AddBlock(request *NameServiceAddBlockRequest, respo
 }
 
 type NameServiceFallocateRequest struct {
-	Nodeid uint64
-	Length uint64
+	Nodeid        uint64
+	Length        uint64
+	RequestedDnId *uint32
 }
 
 type NameServiceFallocateResponse struct {
 }
 
 func (s *NameServiceService) Fallocate(request *NameServiceFallocateRequest, response *NameServiceFallocateResponse) (err error) {
-	err = s.impl.Fallocate(request.Nodeid, request.Length)
+	err = s.impl.Fallocate(request.Nodeid, request.Length, request.RequestedDnId)
 	return
 }
 
@@ -289,8 +290,8 @@ func (_c *NameServiceClient) AddBlock(nodeid uint64, blockStartPos uint64, reque
 	return _response.NewNode, err
 }
 
-func (_c *NameServiceClient) Fallocate(nodeid uint64, length uint64) (err error) {
-	_request := &NameServiceFallocateRequest{nodeid, length}
+func (_c *NameServiceClient) Fallocate(nodeid uint64, length uint64, requestedDnId *uint32) (err error) {
+	_request := &NameServiceFallocateRequest{nodeid, length, requestedDnId}
 	_response := &NameServiceFallocateResponse{}
 	err = _c.client.Call(_c.service+".Fallocate", _request, _response)
 	return err

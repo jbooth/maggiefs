@@ -57,7 +57,7 @@ type NameService interface {
 	// does not modify inode.length, you should call Extend after you've written some bytes to the block
 	AddBlock(nodeid uint64, blockStartPos uint64, requestedDnId *uint32) (newNode *Inode, err error)
 	// fallocates the inode to the given length
-	Fallocate(nodeid uint64, length uint64) (err error)
+	Fallocate(nodeid uint64, length uint64, requestedDnId *uint32) (err error)
 
 	// namespace methods
 	// Links the given child to the given parent, with the given name.  returns error E_EXISTS if force is false and parent already has a child of that name
