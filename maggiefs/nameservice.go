@@ -82,5 +82,5 @@ type SetAttr struct {
 	SetGid   bool
 	Gid      uint32
 	SetMtime bool
-	Mtime    uint32
+	Mtime    uint64
 }

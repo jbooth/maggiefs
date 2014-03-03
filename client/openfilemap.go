@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jbooth/maggiefs/fuse"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"log"
 	"sync"
 )
 
@@ -20,6 +21,7 @@ type OpenFileMap struct {
 	l         *sync.RWMutex
 	files     map[uint64]*openFile
 	inodes    map[uint64]*openInode
+	onNotify  func(uint64)
 }
 
 type openInode struct {
@@ -33,27 +35,62 @@ type openInode struct {
 type openFile struct {
 	fh  uint64
 	ino *openInode
-	w   *InodeWriter
+	w   *Writer
+}
+
+func NewOpenFileMap(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, localDnId *uint32, onNotify func(uint64)) *OpenFileMap {
+	ret := &OpenFileMap{
+		leases,
+		names,
+		datas,
+		localDnId,
+		0,
+		new(sync.RWMutex),
+		make(map[uint64]*openFile),
+		make(map[uint64]*openInode),
+		onNotify,
+	}
+	go ret.handleNotifications()
+	return ret
+}
+
+func (o *OpenFileMap) handleNotifications() {
+	notifications := o.leases.GetNotifier()
+	for event := range notifications {
+		inodeid := event.Inodeid()
+		o.l.RLock()
+		openIno := o.inodes[inodeid]
+		o.l.RUnlock()
+		openIno.l.Lock()
+		openIno.ino = nil
+		openIno.l.Unlock()
+		o.onNotify(inodeid)
+		err := event.Ack()
+		if err != nil {
+			log.Printf("Error acking on notify for ino %d : %s", inodeid, err)
+		}
+	}
 }
 
 func (o *OpenFileMap) Open(inodeid uint64, writable bool) (fh uint64, err error) {
 	o.l.Lock()
 	defer o.l.Unlock()
 	o.fhCtr = o.fhCtr + 1
-	fh := o.fhCtr
-	var w *InodeWriter
+	fh = o.fhCtr
+	var w *Writer
 	if writable {
-		w = NewInodeWriter(inodeid, o.leases, o.names, o.datas)
+		w = NewWriter(inodeid, o.leases, o.names, o.datas, o.localDnId)
 	}
 	// check inode
 	ino, exists := o.inodes[inodeid]
 	if !exists {
+		// this ino is not open anywhere else, get a new lease
 		lease, err := o.leases.ReadLease(inodeid)
 		if err != nil {
 			return 0, err
 		}
 		ino = &openInode{
-			new(sync.Mutex),
+			new(sync.RWMutex),
 			inodeid,
 			nil,
 			lease,
@@ -61,7 +98,7 @@ func (o *OpenFileMap) Open(inodeid uint64, writable bool) (fh uint64, err error)
 		}
 		o.inodes[inodeid] = ino
 	} else {
-		// incr refcount
+		// incr refcount for existing lease
 		ino.l.Lock()
 		ino.refCount++
 		ino.l.Unlock()
@@ -83,16 +120,11 @@ func (o *OpenFileMap) Close(fh uint64) (err error) {
 		return fmt.Errorf("No file with fh %d", fh)
 	}
 	delete(o.files, fh)
-	ino, exists := o.inodes[f.inodeid]
-	if !exists {
-		// this should be impossible
-		o.l.Unlock()
-		return fmt.Errorf("How on earth do we not have inode %d for fh %d", inodeid, fh)
-	}
+	ino := f.ino
 	ino.l.Lock()
 	ino.refCount--
 	if ino.refCount == 0 {
-		delete(o.inodes, f.inodeid)
+		delete(o.inodes, ino.inodeid)
 		ino.lease.Release()
 	}
 	ino.l.Unlock()
@@ -115,22 +147,32 @@ func (o *OpenFileMap) Write(fd uint64, p []byte, pos uint64, length uint32) (err
 	if err != nil {
 		return err
 	}
-	return f.w.doWrite(datas, ino, p, pos, length)
+	return f.w.Write(o.datas, ino, p, pos, length)
+	//Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []byte, position uint64, length uint32)
+}
+
+func (o *OpenFileMap) Sync(fd uint64) (err error) {
+
+	f, _, err := o.getInode(fd)
+	if err != nil {
+		return err
+	}
+	return f.w.Sync()
 	//Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []byte, position uint64, length uint32)
 }
 
 // gets our local leased copy of an inode, if possible, or nil if we have no copy of that ino open
 func (o *OpenFileMap) getInode(fd uint64) (*openFile, *maggiefs.Inode, error) {
-	o.l.Rlock()
-	f, exists := o.files[id]
+	o.l.RLock()
+	f, exists := o.files[fd]
 	o.l.RUnlock()
 	if !exists {
 		return nil, nil, nil
 	}
-	openIno = f.ino
+	openIno := f.ino
 	var ret *maggiefs.Inode
 	openIno.l.RLock()
-	ret := openIno.ino
+	ret = openIno.ino
 	openIno.l.RUnlock()
 	// if valid, return it
 	if ret != nil {
@@ -139,9 +181,9 @@ func (o *OpenFileMap) getInode(fd uint64) (*openFile, *maggiefs.Inode, error) {
 	// could have been invalidated, in which case we should re-acquire a copy
 	openIno.l.Lock()
 	defer openIno.l.Unlock()
-	ino, err := o.names.GetInode(id)
+	ino, err := o.names.GetInode(openIno.inodeid)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	openIno.ino = ino
 	return f, ino, nil

@@ -7,6 +7,7 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"io"
 	"log"
+	"sync"
 )
 
 func doRead(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, position uint64, length uint32) (err error) {
@@ -163,23 +164,26 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 	if w.closed {
 		return fmt.Errorf("Can't write, already closed!")
 	}
-	if len(inode.Blocks == 0) || inode.Blocks[len(inode.Blocks)-1].EndPos < position+uint64(length) {
-		inode, err = w.names.AddBlock(inode.Inodeid, inode.Blocks[len(inode.Blocks)-1].EndPos+1)
+	if len(inode.Blocks) == 0 || inode.Blocks[len(inode.Blocks)-1].EndPos < position+uint64(length) {
+		inode, err = w.names.AddBlock(inode.Inodeid, inode.Blocks[len(inode.Blocks)-1].EndPos+1, w.myDnId)
 	}
-	writes := blockwrites(inode, p, off, length)
-	for _, w := range writes {
+	writes := blockwrites(inode, p, position, length)
+	for _, wri := range writes {
 		pending := pendingWrite{make(chan uint64, 1), false}
 		w.pendingWrites <- pending
-		lengthAtEndOfWrite = w.b.StartPos + w.posInBlock + uint64(len(w.p)) + 1
-		w.datas.Write(w.b, w.p, w.posInBlock, func() {
+		lengthAtEndOfWrite := wri.b.StartPos + wri.posInBlock + uint64(len(wri.p)) + 1
+		err = w.datas.Write(wri.b, wri.p, wri.posInBlock, func() {
 			pending.done <- lengthAtEndOfWrite
 		})
+		if err != nil {
+			return err
+		}
 	}
-
+	return nil
 }
 
 func (w *Writer) Sync() error {
-	syncRequest := pendingWrite(make(chan uint64), true)
+	syncRequest := pendingWrite{make(chan uint64), true}
 	w.l.Lock()
 	if w.closed {
 		w.l.Unlock()
@@ -189,16 +193,18 @@ func (w *Writer) Sync() error {
 	w.l.Unlock()
 	// since syncRequest is unbuffered, this will block until processed
 	syncRequest.done <- 0
+	return nil
 }
 
-func (w *Writer) Close() {
+func (w *Writer) Close() error {
 	w.l.Lock()
 	defer w.l.Unlock()
 	w.closed = true
-	syncRequest := pendingWrite(make(chan uint64), true)
+	syncRequest := pendingWrite{make(chan uint64), true}
 	w.pendingWrites <- syncRequest
 	syncRequest.done <- 0
 	close(w.pendingWrites)
+	return nil
 }
 
 type blockwrite struct {
