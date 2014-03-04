@@ -629,12 +629,12 @@ func (m *MaggieFuse) Release(input *fuse.ReleaseIn) {
 }
 
 func (m *MaggieFuse) Write(input *fuse.WriteIn, data []byte) (written uint32, code fuse.Status) {
-	err := m.openFiles.Write(input.Fh, data, input.Offset, input.Size)
+	nWritten, err := m.openFiles.Write(input.Fh, data, input.Offset, input.Size)
 	if err != nil {
 		log.Printf("Error writing bytes to fh %d : %s", input.Fh, err)
 		return 0, fuse.EIO
 	}
-	return input.Size, fuse.OK
+	return nWritten, fuse.OK
 }
 
 func (m *MaggieFuse) Flush(input *fuse.FlushIn) fuse.Status {

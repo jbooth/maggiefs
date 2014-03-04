@@ -3,18 +3,17 @@ package test
 import (
 	"crypto/rand"
 	"fmt"
-	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"os"
-	"testing"
 	"sync"
+	"testing"
 )
 
 type testReadPipe struct {
 	responseCode int32
-	b []byte
-	numWritten int
-	l *sync.Mutex
+	b            []byte
+	numWritten   int
+	l            *sync.Mutex
 }
 
 func (t *testReadPipe) Reset() {
@@ -27,59 +26,46 @@ func (t *testReadPipe) Reset() {
 func (t *testReadPipe) WriteHeader(code int32, returnBytesLength int) error {
 	t.l.Lock()
 	defer t.l.Unlock()
-	fmt.Printf("Writing header to mock, code %d returnBytesLength %d\n",code,returnBytesLength)
+	fmt.Printf("Writing header to mock, code %d returnBytesLength %d\n", code, returnBytesLength)
 	t.responseCode = code
 	if len(t.b) < returnBytesLength {
-	  t.b = make([]byte,returnBytesLength,returnBytesLength)
+		t.b = make([]byte, returnBytesLength, returnBytesLength)
 	}
 	t.numWritten = 0
-	fmt.Printf("Done writing header to mock, numWritten %d\n",t.numWritten)
+	fmt.Printf("Done writing header to mock, numWritten %d\n", t.numWritten)
 	return nil
 }
 
-func (t *testReadPipe) WriteBytes(b []byte) (int,error) {
+func (t *testReadPipe) WriteBytes(b []byte) (int, error) {
 	t.l.Lock()
 	defer t.l.Unlock()
-	copy(b,t.b[t.numWritten:])
+	copy(b, t.b[t.numWritten:])
 	t.numWritten += len(b)
-	return len(b),nil
+	return len(b), nil
 }
 
-func (t *testReadPipe) SpliceBytes(fd uintptr, length int) (int,error) {
+func (t *testReadPipe) SpliceBytes(fd uintptr, length int) (int, error) {
 	t.l.Lock()
 	defer t.l.Unlock()
-	f := os.NewFile(fd,"splicingFrom")
-	fmt.Printf("Splicing from %d to %d into array of length %d\n",t.numWritten,t.numWritten+length,len(t.b))
-	ret1,ret2 := f.Read(t.b[t.numWritten:t.numWritten+length])
+	f := os.NewFile(fd, "splicingFrom")
+	fmt.Printf("Splicing from %d to %d into array of length %d\n", t.numWritten, t.numWritten+length, len(t.b))
+	ret1, ret2 := f.Read(t.b[t.numWritten : t.numWritten+length])
 	if len(t.b) > 5 {
 		fmt.Printf("First 5 in test splice buffer : %x\n", t.b[:5])
 	}
 	t.numWritten += ret1
-	fmt.Printf("Spliced %d, returning\n",ret1)
-	return ret1,ret2
+	fmt.Printf("Spliced %d, returning\n", ret1)
+	return ret1, ret2
 }
 
-func (t *testReadPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int,error) {
+func (t *testReadPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int, error) {
 	t.l.Lock()
 	defer t.l.Unlock()
-	f := os.NewFile(fd,"splicingFrom")
-	ret1,ret2 := f.ReadAt(t.b[t.numWritten:t.numWritten+length],offset)
+	f := os.NewFile(fd, "splicingFrom")
+	ret1, ret2 := f.ReadAt(t.b[t.numWritten:t.numWritten+length], offset)
 	t.numWritten += ret1
-	return ret1,ret2
+	return ret1, ret2
 }
-
-// represents an OS pipe which read results will be piped through
-type ReadPipe interface {
-	// write the header for this response
-	WriteHeader(code int32, returnBytesLength int) error
-	// write bytes from memory
-	WriteBytes(b []byte) (int,error)
-	// splice bytes from the given fd
-	SpliceBytes(fd uintptr, length int) (int,error)
-	// splice bytes from the given fd at the given offset
-	SpliceBytesAt(fd uintptr, length int, offset int64) (int,error)
-}
-
 
 func TestWriteRead(t *testing.T) {
 	fmt.Println("testWriteRead")
@@ -91,7 +77,8 @@ func TestWriteRead(t *testing.T) {
 	}
 	ino.Inodeid = id
 
-	writer, err := client.NewInodeWriter(ino.Inodeid, testCluster.Leases, testCluster.Names, testCluster.Datas,nil)
+	writefd, err := openFiles.Open(ino.Inodeid, true)
+	fmt.Printf("Opened file with fd %d\n", writefd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,23 +91,21 @@ func TestWriteRead(t *testing.T) {
 	}
 	fmt.Printf("first 5 before write %x\n", bytes[:5])
 	fmt.Println("Writing some bytes")
-	n, err := writer.WriteAt(bytes, 0, uint32(len(bytes)))
+	n, err := openFiles.Write(writefd, bytes, 0, uint32(len(bytes)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n < uint32(len(bytes)) {
 		t.Fatal(fmt.Sprintf("Only wrote %d bytes out of %d", n, len(bytes)))
 	}
-	
-	err = writer.Fsync()
-	if err != nil { t.Fatal(err) }
-	
-	readBytes := &testReadPipe{0,nil,0,new(sync.Mutex)}
-	r, err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
+
+	err = openFiles.Sync(writefd)
 	if err != nil {
-		t.Fatal(fmt.Sprintf("Error opening reader %s", err.Error()))
+		t.Fatal(err)
 	}
-	err = r.ReadAt(readBytes, 0, 1024*1024*200)
+
+	readBytes := &testReadPipe{0, nil, 0, new(sync.Mutex)}
+	err = openFiles.Read(writefd, readBytes, 0, 1024*1024*200)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,10 +125,7 @@ func TestWriteRead2(t *testing.T) {
 		t.Fatal(err)
 	}
 	ino.Inodeid = id
-	writer, err := client.NewInodeWriter(ino.Inodeid, testCluster.Leases, testCluster.Names, testCluster.Datas,nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	writefd, err := openFiles.Open(ino.Inodeid, true)
 	// we wnat to write a bunch of bytes the way the fs does it, in chunks of 65536
 
 	bytes := make([]byte, 65536)
@@ -155,7 +137,7 @@ func TestWriteRead2(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 5000; i++ {
-		n, err := writer.WriteAt(bytes, uint64(65536*i), uint32(len(bytes)))
+		n, err := openFiles.Write(writefd, bytes, uint64(65536*i), uint32(len(bytes)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -163,19 +145,17 @@ func TestWriteRead2(t *testing.T) {
 			t.Fatal(fmt.Sprintf("Only wrote %d bytes out of %d", n, len(bytes)))
 		}
 	}
-	err = writer.Fsync()
-	if err != nil { t.Fatal(err) }
-	// then do that many reads across the file to confirm it's ok
-	readBytes := &testReadPipe{0,nil,0,new(sync.Mutex)}
-	reader, err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
+	err = openFiles.Sync(writefd)
 	if err != nil {
-		t.Fatal(fmt.Sprintf("Error opening reader %s", err.Error()))
+		t.Fatal(err)
 	}
+	// then do that many reads across the file to confirm it's ok
+	readBytes := &testReadPipe{0, nil, 0, new(sync.Mutex)}
 	for i := 0; i < 5000; i++ {
 		// reset our buffer
 		readBytes.Reset()
-		// fill it 
-		err := reader.ReadAt(readBytes, uint64(65536*i), 65536)
+		// fill it
+		err := openFiles.Read(writefd, readBytes, uint64(65536*i), 65536)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -199,7 +179,7 @@ func TestShortRead(t *testing.T) {
 	}
 	ino.Inodeid = id
 
-	writer, err := client.NewInodeWriter(ino.Inodeid, testCluster.Leases, testCluster.Names, testCluster.Datas,nil)
+	writefd, err := openFiles.Open(ino.Inodeid, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +190,7 @@ func TestShortRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Println("Writing some bytes")
-	n, err := writer.WriteAt(bytes, 0, uint32(len(bytes)))
+	n, err := openFiles.Write(writefd, bytes, 0, uint32(len(bytes)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,15 +198,13 @@ func TestShortRead(t *testing.T) {
 		t.Fatal(fmt.Sprintf("Only wrote %d bytes out of %d", n, len(bytes)))
 	}
 
-	err = writer.Fsync()
-	if err != nil { t.Fatal(err) }
-	
-	readBytes := &testReadPipe{0,nil,0,new(sync.Mutex)}
-	r, err := client.NewReader(ino.Inodeid, testCluster.Names, testCluster.Datas)
+	err = openFiles.Sync(writefd)
 	if err != nil {
-		t.Fatal(fmt.Sprintf("Error opening reader %s", err.Error()))
+		t.Fatal(err)
 	}
-	err = r.ReadAt(readBytes, 0, 5)
+
+	readBytes := &testReadPipe{0, nil, 0, new(sync.Mutex)}
+	err = openFiles.Read(writefd, readBytes, 0, 5)
 	fmt.Printf("Read %d bytes\n", n)
 	if err != nil {
 		t.Fatal(err)

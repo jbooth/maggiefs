@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-func doRead(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, position uint64, length uint32) (err error) {
+func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, position uint64, length uint32) (err error) {
 	if position == inode.Length {
 		// write header for OK, 0 bytes at EOF
 		p.WriteHeader(0, 0)

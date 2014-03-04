@@ -1,12 +1,12 @@
 package test
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"net/http"
 	"os"
 	"testing"
-	"net/http"
-	"encoding/json"
 )
 
 func TestAddInodeToCluster(t *testing.T) {
@@ -33,10 +33,11 @@ func TestAddBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	ino.Inodeid = id
-	newBlock, err := testCluster.Names.AddBlock(ino.Inodeid, 1024, nil)
+	newIno, err := testCluster.Names.AddBlock(ino.Inodeid, 1024, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	newBlock := newIno.Blocks[0]
 	fmt.Printf("got block back %+v\n", newBlock)
 	ino, err = testCluster.Names.GetInode(ino.Inodeid)
 

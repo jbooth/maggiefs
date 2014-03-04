@@ -5,13 +5,12 @@ package test
 // replication methods are in replication_test.go
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"net/http"
 	"os"
 	"testing"
-	"time"
-	"encoding/json"
 )
 
 func TestAddInode(t *testing.T) {
@@ -28,23 +27,23 @@ func TestAddInode(t *testing.T) {
 	}
 }
 
-func TestSetInode(t *testing.T) {
-	ino := maggiefs.NewInode(0, maggiefs.FTYPE_REG, 0755, uint32(os.Getuid()), uint32(os.Getgid()))
-	id, err := testCluster.Names.AddInode(ino)
-	if err != nil {
-		panic(err)
-	}
-	ino.Inodeid = id
-	ino.Mtime = time.Now().Unix()
-	err = testCluster.Names.SetInode(ino)
-	if err != nil {
-		panic(err)
-	}
-	ino2, err := testCluster.Names.GetInode(id)
-	if !ino.Equals(ino2) {
-		t.Fatal(fmt.Errorf("Error, inodes not equal : %+v : %+v\n", *ino, *ino2))
-	}
-}
+//func TestSetInode(t *testing.T) {
+//	ino := maggiefs.NewInode(0, maggiefs.FTYPE_REG, 0755, uint32(os.Getuid()), uint32(os.Getgid()))
+//	id, err := testCluster.Names.AddInode(ino)
+//	if err != nil {
+//		panic(err)
+//	}
+//	ino.Inodeid = id
+//	ino.Mtime = time.Now().Unix()
+//	err = testCluster.Names.SetInode(ino)
+//	if err != nil {
+//		panic(err)
+//	}
+//	ino2, err := testCluster.Names.GetInode(id)
+//	if !ino.Equals(ino2) {
+//		t.Fatal(fmt.Errorf("Error, inodes not equal : %+v : %+v\n", *ino, *ino2))
+//	}
+//}
 
 func TestLink(t *testing.T) {
 	ino := maggiefs.NewInode(0, maggiefs.FTYPE_REG, 0755, uint32(os.Getuid()), uint32(os.Getgid()))
@@ -142,12 +141,12 @@ func TestGetInodeJson(t *testing.T) {
 		panic(err)
 	}
 	ino3 := &maggiefs.Inode{}
-	respBytes := make([]byte,response.ContentLength)
+	respBytes := make([]byte, response.ContentLength)
 	response.Body.Read(respBytes)
 	fmt.Printf("Got json %s\n", string(respBytes))
 	json.Unmarshal(respBytes, ino3)
 	if !ino.Equals(ino3) {
-		
+
 		t.Fatal(fmt.Errorf("Error, inode from JSON not equal : %+v : %+v\n", *ino, *ino3))
 	}
 

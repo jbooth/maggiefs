@@ -137,17 +137,17 @@ func (o *OpenFileMap) Read(fd uint64, buf fuse.ReadPipe, pos uint64, length uint
 	if err != nil {
 		return err
 	}
-	return doRead(o.datas, ino, buf, pos, length)
+	return Read(o.datas, ino, buf, pos, length)
 	//doRead(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, position uint64, length uint32)
 }
 
-func (o *OpenFileMap) Write(fd uint64, p []byte, pos uint64, length uint32) (err error) {
+func (o *OpenFileMap) Write(fd uint64, p []byte, pos uint64, length uint32) (nWritten uint32, err error) {
 
 	f, ino, err := o.getInode(fd)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return f.w.Write(o.datas, ino, p, pos, length)
+	return length, f.w.Write(o.datas, ino, p, pos, length)
 	//Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []byte, position uint64, length uint32)
 }
 
