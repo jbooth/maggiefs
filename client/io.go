@@ -84,7 +84,7 @@ type Writer struct {
 
 func NewWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, myDnId *uint32) *Writer {
 	ret := &Writer{leases, names, datas, myDnId, inodeid, make(chan pendingWrite, 64), new(sync.Mutex), false}
-	go ret.process2()
+	go ret.process()
 	return ret
 }
 
@@ -94,7 +94,8 @@ type pendingWrite struct {
 	isSync bool
 }
 
-func (w *Writer) process2() {
+// this method greedily pulls as many inode updates as it can in between actually updating
+func (w *Writer) process() {
 	for {
 		// this will be non-nil if we have a sync request to inform when up to date
 		syncRequest := pendingWrite{nil, true}
@@ -152,84 +153,15 @@ func (w *Writer) process2() {
 	}
 }
 
-// this convoluted function processes finished writes, updating the namenode with a new inode length if necessary
-// it's a bit complicated because we try to pull as many finished writes as we can so that we only update length once,
-// in order to limit total requests, but also want to update asap on the writes we do receive
-func (w *Writer) process() {
-	var newLen uint64 = 0
-	var currPending pendingWrite = pendingWrite{nil, false}
-	var hasMore bool = true
-	for {
-		if !hasMore {
-			// channel closed, terminate
-			return
-		}
-		// make a single blocking call so we don't busy-loop
-		if currPending.done != nil {
-			currPending, hasMore = <-w.pendingWrites
-			fmt.Printf("Fetched currPending from blocking chan receive \n")
-			if !hasMore {
-				return
-			}
-		}
-		l := <-currPending.done
-		if l > newLen {
-			newLen = l
-			fmt.Printf("Marking new length %d", newLen)
-		}
-		currPending = pendingWrite{nil, false}
-		// now pull as many as we can until we reach either a sync, or an incomplete write which would have blocked
-	INNER:
-		for {
-			select {
-			// pull until we get a sync or we would block
-			case currPending, hasMore = <-w.pendingWrites:
-				fmt.Printf("Fetched currPending in inner\n")
-				if !hasMore || currPending.isSync {
-					// channel closed or sync request, break out
-					break INNER
-					// state:  currPending is a sync request or we're about to terminate
-					// will either finish sync on reloop or terminate
-				} else {
-					select {
-					// if this pending write is finished, reloop and pull another
-					case l := <-currPending.done:
-						if l > newLen {
-							newLen = l
-							fmt.Printf("marking new length %d in inner\n", newLen)
-						}
-						currPending = pendingWrite{nil, false}
-						// state:  currPending invalid, reloop INNER and pull another if we can
-					default:
-						break INNER
-						// state:  currPending is valid and unfinished, will block on it on re-loop
-					}
-				}
-			default:
-				break INNER
-			}
-		}
-		// update node length if appropriate before relooping
-		if newLen > 0 {
-			fmt.Printf("Extending inode to length %d", newLen)
-			_, err := w.names.Extend(w.inodeid, newLen)
-			if err != nil {
-				log.Printf("Error extending ino %d : %s", err)
-			}
-			fmt.Printf("Notifying..\n")
-			err = w.leases.Notify(w.inodeid)
-			fmt.Printf("Notified")
-			newLen = 0
-		}
-	}
-}
 func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []byte, position uint64, length uint32) (err error) {
 	w.l.Lock()
 	defer w.l.Unlock()
 	if w.closed {
 		return fmt.Errorf("Can't write, already closed!")
 	}
+	fmt.Printf("Starting write with inode %+v\n", inode)
 	if len(inode.Blocks) == 0 || inode.Blocks[len(inode.Blocks)-1].EndPos < position+uint64(length) {
+		fmt.Printf("Adding a block..")
 		blockPos := uint64(0)
 		if len(inode.Blocks) > 0 {
 			blockPos = inode.Blocks[len(inode.Blocks)-1].EndPos + 1

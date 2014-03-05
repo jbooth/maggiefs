@@ -62,6 +62,7 @@ func (o *OpenFileMap) handleNotifications() {
 		openIno := o.inodes[inodeid]
 		o.l.RUnlock()
 		openIno.l.Lock()
+		fmt.Printf("Nilling openInode %d after notify\n", openIno.inodeid)
 		openIno.ino = nil
 		openIno.l.Unlock()
 		o.onNotify(inodeid)
@@ -179,6 +180,7 @@ func (o *OpenFileMap) getInode(fd uint64) (*openFile, *maggiefs.Inode, error) {
 		return f, ret, nil
 	}
 	// could have been invalidated, in which case we should re-acquire a copy
+	fmt.Printf("OpenIno %d was nil, re-fetching..\n", openIno.inodeid)
 	openIno.l.Lock()
 	defer openIno.l.Unlock()
 	ino, err := o.names.GetInode(openIno.inodeid)

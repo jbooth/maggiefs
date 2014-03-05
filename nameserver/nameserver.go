@@ -273,6 +273,10 @@ func (ns *NameServer) AddBlock(nodeid uint64, blockStartPos uint64, requestedDnI
 	}
 	i, err := ns.nd.Mutate(nodeid, func(i *maggiefs.Inode) error {
 		// make sure we can add this block
+		if blockStartPos == 0 && len(i.Blocks) > 0 {
+			return nil
+		}
+		// if we're adding a non-zero block
 		if blockStartPos > 0 && len(i.Blocks) > 0 {
 			lastBlock := i.Blocks[len(i.Blocks)-1]
 			// if we don't need to add a new block, bail early

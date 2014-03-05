@@ -226,10 +226,14 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 				}
 			} else if req.Op == OP_WRITE {
 				writeBuff := buff[:int(req.Length)]
-				_, err := conn.Read(writeBuff)
-				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
-					return
+				nRead := uint32(0)
+				for nRead < req.Length {
+					n, err := conn.Read(writeBuff)
+					if err != nil {
+						fmt.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
+						return
+					}
+					nRead += uint32(n)
 				}
 				insureWriteFinished := make(chan bool, 1)
 				resp := ResponseHeader{STAT_OK, req.Reqno}
