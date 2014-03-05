@@ -84,7 +84,7 @@ type Writer struct {
 
 func NewWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, myDnId *uint32) *Writer {
 	ret := &Writer{leases, names, datas, myDnId, inodeid, make(chan pendingWrite, 64), new(sync.Mutex), false}
-	go ret.process()
+	go ret.process2()
 	return ret
 }
 
@@ -92,6 +92,64 @@ func NewWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.Name
 type pendingWrite struct {
 	done   chan uint64
 	isSync bool
+}
+
+func (w *Writer) process2() {
+	for {
+		// this will be non-nil if we have a sync request to inform when up to date
+		syncRequest := pendingWrite{nil, true}
+		// pull one update in blocking mode
+		write, ok := <-w.pendingWrites
+		if !ok {
+			return
+		}
+		updates := []pendingWrite{write}
+		// pull as many updates as we can without blocking
+		numUpdates := 0
+	INNER:
+		for {
+			select {
+			case write, ok = <-w.pendingWrites:
+				if !ok {
+					break INNER
+				}
+				if write.isSync {
+					syncRequest = write
+					break INNER
+				}
+				updates = append(updates, write)
+				numUpdates += 1
+				if numUpdates > 128 {
+					break INNER
+				}
+			default:
+				break INNER
+			}
+		}
+		// coalesce
+		newLen := uint64(0)
+		for _, w := range updates {
+			l := <-w.done
+			if l > newLen {
+				newLen = l
+			}
+		}
+		if newLen > 0 {
+			fmt.Printf("Extending inode to length %d", newLen)
+			_, err := w.names.Extend(w.inodeid, newLen)
+			if err != nil {
+				log.Printf("Error extending ino %d : %s", err)
+			}
+			fmt.Printf("Notifying..\n")
+			err = w.leases.Notify(w.inodeid)
+			fmt.Printf("Notified")
+			newLen = 0
+		}
+		if syncRequest.done != nil {
+			<-syncRequest.done
+			syncRequest = pendingWrite{nil, true}
+		}
+	}
 }
 
 // this convoluted function processes finished writes, updating the namenode with a new inode length if necessary
@@ -109,6 +167,7 @@ func (w *Writer) process() {
 		// make a single blocking call so we don't busy-loop
 		if currPending.done != nil {
 			currPending, hasMore = <-w.pendingWrites
+			fmt.Printf("Fetched currPending from blocking chan receive \n")
 			if !hasMore {
 				return
 			}
@@ -116,6 +175,7 @@ func (w *Writer) process() {
 		l := <-currPending.done
 		if l > newLen {
 			newLen = l
+			fmt.Printf("Marking new length %d", newLen)
 		}
 		currPending = pendingWrite{nil, false}
 		// now pull as many as we can until we reach either a sync, or an incomplete write which would have blocked
@@ -124,6 +184,7 @@ func (w *Writer) process() {
 			select {
 			// pull until we get a sync or we would block
 			case currPending, hasMore = <-w.pendingWrites:
+				fmt.Printf("Fetched currPending in inner\n")
 				if !hasMore || currPending.isSync {
 					// channel closed or sync request, break out
 					break INNER
@@ -135,6 +196,7 @@ func (w *Writer) process() {
 					case l := <-currPending.done:
 						if l > newLen {
 							newLen = l
+							fmt.Printf("marking new length %d in inner\n", newLen)
 						}
 						currPending = pendingWrite{nil, false}
 						// state:  currPending invalid, reloop INNER and pull another if we can
@@ -149,11 +211,14 @@ func (w *Writer) process() {
 		}
 		// update node length if appropriate before relooping
 		if newLen > 0 {
+			fmt.Printf("Extending inode to length %d", newLen)
 			_, err := w.names.Extend(w.inodeid, newLen)
 			if err != nil {
 				log.Printf("Error extending ino %d : %s", err)
 			}
+			fmt.Printf("Notifying..\n")
 			err = w.leases.Notify(w.inodeid)
+			fmt.Printf("Notified")
 			newLen = 0
 		}
 	}
@@ -165,7 +230,11 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 		return fmt.Errorf("Can't write, already closed!")
 	}
 	if len(inode.Blocks) == 0 || inode.Blocks[len(inode.Blocks)-1].EndPos < position+uint64(length) {
-		inode, err = w.names.AddBlock(inode.Inodeid, inode.Blocks[len(inode.Blocks)-1].EndPos+1, w.myDnId)
+		blockPos := uint64(0)
+		if len(inode.Blocks) > 0 {
+			blockPos = inode.Blocks[len(inode.Blocks)-1].EndPos + 1
+		}
+		inode, err = w.names.AddBlock(inode.Inodeid, blockPos, w.myDnId)
 	}
 	writes := blockwrites(inode, p, position, length)
 	for _, wri := range writes {
@@ -173,6 +242,7 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 		w.pendingWrites <- pending
 		lengthAtEndOfWrite := wri.b.StartPos + wri.posInBlock + uint64(len(wri.p)) + 1
 		err = w.datas.Write(wri.b, wri.p, wri.posInBlock, func() {
+			fmt.Printf("Finished write, ino length %d, in callback now \n", lengthAtEndOfWrite)
 			pending.done <- lengthAtEndOfWrite
 		})
 		if err != nil {
@@ -234,8 +304,9 @@ func blockwrites(i *maggiefs.Inode, p []byte, off uint64, length uint32) []block
 			}
 			startIdx := nWritten
 			endIdx := startIdx + writeLength
-
-			ret = append(ret, blockwrite{b, p[startIdx:endIdx], posInBlock})
+			if endIdx-startIdx > 0 {
+				ret = append(ret, blockwrite{b, p[startIdx:endIdx], posInBlock})
+			}
 			nWritten += writeLength
 			//fmt.Printf("Writing %d bytes to block %+v pos %d startIdx %d endIdx %d\n", b, posInBlock, startIdx, endIdx)
 			//      fmt.Printf("Wrote %d bytes to block %+v\n", endIdx-startIdx, b)

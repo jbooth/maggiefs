@@ -241,6 +241,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 						<-insureWriteFinished
 						// send response to client
 						l.Lock()
+						fmt.Printf("Intermediate note writing response %+v\n", resp)
 						_, err := resp.WriteTo(conn)
 						l.Unlock()
 						if err != nil {
@@ -260,6 +261,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 				if len(req.Blk.Volumes) == 1 {
 					// respond here
 					l.Lock()
+					fmt.Printf("Terminal node writing response %+v\n", resp)
 					_, err := resp.WriteTo(conn)
 					l.Unlock()
 					if err != nil {

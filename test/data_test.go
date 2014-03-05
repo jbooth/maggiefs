@@ -67,54 +67,54 @@ func (t *testReadPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int,
 	return ret1, ret2
 }
 
-func TestWriteRead(t *testing.T) {
-	fmt.Println("testWriteRead")
-	fmt.Println("Adding node to cluster")
-	ino := maggiefs.NewInode(0, maggiefs.FTYPE_REG, 0755, uint32(os.Getuid()), uint32(os.Getgid()))
-	id, err := testCluster.Names.AddInode(ino)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ino.Inodeid = id
+//func TestWriteRead(t *testing.T) {
+//	fmt.Println("testWriteRead")
+//	fmt.Println("Adding node to cluster")
+//	ino := maggiefs.NewInode(0, maggiefs.FTYPE_REG, 0755, uint32(os.Getuid()), uint32(os.Getgid()))
+//	id, err := testCluster.Names.AddInode(ino)
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//	ino.Inodeid = id
 
-	writefd, err := openFiles.Open(ino.Inodeid, true)
-	fmt.Printf("Opened file with fd %d\n", writefd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// 200 MB to make us 2 blocks
-	bytes := make([]byte, 1024*1024*200)
-	fmt.Printf("Getting 200MB from rand\n")
-	_, err = rand.Read(bytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fmt.Printf("first 5 before write %x\n", bytes[:5])
-	fmt.Println("Writing some bytes")
-	n, err := openFiles.Write(writefd, bytes, 0, uint32(len(bytes)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n < uint32(len(bytes)) {
-		t.Fatal(fmt.Sprintf("Only wrote %d bytes out of %d", n, len(bytes)))
-	}
+//	writefd, err := openFiles.Open(ino.Inodeid, true)
+//	fmt.Printf("Opened file with fd %d\n", writefd)
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//	// 200 MB to make us 2 blocks
+//	bytes := make([]byte, 1024*1024*200)
+//	fmt.Printf("Getting 200MB from rand\n")
+//	_, err = rand.Read(bytes)
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//	fmt.Printf("first 5 before write %x\n", bytes[:5])
+//	fmt.Println("Writing some bytes")
+//	n, err := openFiles.Write(writefd, bytes, 0, uint32(len(bytes)))
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//	if n < uint32(len(bytes)) {
+//		t.Fatal(fmt.Sprintf("Only wrote %d bytes out of %d", n, len(bytes)))
+//	}
 
-	err = openFiles.Sync(writefd)
-	if err != nil {
-		t.Fatal(err)
-	}
+//	err = openFiles.Sync(writefd)
+//	if err != nil {
+//		t.Fatal(err)
+//	}
 
-	readBytes := &testReadPipe{0, nil, 0, new(sync.Mutex)}
-	err = openFiles.Read(writefd, readBytes, 0, 1024*1024*200)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for idx, b := range readBytes.b {
-		if b != bytes[idx] {
-			t.Fatal(fmt.Sprintf("Bytes not equal at offset %d : %x != %x", idx, b, bytes[idx]))
-		}
-	}
-}
+//	readBytes := &testReadPipe{0, nil, 0, new(sync.Mutex)}
+//	err = openFiles.Read(writefd, readBytes, 0, 1024*1024*200)
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//	for idx, b := range readBytes.b {
+//		if b != bytes[idx] {
+//			t.Fatal(fmt.Sprintf("Bytes not equal at offset %d : %x != %x", idx, b, bytes[idx]))
+//		}
+//	}
+//}
 
 func TestWriteRead2(t *testing.T) {
 	fmt.Println("testWriteRead2")

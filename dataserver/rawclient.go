@@ -1,6 +1,7 @@
 package dataserver
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
@@ -47,12 +48,14 @@ func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *
 	// set reqno
 	header.Reqno = atomic.AddUint32(c.reqnoCtr, 1)
 	// encode header
-	headerBytes := make([]byte, header.BinSize(), header.BinSize())
-	header.ToBytes(headerBytes)
+	headerLen := uint16(header.BinSize())
+	headerBytes := make([]byte, headerLen+2, headerLen+2)
+	binary.LittleEndian.PutUint16(headerBytes, headerLen)
+	header.ToBytes(headerBytes[2:])
 
 	// build iovecs
 	var iovecs []syscall.Iovec
-	if body != nil {
+	if body != nil && len(body) > 0 {
 		iovecs = []syscall.Iovec{
 			syscall.Iovec{
 				Base: &headerBytes[0],
@@ -73,6 +76,8 @@ func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *
 	}
 	// register our callback
 	mod := header.Reqno % uint32(len(c.stripeLock))
+	fmt.Printf("Writing reqHeader %+v\n", header)
+	fmt.Printf("Registering callback under reqno %d mod %d\n", header.Reqno, mod)
 	c.stripeLock[mod].Lock()
 	c.callBacks[mod][header.Reqno] = onResp
 	c.stripeLock[mod].Unlock()
@@ -90,20 +95,26 @@ func (c *RawClient) handleResponses() {
 	b := make([]byte, 5, 5)
 	resp := ResponseHeader{}
 	for {
-		_, err := c.server.Read(b)
-		if err != nil {
-			fmt.Printf("Error! %s", err)
-			return
+		nRead := 0
+		for nRead < 5 {
+			n, err := c.server.Read(b)
+			if err != nil {
+				fmt.Printf("Error reading response! %s\n", err)
+				return
+			}
+			nRead += n
 		}
 		resp.FromBytes(b)
+		fmt.Printf("Read response %+v\n", resp)
 		// TODO look at status
 		mod := resp.Reqno % uint32(len(c.stripeLock))
-
+		fmt.Printf("Looking up callback under reqno %d mod %d\n", resp.Reqno, mod)
 		c.stripeLock[mod].Lock()
 		subMap := c.callBacks[mod]
 		cb := subMap[resp.Reqno]
 		delete(subMap, resp.Reqno)
 		c.stripeLock[mod].Unlock()
+		fmt.Printf("Got callback for reqno %d, calling and relooping\n", resp.Reqno)
 		cb(c.server)
 	}
 }

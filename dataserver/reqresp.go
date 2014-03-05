@@ -2,6 +2,7 @@ package dataserver
 
 import (
 	"encoding/binary"
+	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"io"
 )
@@ -26,7 +27,7 @@ type RequestHeader struct {
 }
 
 func (r *RequestHeader) BinSize() int {
-	return 13 + r.Blk.BinSize()
+	return 17 + r.Blk.BinSize()
 }
 
 // doesn't bounds check, caller should check BinSize before calling this
@@ -34,6 +35,7 @@ func (r *RequestHeader) ToBytes(b []byte) int {
 	b[0] = r.Op
 	off := 1
 	binary.LittleEndian.PutUint32(b[off:], r.Reqno)
+	off += 4
 	off += r.Blk.ToBytes(b[off:])
 	binary.LittleEndian.PutUint64(b[off:], r.Pos)
 	off += 8
@@ -45,6 +47,8 @@ func (r *RequestHeader) ToBytes(b []byte) int {
 func (r *RequestHeader) FromBytes(b []byte) int {
 	r.Op = b[0]
 	off := 1
+	r.Reqno = binary.LittleEndian.Uint32(b[off:])
+	off += 4
 	off += r.Blk.FromBytes(b[off:])
 	r.Pos = binary.LittleEndian.Uint64(b[off:])
 	off += 8
@@ -83,6 +87,7 @@ func (req *RequestHeader) ReadFrom(r io.Reader) (n int, err error) {
 	}
 	nRead = 0
 	reqLen := int(binary.LittleEndian.Uint16(reqLenBuff[:]))
+	fmt.Printf("Reading header of length %d\n", reqLen)
 	reqBuff := make([]byte, reqLen)
 	for nRead < reqLen {
 		n, err := r.Read(reqBuff[nRead:])
@@ -125,12 +130,13 @@ func (resp *ResponseHeader) ReadFrom(r io.Reader) (n int, err error) {
 			return 0, err
 		}
 	}
-	resp.Stat = 0
-	return 5, nil
+	n = resp.FromBytes(buff[:])
+	return n, nil
 }
 
 func (resp *ResponseHeader) WriteTo(w io.Writer) (n int, err error) {
 	buff := [5]byte{resp.Stat}
+	resp.ToBytes(buff[:])
 	nWrit := 0
 	for nWrit < 5 {
 		nWrit, err = w.Write(buff[:])
