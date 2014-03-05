@@ -80,6 +80,7 @@ func doInit(server *Server, req *request) {
 	server.kernelSettings.Flags = input.Flags & (CAP_ASYNC_READ | CAP_BIG_WRITES | CAP_FILE_OPS |
 		CAP_AUTO_INVAL_DATA | CAP_READDIRPLUS)
 
+	log.Printf("Fuse Init in opcode.go, max_readahead: %d\n", input.MaxReadAhead)
 	server.reqMu.Unlock()
 
 	out := &InitOut{
@@ -287,7 +288,7 @@ func doRead(server *Server, req *request) {
 		}
 		return
 	}
-	readResult := &readPipe{req,pipe}
+	readResult := &readPipe{req, pipe}
 	// execute filesystem handler to splice header and actual read results into buffer
 	req.status = server.fileSystem.Read(in, readResult)
 	req.flatData = nil
