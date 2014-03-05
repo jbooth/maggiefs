@@ -80,6 +80,68 @@ func TestCommit(t *testing.T) {
 	rl.Release()
 }
 
+func TestWaitForAck(t *testing.T) {
+	nodeid := uint64(10)
+	o.Do(startServer)
+	fmt.Printf("testCommit getting readlease\n")
+	rl, _ := ls2.ReadLease(nodeid)
+	fmt.Printf("got lease %+v, cli id %d\n", rl, 0)
+	fmt.Println("asserting no notification so far")
+	threeSecondTimeout := time.After(time.Duration(3 * 1e9))
+	select {
+	case <-ls2.GetNotifier():
+		fmt.Println("got event when we shouldn't!")
+		t.FailNow()
+	case <-threeSecondTimeout:
+		// good
+		break
+	}
+	fmt.Println("committing")
+	notifyDone := make(chan bool)
+	go func() {
+		err := ls.Notify(nodeid)
+		if err != nil {
+			panic(err)
+		}
+		notifyDone <- true
+		fmt.Println("done committing")
+	}()
+	fmt.Println("waiting for notification")
+	threeSecondTimeout = time.After(time.Duration(3 * 1e9))
+	var n maggiefs.NotifyEvent
+	select {
+	case n = <-ls2.GetNotifier():
+		fmt.Println("Got notification %+v\n", n)
+		break
+	case <-threeSecondTimeout:
+		fmt.Println("timed out waiting for commit notification!")
+		t.Fail()
+	}
+	fmt.Println("testing that Notify didn't return before ack")
+	threeSecondTimeout = time.After(time.Duration(3 * 1e9))
+	select {
+	case <-notifyDone:
+		fmt.Println("Notify returned prematurely!")
+		t.Fail()
+	case <-threeSecondTimeout:
+		fmt.Println("timed out waiting for notify to finish before ack, all is well")
+		break
+	}
+	fmt.Println("testing that Notify did return after ack")
+	n.Ack()
+	threeSecondTimeout = time.After(time.Duration(3 * 1e9))
+	select {
+	case <-notifyDone:
+		fmt.Println("Notify returned after ack ok")
+		break
+	case <-threeSecondTimeout:
+		fmt.Println("notify did NOT return after ack!")
+		t.Fail()
+	}
+	fmt.Println("releasing readlease")
+	rl.Release()
+}
+
 func TestWaitAllReleased(t *testing.T) {
 	nodeid := uint64(23)
 	o.Do(startServer)

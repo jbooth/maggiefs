@@ -372,18 +372,11 @@ func (ls *LeaseServer) releaseAll(c *clientConn) error {
 func (ls *LeaseServer) notify(r request, c *clientConn) error {
 	// find all readleases attached to this inode id
 	readLeases := ls.leasesByInode[r.Inodeid]
-	readLeasesWithoutCommitter := make([]lease, 0, len(readLeases))
-	for _, rl := range readLeases {
-		// omit the connection that sent the commit request -- we don't want to blow our own cache while writing
-		if rl.client.id != c.id {
-			readLeasesWithoutCommitter = append(readLeasesWithoutCommitter, rl)
-		}
-	}
 
-	pendingAcks := make([]pendingAck, len(readLeasesWithoutCommitter))
+	pendingAcks := make([]pendingAck, len(readLeases))
 	// notify them all
 	idx := 0
-	for _, rl := range readLeasesWithoutCommitter {
+	for _, rl := range readLeases {
 		ls.ackIdCounter += 1
 		pendingAcks[idx] = rl.client.notify(r.Inodeid, rl.leaseid, ls.ackIdCounter)
 	}
