@@ -279,12 +279,14 @@ func (v *volume) serveRead(client *os.File, req *RequestHeader) (err error) {
 		// check off
 		resp := ResponseHeader{STAT_OK, req.Reqno}
 		sendPos := int64(req.Pos)
+		// TODO should detect eof instead of doing stat up front, could save a syscall
 		stat, _ := file.Stat()
 		// send only the bytes we have, then we'll send zeroes for the rest -- this is to support sparse files
 		sendLength := uint64(req.Length)
 		zerosLength := 0
 		fileSize := uint64(stat.Size())
 		if uint64(sendPos)+sendLength > fileSize {
+			log.Printf("file name %s, length %d less than sendLength %d", stat.Name(), stat.Size(), sendLength)
 			sendLength = uint64(stat.Size() - sendPos)
 			zerosLength = int(uint32(req.Length) - uint32(sendLength))
 		}
@@ -303,6 +305,7 @@ func (v *volume) serveRead(client *os.File, req *RequestHeader) (err error) {
 		}
 		log.Printf("send file sent %d of %d", sent, sendLength)
 		for zerosLength > 0 {
+			log.Printf("Sending %d zeros", zerosLength)
 			// send some zeroes
 			zerosSend := zerosLength
 			if zerosSend > 65536 {

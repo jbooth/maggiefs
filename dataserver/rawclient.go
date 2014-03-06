@@ -35,7 +35,7 @@ func NewRawClient(host *net.TCPAddr, numStripes int) (*RawClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	//conn.Close()
+	conn.Close()
 	syscall.SetNonblock(int(f.Fd()), false)
 	ctr := uint32(0)
 	ret := &RawClient{f, &ctr, callBacks, stripeLock}
@@ -48,7 +48,7 @@ func NewRawClient(host *net.TCPAddr, numStripes int) (*RawClient, error) {
 func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *os.File)) error {
 	// set reqno
 	header.Reqno = atomic.AddUint32(c.reqnoCtr, 1)
-	fmt.Printf("Executing request with header %+v\n", header)
+	fmt.Printf("Executing request with header %+v to sock %s\n", header, c.server)
 	// encode header
 	headerLen := uint16(header.BinSize())
 	headerBytes := make([]byte, headerLen+2, headerLen+2)
@@ -81,12 +81,10 @@ func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *
 	c.stripeLock[mod].Lock()
 	c.callBacks[mod][header.Reqno] = onResp
 	c.stripeLock[mod].Unlock()
+	fmt.Printf("Registered callback %d on client %s\n", header.Reqno, c.server)
 	totalBytes := uint64(0)
 	for _, iovec := range iovecs {
 		totalBytes += iovec.Len
-	}
-	if totalBytes == 0 {
-		panic(fmt.Errorf("total bytes was 0!"))
 	}
 	// send request
 	ret1, ret2, errno := syscall.Syscall(
@@ -96,6 +94,9 @@ func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *
 		log.Printf("Error calling writev in rawclient!  %s", syscall.Errno(errno))
 		return os.NewSyscallError("writev", syscall.Errno(errno))
 	}
+	if totalBytes > uint64(ret1) {
+		return fmt.Errorf("Writev wrote less than expected!  %d < %d", ret1, totalBytes)
+	}
 	log.Printf("Writev tried to write %d total bytes, returned args %d , %d\n", totalBytes, ret1, ret2)
 	return nil
 }
@@ -104,16 +105,18 @@ func (c *RawClient) handleResponses() {
 	b := make([]byte, 5, 5)
 	resp := ResponseHeader{}
 	for {
+		fmt.Printf("HandleResponses reading from %s\n", c.server)
 		nRead := 0
 		for nRead < 5 {
-			n, err := c.server.Read(b)
+			n, err := c.server.Read(b[nRead:])
 			if err != nil {
-				fmt.Printf("Error reading response! %s\n", err)
+				fmt.Printf("Error reading response from socket %s! %s\n", c.server, err)
 				return
 			}
 			nRead += n
 		}
 		resp.FromBytes(b)
+		fmt.Printf("HandleResponses got resp %+v from sock %s\n", resp, c.server)
 		// TODO look at status
 		mod := resp.Reqno % uint32(len(c.stripeLock))
 		c.stripeLock[mod].Lock()
@@ -121,6 +124,9 @@ func (c *RawClient) handleResponses() {
 		cb := subMap[resp.Reqno]
 		delete(subMap, resp.Reqno)
 		c.stripeLock[mod].Unlock()
+		if cb == nil {
+			fmt.Printf("Nil callback for reqno %d on client %s\n", resp.Reqno, c.server)
+		}
 		cb(c.server)
 	}
 }

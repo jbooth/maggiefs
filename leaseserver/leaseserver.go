@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"github.com/jbooth/maggiefs/mrpc"
+	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -103,7 +104,6 @@ func (c *clientConn) notify(nodeid uint64, leaseid uint64, ackId uint64) pending
 		Inodeid: nodeid,
 		Status:  STATUS_NOTIFY,
 	}
-	fmt.Printf("Sending notify %+v\n", r)
 	c.resp <- r
 	// create pending ack
 	ack := pendingAck{c, ackId, make(chan bool, 2)}
@@ -273,7 +273,7 @@ func (ls *LeaseServer) process() {
 		case OP_READLEASE_RELEASE:
 			resp, err = ls.releaseLease(qr.req, qr.conn)
 			if err != nil {
-				fmt.Printf("Error releasing readlease: %s\n", err.Error())
+				log.Printf("Error releasing readlease: %s\n", err.Error())
 			}
 		case OP_NOTIFY_DONE:
 			// this comes from a previous invocation of NOTIFY

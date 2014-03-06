@@ -6,6 +6,7 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"os"
 	"sync"
+	"syscall"
 	"testing"
 )
 
@@ -47,9 +48,8 @@ func (t *testReadPipe) WriteBytes(b []byte) (int, error) {
 func (t *testReadPipe) SpliceBytes(fd uintptr, length int) (int, error) {
 	t.l.Lock()
 	defer t.l.Unlock()
-	f := os.NewFile(fd, "splicingFrom")
 	fmt.Printf("Splicing from %d to %d into array of length %d\n", t.numWritten, t.numWritten+length, len(t.b))
-	ret1, ret2 := f.Read(t.b[t.numWritten : t.numWritten+length])
+	ret1, ret2 := syscall.Read(int(fd), t.b[t.numWritten:t.numWritten+length])
 	//if len(t.b) > 5 {
 	//	fmt.Printf("First 5 in test splice buffer : %x\n", t.b[:5])
 	//}
@@ -61,8 +61,8 @@ func (t *testReadPipe) SpliceBytes(fd uintptr, length int) (int, error) {
 func (t *testReadPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int, error) {
 	t.l.Lock()
 	defer t.l.Unlock()
-	f := os.NewFile(fd, "splicingFrom")
-	ret1, ret2 := f.ReadAt(t.b[t.numWritten:t.numWritten+length], offset)
+
+	ret1, ret2 := syscall.Pread(int(fd), t.b[t.numWritten:t.numWritten+length], offset)
 	t.numWritten += ret1
 	return ret1, ret2
 }
@@ -143,11 +143,6 @@ func TestWriteRead2(t *testing.T) {
 		}
 		if n < uint32(len(bytes)) {
 			t.Fatal(fmt.Sprintf("Only wrote %d bytes out of %d", n, len(bytes)))
-		}
-		// sync after every write for now
-		err = openFiles.Sync(writefd)
-		if err != nil {
-			t.Fatal(err)
 		}
 	}
 	err = openFiles.Sync(writefd)

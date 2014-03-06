@@ -230,7 +230,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 				l.Lock()
 				fmt.Printf("Serving read..\n")
 				err = vol.serveRead(conn, req)
-				fmt.Printf("Done with read \n")
+				fmt.Printf("Done with read to sock %s \n", conn)
 				l.Unlock()
 				if err != nil {
 					log.Printf("Err serving read : %s", err.Error())
@@ -240,16 +240,22 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 				writeBuff := buff[:int(req.Length)]
 				nRead := uint32(0)
 				for nRead < req.Length {
-					n, err := conn.Read(writeBuff)
+					n, err := conn.Read(writeBuff[int(nRead):])
 					if err != nil {
 						log.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
 						return
 					}
 					nRead += uint32(n)
 				}
+				fmt.Printf("Dataserver read %d into buffer for write\n", nRead)
 				insureWriteFinished := make(chan bool, 1)
 				resp := ResponseHeader{STAT_OK, req.Reqno}
-				if len(req.Blk.Volumes) > 1 {
+				lastNode := false
+				if len(req.Blk.Volumes) == 1 {
+					lastNode = true
+				}
+				fmt.Printf("LastNode: %t\n")
+				if !lastNode {
 					// forward to next node if appropriate with callback
 					req.Blk.Volumes = req.Blk.Volumes[1:]
 					ds.dc.Write(req.Blk, writeBuff, req.Pos, func() {
@@ -257,7 +263,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 						<-insureWriteFinished
 						// send response to client
 						l.Lock()
-						fmt.Printf("Intermediate note writing response %+v\n", resp)
+						fmt.Printf("Intermediate note writing response %+v to client %s\n", resp, conn)
 						_, err := resp.WriteTo(conn)
 						l.Unlock()
 						if err != nil {
@@ -266,33 +272,40 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 					})
 				}
 				// write to our copy of block
+				fmt.Printf("Acquiring lock to write for req %+v\n", req)
 				err = vol.withFile(req.Blk.Id, func(f *os.File) error {
-					_, e1 := f.WriteAt(writeBuff, int64(req.Pos))
+					fmt.Printf("Doing actual write for req %+v\n", req)
+					n, e1 := f.WriteAt(writeBuff, int64(req.Pos))
+					insureWriteFinished <- true
+					fmt.Printf("Finished write for req %+v, wrote %d bytes \n", req, n)
+					stat, _ := f.Stat()
+					fmt.Printf("New file size: %d, name %d\n", stat.Size(), stat.Name())
 					return e1
 				})
 				if err != nil {
 					fmt.Printf("Err writing to file: %s\n")
 					return
 				}
-				if len(req.Blk.Volumes) == 1 {
+				if lastNode {
 					// respond here
 					l.Lock()
-					fmt.Printf("Terminal node writing response %+v\n", resp)
+					fmt.Printf("Terminal node writing response %+v to client %s\n", resp, conn)
 					_, err := resp.WriteTo(conn)
 					l.Unlock()
 					if err != nil {
 						log.Printf("Error sending response to client %s\n", err)
 						return
 					}
-				} else {
-					// tell the responder thread it's ok to send
-					insureWriteFinished <- true
 				}
+				//else {
+				//	// tell the responder thread it's ok to send
+				//	insureWriteFinished <- true
+				//}
 
 			} else {
 				// unrecognized req, send err response
 				resp := &ResponseHeader{STAT_BADOP, req.Reqno}
-				log.Printf("Dataserver got bad ")
+				log.Printf("Dataserver got bad op %d", req.Op)
 				_, err := resp.WriteTo(conn)
 				if err != nil {
 					log.Printf("Err serving conn %s : %s", "conn", err.Error())
