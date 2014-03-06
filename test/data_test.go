@@ -50,9 +50,9 @@ func (t *testReadPipe) SpliceBytes(fd uintptr, length int) (int, error) {
 	f := os.NewFile(fd, "splicingFrom")
 	fmt.Printf("Splicing from %d to %d into array of length %d\n", t.numWritten, t.numWritten+length, len(t.b))
 	ret1, ret2 := f.Read(t.b[t.numWritten : t.numWritten+length])
-	if len(t.b) > 5 {
-		fmt.Printf("First 5 in test splice buffer : %x\n", t.b[:5])
-	}
+	//if len(t.b) > 5 {
+	//	fmt.Printf("First 5 in test splice buffer : %x\n", t.b[:5])
+	//}
 	t.numWritten += ret1
 	fmt.Printf("Spliced %d, returning\n", ret1)
 	return ret1, ret2
@@ -143,6 +143,11 @@ func TestWriteRead2(t *testing.T) {
 		}
 		if n < uint32(len(bytes)) {
 			t.Fatal(fmt.Sprintf("Only wrote %d bytes out of %d", n, len(bytes)))
+		}
+		// sync after every write for now
+		err = openFiles.Sync(writefd)
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 	err = openFiles.Sync(writefd)

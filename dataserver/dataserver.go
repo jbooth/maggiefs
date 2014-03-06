@@ -6,6 +6,7 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
 	"io"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -136,6 +137,7 @@ func (ds *DataServer) Serve() error {
 }
 
 func (ds *DataServer) Close() error {
+	log.Printf("Dataserver shutting down..")
 	ds.clos.L.Lock()
 	defer ds.clos.L.Unlock()
 	if ds.closed {
@@ -164,12 +166,12 @@ func (ds *DataServer) serveClientData() error {
 	for {
 		tcpConn, err := ds.dataIface.AcceptTCP()
 		if err != nil {
-			fmt.Printf("Error accepting client on listen addr, shutting down: %s\n", err.Error())
+			log.Printf("Error accepting client on listen addr, shutting down: %s\n", err.Error())
 			return err
 		}
 		tcpConn.SetNoDelay(true)
-		tcpConn.SetReadBuffer(1024 * 1024)
-		tcpConn.SetWriteBuffer(1024 * 1024)
+		tcpConn.SetReadBuffer(5 * 1024 * 1024)
+		tcpConn.SetWriteBuffer(5 * 1024 * 1024)
 		f, err := tcpConn.File()
 		if err != nil {
 			return err
@@ -183,20 +185,28 @@ func (ds *DataServer) serveClientData() error {
 }
 
 func (ds *DataServer) serveClientConn(conn *os.File) {
-	defer conn.Close()
+	defer func() {
+		log.Printf("Dataserver connection shutting down and closing conn %s", conn)
+		conn.Close()
+	}()
 	buff := make([]byte, 128*1024, 128*1024)
 	l := new(sync.Mutex)
 	for {
 		req := &RequestHeader{}
+		fmt.Printf("Dataserver reading header\n")
 		_, err := req.ReadFrom(conn)
 
 		if err != nil {
 			// don't log error for remote closed connection
 			if err != io.EOF && err != io.ErrClosedPipe {
-				fmt.Printf("Err serving conn while reading header %s : %s\n", "conn", err.Error())
+				log.Printf("Err serving conn while reading header : %s\n", err.Error())
+				return
+			} else {
+				log.Printf("Remote closed connection, dataserver conn shutting down: %s", err)
+				return
 			}
-			return
 		}
+		fmt.Printf("Got header %+v\n", req)
 		// figure out which of our volumes
 		volForBlock := uint32(0)
 		for volId, _ := range ds.volumes {
@@ -211,17 +221,19 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 			resp := &ResponseHeader{STAT_BADVOLUME, req.Reqno}
 			_, err := resp.WriteTo(conn)
 			if err != nil {
-				fmt.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
+				log.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
 				return
 			}
 		} else {
 			vol := ds.volumes[volForBlock]
 			if req.Op == OP_READ {
 				l.Lock()
+				fmt.Printf("Serving read..\n")
 				err = vol.serveRead(conn, req)
+				fmt.Printf("Done with read \n")
 				l.Unlock()
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
+					log.Printf("Err serving read : %s", err.Error())
 					return
 				}
 			} else if req.Op == OP_WRITE {
@@ -230,7 +242,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 				for nRead < req.Length {
 					n, err := conn.Read(writeBuff)
 					if err != nil {
-						fmt.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
+						log.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
 						return
 					}
 					nRead += uint32(n)
@@ -249,7 +261,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 						_, err := resp.WriteTo(conn)
 						l.Unlock()
 						if err != nil {
-							fmt.Printf("Error sending response to client %s\n", err)
+							log.Printf("Error sending response to client %s\n", err)
 						}
 					})
 				}
@@ -269,7 +281,8 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 					_, err := resp.WriteTo(conn)
 					l.Unlock()
 					if err != nil {
-						fmt.Printf("Error sending response to client %s\n", err)
+						log.Printf("Error sending response to client %s\n", err)
+						return
 					}
 				} else {
 					// tell the responder thread it's ok to send
@@ -279,9 +292,10 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 			} else {
 				// unrecognized req, send err response
 				resp := &ResponseHeader{STAT_BADOP, req.Reqno}
+				log.Printf("Dataserver got bad ")
 				_, err := resp.WriteTo(conn)
 				if err != nil {
-					fmt.Printf("Err serving conn %s : %s", "conn", err.Error())
+					log.Printf("Err serving conn %s : %s", "conn", err.Error())
 					return
 				}
 			}

@@ -33,7 +33,7 @@ func TestAddBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	ino.Inodeid = id
-	newIno, err := testCluster.Names.AddBlock(ino.Inodeid, 1024, nil)
+	newIno, err := testCluster.Names.AddBlock(ino.Inodeid, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,8 +41,8 @@ func TestAddBlock(t *testing.T) {
 	fmt.Printf("got block back %+v\n", newBlock)
 	ino, err = testCluster.Names.GetInode(ino.Inodeid)
 
-	if newBlock.Id != ino.Blocks[0].Id || ino.Blocks[0].EndPos != 1023 {
-		// 1023 end pos for 1024 length because we're 0 indexed
+	if newBlock.Id != ino.Blocks[0].Id || ino.Blocks[0].EndPos != maggiefs.BLOCKLENGTH-1 {
+		// -1 for length because we're 0 indexed
 		t.Fatal(fmt.Errorf("Wrong end length for block %+v", ino.Blocks[0]))
 	}
 	// check that block made it to each datanode
@@ -90,5 +90,4 @@ func TestAddBlock(t *testing.T) {
 			t.Fatal(fmt.Errorf("Error, inode from JSON not equal : %+v : %+v\n", *ino, *ino3))
 		}
 	}
-
 }

@@ -91,7 +91,7 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 		//fmt.Printf("Entering loop to read %d bytes\n",length)
 		numRead := 0
 		for uint32(numRead) < length {
-			//			fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length - uint32(numRead), d, numRead, int(length))
+			fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length-uint32(numRead), d, numRead, int(length))
 			//			fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
 			n, err := buf.SpliceBytes(d.Fd(), int(length)-numRead)
 			//			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])

@@ -3,6 +3,7 @@ package dataserver
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -34,7 +35,7 @@ func NewRawClient(host *net.TCPAddr, numStripes int) (*RawClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn.Close()
+	//conn.Close()
 	syscall.SetNonblock(int(f.Fd()), false)
 	ctr := uint32(0)
 	ret := &RawClient{f, &ctr, callBacks, stripeLock}
@@ -47,6 +48,7 @@ func NewRawClient(host *net.TCPAddr, numStripes int) (*RawClient, error) {
 func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *os.File)) error {
 	// set reqno
 	header.Reqno = atomic.AddUint32(c.reqnoCtr, 1)
+	fmt.Printf("Executing request with header %+v\n", header)
 	// encode header
 	headerLen := uint16(header.BinSize())
 	headerBytes := make([]byte, headerLen+2, headerLen+2)
@@ -70,24 +72,31 @@ func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *
 		iovecs = []syscall.Iovec{
 			syscall.Iovec{
 				Base: &headerBytes[0],
-				Len:  uint64(len(body)),
+				Len:  uint64(len(headerBytes)),
 			},
 		}
 	}
 	// register our callback
 	mod := header.Reqno % uint32(len(c.stripeLock))
-	fmt.Printf("Writing reqHeader %+v\n", header)
-	fmt.Printf("Registering callback under reqno %d mod %d\n", header.Reqno, mod)
 	c.stripeLock[mod].Lock()
 	c.callBacks[mod][header.Reqno] = onResp
 	c.stripeLock[mod].Unlock()
+	totalBytes := uint64(0)
+	for _, iovec := range iovecs {
+		totalBytes += iovec.Len
+	}
+	if totalBytes == 0 {
+		panic(fmt.Errorf("total bytes was 0!"))
+	}
 	// send request
-	_, _, errno := syscall.Syscall(
+	ret1, ret2, errno := syscall.Syscall(
 		syscall.SYS_WRITEV,
 		uintptr(c.server.Fd()), uintptr(unsafe.Pointer(&iovecs[0])), uintptr(len(iovecs)))
 	if errno != 0 {
+		log.Printf("Error calling writev in rawclient!  %s", syscall.Errno(errno))
 		return os.NewSyscallError("writev", syscall.Errno(errno))
 	}
+	log.Printf("Writev tried to write %d total bytes, returned args %d , %d\n", totalBytes, ret1, ret2)
 	return nil
 }
 
@@ -105,16 +114,13 @@ func (c *RawClient) handleResponses() {
 			nRead += n
 		}
 		resp.FromBytes(b)
-		fmt.Printf("Read response %+v\n", resp)
 		// TODO look at status
 		mod := resp.Reqno % uint32(len(c.stripeLock))
-		fmt.Printf("Looking up callback under reqno %d mod %d\n", resp.Reqno, mod)
 		c.stripeLock[mod].Lock()
 		subMap := c.callBacks[mod]
 		cb := subMap[resp.Reqno]
 		delete(subMap, resp.Reqno)
 		c.stripeLock[mod].Unlock()
-		fmt.Printf("Got callback for reqno %d, calling and relooping\n", resp.Reqno)
 		cb(c.server)
 	}
 }

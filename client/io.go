@@ -136,14 +136,11 @@ func (w *Writer) process() {
 			}
 		}
 		if newLen > 0 {
-			fmt.Printf("Extending inode to length %d", newLen)
 			_, err := w.names.Extend(w.inodeid, newLen)
 			if err != nil {
 				log.Printf("Error extending ino %d : %s", err)
 			}
-			fmt.Printf("Notifying..\n")
 			err = w.leases.Notify(w.inodeid)
-			fmt.Printf("Notified")
 			newLen = 0
 		}
 		if syncRequest.done != nil {
@@ -159,7 +156,6 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 	if w.closed {
 		return fmt.Errorf("Can't write, already closed!")
 	}
-	fmt.Printf("Starting write with inode %+v\n", inode)
 	if len(inode.Blocks) == 0 || inode.Blocks[len(inode.Blocks)-1].EndPos < position+uint64(length) {
 		fmt.Printf("Adding a block..")
 		blockPos := uint64(0)
@@ -174,7 +170,7 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 		w.pendingWrites <- pending
 		lengthAtEndOfWrite := wri.b.StartPos + wri.posInBlock + uint64(len(wri.p)) + 1
 		err = w.datas.Write(wri.b, wri.p, wri.posInBlock, func() {
-			fmt.Printf("Finished write, ino length %d, in callback now \n", lengthAtEndOfWrite)
+			//fmt.Printf("Finished write, ino length %d, in callback now \n", lengthAtEndOfWrite)
 			pending.done <- lengthAtEndOfWrite
 		})
 		if err != nil {

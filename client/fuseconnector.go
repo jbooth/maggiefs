@@ -248,6 +248,7 @@ func (m *MaggieFuse) SetAttr(input *fuse.SetAttrIn, out *fuse.AttrOut) (code fus
 		if err != nil {
 			log.Printf("Error truncating from SetAttr: %s", err)
 		}
+		_ = m.leases.Notify(input.NodeId)
 	}
 	// only make the call to SetAttr if we have a valid param
 	if input.Valid&(fuse.FATTR_MODE|fuse.FATTR_UID|fuse.FATTR_GID|fuse.FATTR_MTIME|fuse.FATTR_MTIME_NOW|fuse.FATTR_MTIME|fuse.FATTR_MTIME_NOW) != 0 {

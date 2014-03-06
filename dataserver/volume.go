@@ -7,6 +7,7 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jmhodges/levigo"
 	"io/ioutil"
+	"log"
 	"os"
 	"strconv"
 	"syscall"
@@ -293,11 +294,14 @@ func (v *volume) serveRead(client *os.File, req *RequestHeader) (err error) {
 			return err
 		}
 		// send data
-		//		fmt.Printf("sending data from pos %d length %d\n", sendPos, sendLength)
-		_, err = syscall.Sendfile(int(client.Fd()), int(file.Fd()), &sendPos, int(sendLength))
+		log.Printf("sendfile data from pos %d length %d\n", sendPos, sendLength)
+		var sent int
+		sent, err = syscall.Sendfile(int(client.Fd()), int(file.Fd()), &sendPos, int(sendLength))
 		if err != nil {
+			log.Printf("Error in sendfile: %s", err)
 			return err
 		}
+		log.Printf("send file sent %d of %d", sent, sendLength)
 		for zerosLength > 0 {
 			// send some zeroes
 			zerosSend := zerosLength
