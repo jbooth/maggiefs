@@ -169,7 +169,7 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 	for _, wri := range writes {
 		pending := pendingWrite{make(chan uint64, 1), false}
 		w.pendingWrites <- pending
-		lengthAtEndOfWrite := wri.b.StartPos + wri.posInBlock + uint64(len(wri.p))
+		lengthAtEndOfWrite := wri.b.StartPos + wri.posInBlock + uint64(len(wri.p)) + 1
 		err = w.datas.Write(wri.b, wri.p, wri.posInBlock, func() {
 			//fmt.Printf("Finished write, ino length %d, in callback now \n", lengthAtEndOfWrite)
 			pending.done <- lengthAtEndOfWrite
