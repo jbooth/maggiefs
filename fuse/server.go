@@ -334,13 +334,15 @@ func (ms *Server) handleRequest(req *request) {
 	if req.status.Ok() {
 		req.handler.Func(ms, req)
 	}
-	
-	errNo := ms.write(req)
-	if errNo != 0 {
-		log.Printf("writer: Write/Writev failed, err: %v. opcode: %v",
-			errNo, operationName(req.inHeader.Opcode))
-	}
-	ms.returnRequest(req)
+  // read requests are a special case, filesystem is responsible for Commit() ing them, see api.go:readpipe
+  if req.inHeader.Opcode != _OP_READ {
+	  errNo := ms.write(req)
+	  if errNo != 0 {
+		  log.Printf("writer: Write/Writev failed, err: %v. opcode: %v",
+			  errNo, operationName(req.inHeader.Opcode))
+	  }
+	  ms.returnRequest(req)
+  }
 }
 
 func (ms *Server) allocOut(req *request, size uint32) []byte {

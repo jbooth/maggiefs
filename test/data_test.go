@@ -67,6 +67,10 @@ func (t *testReadPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int,
 	return ret1, ret2
 }
 
+func (t *testReadPipe) Commit() error {
+  return nil
+}
+
 //func TestWriteRead(t *testing.T) {
 //	fmt.Println("testWriteRead")
 //	fmt.Println("Adding node to cluster")

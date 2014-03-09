@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"sync"
+  "log"
 )
 
 // compile-time check for type safety
@@ -62,50 +63,62 @@ func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr, error) {
 	return raddr, nil
 }
 
-// read some bytes
-func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) (err error) {
-	if dc.isLocal(blk.Volumes) {
-		// local direct read
-		return dc.localDS.DirectRead(blk, buf, pos, length)
-	}
-	host, err := dc.VolHost(pickVol(blk.Volumes))
-	if err != nil {
-		return nil
-	}
+  // we have 2 methods to read, in order to optimize by avoiding a context switch for singleblock reads
+    //ReadNoCommit(blk Block, buf SplicerTo, pos uint32, length uint32, onDone chan bool) error
+      //ReadCommit(blk Block, buf SplicerTo, pos uint32, length uint32) error 
 
-	conn, err := dc.pool.getConn(host)
-	if err != nil {
-		return err
-	}
-	// TODO we could commit the read from the other thread instead of blocking and incurring context switch
-	whenDone := make(chan bool, 1)
-	header := RequestHeader{OP_READ, 0, blk, pos, length}
-	conn.DoRequest(header, nil, func(d *os.File) {
-		// put header into response buffer
-		err = buf.WriteHeader(0, int(length))
-		if err != nil {
-			fmt.Printf("Error writing resp header to splice pipe : %s", err)
-			return
-		}
-		// read resp bytes
-		//fmt.Printf("Entering loop to read %d bytes\n",length)
-		numRead := 0
-		for uint32(numRead) < length {
-			fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length-uint32(numRead), d, numRead, int(length))
-			//			fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
-			n, err := buf.SpliceBytes(d.Fd(), int(length)-numRead)
-			//			fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
-			if err != nil {
-				fmt.Printf("Error while splicing: %s\n", err)
-				return
-			}
-			numRead += n
-		}
-		// done
-		whenDone <- true
-	})
-	<-whenDone
-	return nil
+
+
+func (dc *DataClient) ReadCommit (blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) error {
+  return dc.doRead(blk,buf,pos,length,func() {
+    err := buf.Commit()
+    if err != nil {
+      log.Printf("Err committing buff in dataclient.ReadCommit: %s",err)
+    }
+  })
+}
+
+func (dc *DataClient) ReadNoCommit(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone chan bool) error {
+  return dc.doRead(blk,buf,pos,length,func() {
+    onDone <- true
+  })
+
+}
+
+// does the read and calls onDone in receiver thread after splicing to SplicerTo
+func (dc *DataClient) doRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func()) error {
+  if dc.isLocal(blk.Volumes) {
+    // local direct read
+    return dc.localDS.DirectRead(blk, buf, pos, length, onDone)
+  }
+  host, err := dc.VolHost(pickVol(blk.Volumes))
+  if err != nil {
+    return nil
+  }
+
+  conn, err := dc.pool.getConn(host)
+  if err != nil {
+    return err
+  }
+  header := RequestHeader{OP_READ, 0, blk, pos, length}
+  conn.DoRequest(header, nil, func(d *os.File) {
+    // read resp bytes
+    //fmt.Printf("Entering loop to read %d bytes\n",length)
+    numRead := 0
+    for uint32(numRead) < length {
+      fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length-uint32(numRead), d, numRead, int(length))
+      //      fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
+      n, err := buf.SpliceBytes(d.Fd(), int(length)-numRead)
+      //      fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
+      if err != nil {
+        fmt.Printf("Error while splicing: %s\n", err)
+        return
+      }
+      numRead += n
+    }
+    onDone()
+  })
+  return nil
 }
 
 func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64, onDone func()) (err error) {

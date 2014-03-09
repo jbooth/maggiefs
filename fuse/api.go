@@ -7,6 +7,7 @@ package fuse
 import (
 	"github.com/jbooth/maggiefs/splice"
 	"log"
+  "fmt"
 )
 
 type MountOptions struct {
@@ -56,9 +57,12 @@ type ReadPipe interface {
 	SpliceBytes(fd uintptr, length int) (int,error)
 	// splice bytes from the given fd at the given offset
 	SpliceBytesAt(fd uintptr, length int, offset int64) (int,error)
+  // finish our read and write bytes to fuse channel
+  Commit() error
 }
 
 type readPipe struct {
+  fuseServer *Server
 	req *request
 	pipe *splice.Pair
 }
@@ -72,7 +76,6 @@ func (r *readPipe) WriteHeader(code int32, returnBytesLength int) error {
 	r.req.status = Status(code)
 	headerBytes := r.req.serializeHeader(returnBytesLength)
 	r.req.readNumBytesInChan = len(headerBytes) + returnBytesLength
-	
 	err := r.pipe.Grow(r.req.readNumBytesInChan)
 	if err != nil {
 		log.Printf("Error growing pipe to size %d : %s", r.req.readNumBytesInChan, err.Error())
@@ -103,6 +106,16 @@ func (r *readPipe) SpliceBytes(fd uintptr, length int) (int,error) {
 
 func (r *readPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int,error) {
 	return r.pipe.LoadFromAt(fd,length,offset)
+}
+
+func (r *readPipe) Commit() error {
+  stat := r.fuseServer.write(r.req)
+  // return req to pool
+  r.fuseServer.returnRequest(r.req)
+  if stat != OK {
+    return fmt.Errorf("Error splicing read back to fuse! %s",stat)
+  }
+  return nil
 }
 
 // RawFileSystem is an interface close to the FUSE wire protocol.

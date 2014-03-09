@@ -9,8 +9,9 @@ type DataService interface {
 	// exposed for hadoop integration
 	VolHost(volId uint32) (*net.TCPAddr, error)
 
-	// read some bytes statelessly
-	Read(blk Block, buf SplicerTo, pos uint64, length uint32) (err error)
+  // we have 2 methods to read, in order to optimize by avoiding a context switch for singleblock reads
+  ReadNoCommit(blk Block, buf SplicerTo, pos uint64, length uint32, onDone chan bool) error
+  ReadCommit(blk Block, buf SplicerTo, pos uint64, length uint32) error 
 
 	// executes an async write to the provided block, replicating to each volume in the order specified on the block
 	// when done, onDone will be called
@@ -28,6 +29,8 @@ type SplicerTo interface {
 	SpliceBytesAt(fd uintptr, length int, offset int64) (int, error)
 	// write bytes to the pipe from an in-memory buffer
 	WriteBytes(b []byte) (int, error)
+  // splices our read result to fuse server
+  Commit() (error)
 }
 
 // interface exposed from datanodes to namenode (and tests)

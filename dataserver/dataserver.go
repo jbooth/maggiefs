@@ -317,7 +317,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 	}
 }
 
-func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) (err error) {
+func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func()) (err error) {
 	req := &RequestHeader{OP_READ, 0, blk, pos, length}
 	// figure out which of our volumes
 	volForBlock := uint32(0)
@@ -334,7 +334,11 @@ func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos
 		// return error and reloop
 		return fmt.Errorf("No valid volume for block %+v", blk)
 	}
-	return volWithBlock.serveDirectRead(buf, req)
+	err =  volWithBlock.serveDirectRead(buf, req)
+  if err != nil {
+    onDone()
+  }
+  return err
 }
 
 func (ds *DataServer) HeartBeat() (stat *maggiefs.DataNodeStat, err error) {

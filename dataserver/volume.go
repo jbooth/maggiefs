@@ -244,11 +244,6 @@ func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) 
 			sendLength = uint64(stat.Size() - sendPos)
 			zerosLength = int(uint32(req.Length) - uint32(sendLength))
 		}
-		// send header
-		err := result.WriteHeader(0, int(req.Length))
-		if err != nil {
-			return err
-		}
 		// send data
 		//		fmt.Printf("splicing data from pos %d length %d\n", sendPos, sendLength)
 		_, err = result.SpliceBytesAt(file.Fd(), int(sendLength), sendPos)

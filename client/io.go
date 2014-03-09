@@ -23,8 +23,16 @@ func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, po
 		// truncate length to the EOF
 		length = uint32(inode.Length - position)
 	}
-	// confirm currBlock and currReader correct
-	nRead := uint32(0)
+  // write header
+  err = p.WriteHeader(0, int(length))
+  if err != nil {
+    log.Printf("Error writing resp header to splice pipe : %s", err)
+    return err
+  }
+
+
+  // splice bytes and commit
+  nRead := uint32(0)
 	for nRead < length {
 		if position == inode.Length {
 			break
@@ -46,7 +54,16 @@ func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, po
 		}
 		// read bytes
 		//fmt.Printf("reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
-		err = datas.Read(block, p, posInBlock, numBytesFromBlock)
+    if numBytesFromBlock == length - nRead {
+      // if the rest of the read is coming from this block, read and commit
+      // note this call is async, not done when we return
+      err = datas.ReadCommit(block,p,posInBlock,numBytesFromBlock)
+    } else {
+      // else, read and wait till done, commit next time around
+      onDone := make(chan bool,1)
+      err = datas.ReadNoCommit(block,p,posInBlock,numBytesFromBlock,onDone)
+      <- onDone
+    }
 		if err != nil && err != io.EOF {
 			return fmt.Errorf("reader.go error reading from block %+v : %s", block, err.Error())
 		}
