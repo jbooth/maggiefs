@@ -275,43 +275,61 @@ func (v *volume) serveRead(client *os.File, req *RequestHeader) (err error) {
 		resp := ResponseHeader{STAT_OK, req.Reqno}
 		sendPos := int64(req.Pos)
 		// TODO should detect eof instead of doing stat up front, could save a syscall
-		stat, _ := file.Stat()
-		// send only the bytes we have, then we'll send zeroes for the rest -- this is to support sparse files
-		sendLength := uint64(req.Length)
-		zerosLength := 0
-		fileSize := uint64(stat.Size())
-		if uint64(sendPos)+sendLength > fileSize {
-			log.Printf("file name %s, length %d less than sendLength %d", stat.Name(), stat.Size(), sendLength)
-			sendLength = uint64(stat.Size() - sendPos)
-			zerosLength = int(uint32(req.Length) - uint32(sendLength))
-		}
 		// send header
 		_, err := resp.WriteTo(client)
 		if err != nil {
 			return err
 		}
 		// send data
-		log.Printf("sendfile data from pos %d length %d\n", sendPos, sendLength)
+		log.Printf("sendfile data from pos %d length %d\n", sendPos, req.Length)
 		var sent int
-		sent, err = syscall.Sendfile(int(client.Fd()), int(file.Fd()), &sendPos, int(sendLength))
+		sent, err = syscall.Sendfile(int(client.Fd()), int(file.Fd()), &sendPos, int(req.Length))
 		if err != nil {
 			log.Printf("Error in sendfile: %s", err)
 			return err
 		}
-		log.Printf("send file sent %d of %d", sent, sendLength)
-		for zerosLength > 0 {
-			log.Printf("Sending %d zeros", zerosLength)
-			// send some zeroes
-			zerosSend := zerosLength
-			if zerosSend > 65536 {
-				zerosSend = 65536
-			}
-			sent, err := client.Write(ZERO_64KB[:zerosSend])
-			if err != nil {
-				return err
-			}
-			zerosLength -= sent
-		}
+    // if we sent less than the full amount
+    if sent < int(req.Length) {
+      // check size
+		  // send only the bytes we have, then we'll send zeroes for the rest -- this is to support sparse files
+		  stat, _ := file.Stat()
+      sendLength := int(req.Length)
+      if sent > 0 {
+        sendLength -= sent
+      }
+		  zerosLength := 0
+		  fileSize := int64(stat.Size())
+		  if sendPos+int64(sendLength) > fileSize {
+			  log.Printf("file name %s, length %d less than sendLength %d", stat.Name(), stat.Size(), sendLength)
+			  sendLength = int(stat.Size() - sendPos)
+			  zerosLength = int(uint32(req.Length) - uint32(sendLength))
+		  }
+      // send remaining bytes
+      for sent < sendLength {
+        s,err := syscall.Sendfile(int(client.Fd()),int(file.Fd()), &sendPos,sendLength)
+        if err != nil {
+          log.Printf("Error in sendFile second try: %s",err)
+          return err
+        }
+        if s > 0 {
+          sendLength -= s
+        }
+      }
+      // send remaining zeroes
+		  for zerosLength > 0 {
+			  log.Printf("Sending %d zeros", zerosLength)
+			  zerosSend := zerosLength
+			  if zerosSend > 65536 {
+				  zerosSend = 65536
+			  }
+			  s, err := client.Write(ZERO_64KB[:zerosSend])
+			  if err != nil {
+				  return err
+			  }
+			  zerosLength -= s
+		  }
+
+    }
 		return nil
 	})
 	if os.IsNotExist(err) {

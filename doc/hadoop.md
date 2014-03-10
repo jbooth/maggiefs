@@ -1,3 +1,4 @@
+==Hadoop Setup==
 To interoperate with Hadoop, you need to have a maggieFS mountpoint on all tasktrackers and machines you plan to use the hadoop fs command line utility from.
 
 Once you have that, you must compile our hadoop interoperability jar, install it on all nodes, and configure it to use the local mountpoint.
@@ -20,3 +21,6 @@ Having done that, set the following values in conf/core-site.xml in the hadoop i
 </property>
 
 Finally, restart any job trackers and task trackers.  The hadoop fs command and all mapreduce tasks will now use your MFS mounts on each machine.
+
+==Hbase Setup==
+Apply the same previous values to hbase-site.xml and restart hbase
