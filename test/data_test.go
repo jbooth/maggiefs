@@ -14,7 +14,12 @@ type testReadPipe struct {
 	responseCode int32
 	b            []byte
 	numWritten   int
+  done         chan bool
 	l            *sync.Mutex
+}
+
+func newTestReadPipe() *testReadPipe {
+  return &testReadPipe{0,make([]byte,128*1024,128*1024),0,make(chan bool),new(sync.Mutex)}
 }
 
 func (t *testReadPipe) Reset() {
@@ -22,6 +27,7 @@ func (t *testReadPipe) Reset() {
 	defer t.l.Unlock()
 	t.responseCode = 0
 	t.numWritten = 0
+  t.done = make(chan bool,1)
 }
 
 func (t *testReadPipe) WriteHeader(code int32, returnBytesLength int) error {
@@ -68,7 +74,22 @@ func (t *testReadPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int,
 }
 
 func (t *testReadPipe) Commit() error {
+  t.l.Lock()
+  done := t.done
+  t.done = nil
+  t.l.Unlock()
+  done <- true
+  close(done)
   return nil
+}
+
+func (t *testReadPipe) waitDone() {
+  t.l.Lock()
+  done := t.done
+  t.l.Unlock()
+  if done != nil {
+    _,_ = <-done
+  }
 }
 
 //func TestWriteRead(t *testing.T) {
@@ -154,7 +175,7 @@ func TestWriteRead2(t *testing.T) {
 		t.Fatal(err)
 	}
 	// then do that many reads across the file to confirm it's ok
-	readBytes := &testReadPipe{0, nil, 0, new(sync.Mutex)}
+	readBytes := newTestReadPipe()
 	for i := 0; i < 5000; i++ {
 		// reset our buffer
 		readBytes.Reset()
@@ -163,6 +184,7 @@ func TestWriteRead2(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+    readBytes.waitDone()
 		for idx := 0; idx < 65536; idx++ {
 			if readBytes.b[idx] != bytes[idx] {
 				fmt.Printf("Bytes at beginning:  %x : %x\n", readBytes.b[:5], bytes[:5])
@@ -207,13 +229,14 @@ func TestShortRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	readBytes := &testReadPipe{0, nil, 0, new(sync.Mutex)}
+	readBytes := newTestReadPipe()
 	err = openFiles.Read(writefd, readBytes, 0, 5)
 	fmt.Printf("Read %d bytes\n", n)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+  readBytes.waitDone()
 	for idx := 0; idx < 5; idx++ {
 		if readBytes.b[idx] != bytes[idx] {
 			t.Fatal(fmt.Sprintf("Bytes not equal at offset %d : %x != %x", idx, readBytes.b[idx], bytes[idx]))
