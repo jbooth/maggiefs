@@ -23,11 +23,16 @@ type request struct {
 	Leaseid uint64
 	Inodeid uint64
 	Reqno   uint64 // sent back with response so we know which request it was, overridden with ackID if an ack
+	// notify startpos and length, only valid if OP=OP_NOTIFY this is the range of positions in the file to throw out cache for
+	NotifyStartPos int64
+	NotifyLength   int64
 }
 
 type response struct {
-	Reqno   uint64 // reqno that was sent with the request, overridden with ackID if a notify
-	Leaseid uint64
-	Inodeid uint64
-	Status  byte // ok, err, or we're a notify
+	Reqno          uint64 // reqno that was sent with the request, overridden with ackID if a notify
+	Leaseid        uint64
+	Inodeid        uint64
+	Status         byte  // ok, err, or we're a notify
+	NotifyStartPos int64 // startpos and length of changes for a notification if this is STATUS_NOTIFY
+	NotifyLength   int64
 }

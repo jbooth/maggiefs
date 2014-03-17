@@ -96,13 +96,15 @@ func (c *clientConn) ack(ackId uint64) error {
 }
 
 // sends a notification, returning a pendingAck which will wait for acknowledgement
-func (c *clientConn) notify(nodeid uint64, leaseid uint64, ackId uint64) pendingAck {
+func (c *clientConn) notify(nodeid uint64, leaseid uint64, ackId uint64, offset int64, length int64) pendingAck {
 	// send notification to client
 	r := response{
-		Reqno:   ackId,
-		Leaseid: leaseid,
-		Inodeid: nodeid,
-		Status:  STATUS_NOTIFY,
+		Reqno:          ackId,
+		Leaseid:        leaseid,
+		Inodeid:        nodeid,
+		Status:         STATUS_NOTIFY,
+		NotifyStartPos: offset,
+		NotifyLength:   length,
 	}
 	c.resp <- r
 	// create pending ack
@@ -139,13 +141,13 @@ type pendingAck struct {
 func (p pendingAck) waitAcknowledged() {
 	// timeout hardcoded for now
 	fmt.Printf("Waiting acknowledged conn id %d ackid %d\n", p.c.id, p.ackId)
-	timeout := time.After(time.Second * 5)
+	timeout := time.After(time.Second * 120)
 	select {
 	case <-p.ack:
 		return
 	case <-timeout:
 		// client lease is EXPIRED, KILL IT
-		fmt.Printf("Conn %d timed out waiting for ackid %d\n", p.c.id, p.ackId)
+		log.Printf("Conn %d timed out after 120s waiting for ackid %d\n", p.c.id, p.ackId)
 		p.c.closeAndDie()
 	}
 	return
@@ -266,19 +268,14 @@ func (ls *LeaseServer) process() {
 		case OP_READLEASE:
 			resp, err = ls.createLease(qr.req, qr.conn)
 		case OP_NOTIFY:
-			// notify will dispatch a goroutine and eventually queue OP_NOTIFY_DONE
 			err = ls.notify(qr.req, qr.conn)
-			// no response from this loop, notify spins off a goroutine to respond
+			// no response from this loop, notify spins off a goroutine to respond directly to qr.conn
 			continue
 		case OP_READLEASE_RELEASE:
 			resp, err = ls.releaseLease(qr.req, qr.conn)
 			if err != nil {
 				log.Printf("Error releasing readlease: %s\n", err.Error())
 			}
-		case OP_NOTIFY_DONE:
-			// this comes from a previous invocation of NOTIFY
-			// response finally goes to the original calling client
-			resp = response{qr.req.Reqno, 0, 0, STATUS_OK}
 		case OP_ACKNOWLEDGE:
 			//fmt.Printf("got ack for client id %d, ackid %d\n", qr.conn.id, qr.req.Leaseid)
 			qr.conn.ack(qr.req.Leaseid)
@@ -299,7 +296,7 @@ func (ls *LeaseServer) process() {
 		// send responses
 		if err != nil {
 			fmt.Printf("error processing request %+v, error: %s", qr.req, err)
-			qr.conn.resp <- response{0, 0, 0, STATUS_ERR}
+			qr.conn.resp <- response{0, 0, 0, STATUS_ERR, 0, 0}
 		} else {
 			//fmt.Printf("processed request %+v, sending response %+v\n", qr.req, resp)
 			qr.conn.resp <- resp
@@ -322,7 +319,7 @@ func (ls *LeaseServer) createLease(r request, c *clientConn) (response, error) {
 	ls.leasesByInode[r.Inodeid] = leasesForInode
 	// record in ls.leases under lease Id
 	ls.leasesById[l.leaseid] = l
-	return response{r.Reqno, leaseid, r.Inodeid, STATUS_OK}, nil
+	return response{r.Reqno, leaseid, r.Inodeid, STATUS_OK, 0, 0}, nil
 }
 
 func (ls *LeaseServer) releaseLease(r request, c *clientConn) (response, error) {
@@ -345,7 +342,7 @@ func (ls *LeaseServer) releaseLease(r request, c *clientConn) (response, error) 
 		delete(ls.leasesByInode, inodeid)
 	}
 	// done
-	resp := response{r.Reqno, 0, 0, STATUS_OK}
+	resp := response{r.Reqno, 0, 0, STATUS_OK, 0, 0}
 	return resp, nil
 }
 
@@ -373,20 +370,22 @@ func (ls *LeaseServer) notify(r request, c *clientConn) error {
 	// find all readleases attached to this inode id
 	readLeases := ls.leasesByInode[r.Inodeid]
 
-	pendingAcks := make([]pendingAck, len(readLeases))
+	pendingAcks := make([]pendingAck, 0, len(readLeases)-1)
 	// notify them all
-	idx := 0
 	for _, rl := range readLeases {
-		ls.ackIdCounter += 1
-		pendingAcks[idx] = rl.client.notify(r.Inodeid, rl.leaseid, ls.ackIdCounter)
+		if rl.client.id != c.id {
+			ls.ackIdCounter += 1
+			pendingAcks = append(pendingAcks, rl.client.notify(r.Inodeid, rl.leaseid, ls.ackIdCounter, r.NotifyStartPos, r.NotifyLength))
+		}
 	}
+	// spin off function which responds to committer after all readleases have acked
 	go func() {
 		// wait all readers acknowledged
 		for _, ack := range pendingAcks {
 			ack.waitAcknowledged()
 		}
 		// queue response to be sent to the client who committed
-		c.resp <- response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_OK}
+		c.resp <- response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_OK, r.NotifyStartPos, r.NotifyLength}
 	}()
 	return nil
 }
@@ -395,9 +394,9 @@ func (ls *LeaseServer) checkLeases(r request, c *clientConn) (response, error) {
 	inodeLeases := ls.leasesByInode[r.Inodeid]
 	//fmt.Printf("Checking leases for inode %d : %+v\n", r.Inodeid, inodeLeases)
 	if inodeLeases != nil && len(inodeLeases) > 0 {
-		return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_WAIT}, nil
+		return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_WAIT, 0, 0}, nil
 	}
-	return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_OK}, nil
+	return response{r.Reqno, r.Leaseid, r.Inodeid, STATUS_OK, 0, 0}, nil
 }
 
 // atomically adds incr to val, returns new val

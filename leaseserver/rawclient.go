@@ -83,7 +83,7 @@ func (c *rawclient) mux() {
 		case resp := <-c.responses:
 			if resp.Status == STATUS_NOTIFY {
 				// this is a notification so forward to the notification chan
-				c.notifier <- NotifyEvent{inodeid: resp.Inodeid, ackid: resp.Reqno, c: c}
+				c.notifier <- NotifyEvent{inodeid: resp.Inodeid, ackid: resp.Reqno, offset: resp.NotifyStartPos, length: resp.NotifyLength, c: c}
 			} else {
 				// response to a request, forward to it's response chan
 				k := resp.Reqno

@@ -12,8 +12,10 @@ type LeaseService interface {
 	// upon the file changing *unless* we've cancelled this lease.
 	ReadLease(nodeid uint64) (l ReadLease, err error)
 
-	// sends a notification to all holders of ReadLease for this nodeid
-	Notify(nodeid uint64) (err error)
+	// sends a notification to all holders of ReadLease for this nodeid that its bytes has changed at the
+	// offset and length we're advertising here
+	// readers must either ack in a timely manner or their lease will be interrupted
+	Notify(nodeid uint64, off int64, length int64) (err error)
 
 	// returns a chan which will contain an event every time any inode in the system is changed
 	// used for cache coherency
@@ -31,8 +33,10 @@ type ReadLease interface {
 type NotifyEvent interface {
 	// client MUST call ack for every received notifyEvent.  If not, your client lease will expire.
 	Ack() error
-	// the inode id we're notifying a change for
+	// the inode id we're notifying a change for,
 	Inodeid() uint64
+	// the offset and length of the file that were changed
+	OffAndLength() (int64, int64)
 }
 
 type NameService interface {

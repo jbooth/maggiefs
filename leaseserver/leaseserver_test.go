@@ -58,7 +58,7 @@ func TestCommit(t *testing.T) {
 	}
 	fmt.Println("committing")
 	go func() {
-		err := ls.Notify(nodeid)
+		err := ls.Notify(nodeid, 4096, 8192)
 		if err != nil {
 			panic(err)
 		}
@@ -83,7 +83,7 @@ func TestCommit(t *testing.T) {
 func TestWaitForAck(t *testing.T) {
 	nodeid := uint64(10)
 	o.Do(startServer)
-	fmt.Printf("testCommit getting readlease\n")
+	fmt.Printf("testCommit getting readlease ls2\n")
 	rl, _ := ls2.ReadLease(nodeid)
 	fmt.Printf("got lease %+v, cli id %d\n", rl, 0)
 	fmt.Println("asserting no notification so far")
@@ -99,14 +99,15 @@ func TestWaitForAck(t *testing.T) {
 	fmt.Println("committing")
 	notifyDone := make(chan bool)
 	go func() {
-		err := ls.Notify(nodeid)
+		err := ls.Notify(nodeid, 4096, 8192)
 		if err != nil {
 			panic(err)
 		}
 		notifyDone <- true
-		fmt.Println("done committing")
+		fmt.Println("done committing ls1")
 	}()
-	fmt.Println("waiting for notification")
+
+	fmt.Println("checking that ls2 got notify")
 	threeSecondTimeout = time.After(time.Duration(3 * 1e9))
 	var n maggiefs.NotifyEvent
 	select {
@@ -136,6 +137,16 @@ func TestWaitForAck(t *testing.T) {
 		break
 	case <-threeSecondTimeout:
 		fmt.Println("notify did NOT return after ack!")
+		t.Fail()
+	}
+	fmt.Println("Testing that committer didn't get its own notify: ")
+	threeSecondTimeout = time.After(time.Duration(3 * 1e9))
+	select {
+	case <-threeSecondTimeout:
+		fmt.Println("ls1 didn't receive notify for its own commit, we're good")
+		break
+	case <-ls.GetNotifier():
+		fmt.Println("ls1 got its own notify!  not supposed to!")
 		t.Fail()
 	}
 	fmt.Println("releasing readlease")

@@ -18,8 +18,8 @@ func NewLeaseClient(hostAddr string) (*LeaseClient, error) {
 }
 
 // sends notification
-func (lc LeaseClient) Notify(nodeid uint64) (err error) {
-	req := request{OP_NOTIFY, 0, nodeid, 0}
+func (lc LeaseClient) Notify(nodeid uint64, off int64, length int64) (err error) {
+	req := request{OP_NOTIFY, 0, nodeid, 0, off, length}
 	_, err = lc.c.doRequest(req)
 	return err
 }
@@ -29,7 +29,7 @@ func (lc LeaseClient) Notify(nodeid uint64) (err error) {
 // also registers a callback for when the node is remotely changed, this will be triggered
 // upon the file changing *unless* we've cancelled this lease.  Recommend
 func (lc LeaseClient) ReadLease(nodeid uint64) (l maggiefs.ReadLease, err error) {
-	req := request{OP_READLEASE, 0, nodeid, 0}
+	req := request{OP_READLEASE, 0, nodeid, 0, 0, 0}
 	resp, err := lc.c.doRequest(req)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func (lc LeaseClient) GetNotifier() chan maggiefs.NotifyEvent {
 
 // blocks until all leases are released for the given node
 func (lc LeaseClient) WaitAllReleased(nodeid uint64) error {
-	req := request{OP_CHECKLEASES, 0, nodeid, 0}
+	req := request{OP_CHECKLEASES, 0, nodeid, 0, 0, 0}
 	resp, err := lc.c.doRequest(req)
 	if err != nil {
 		return err
@@ -63,21 +63,27 @@ func (lc LeaseClient) WaitAllReleased(nodeid uint64) error {
 }
 
 type NotifyEvent struct {
-	inodeid uint64
 	ackid   uint64
+	inodeid uint64
+	offset  int64
+	length  int64
 	c       *rawclient
 }
 
 func (n NotifyEvent) Ack() error {
 	// send ack message to server
 
-	req := request{OP_ACKNOWLEDGE, n.ackid, n.inodeid, n.ackid}
+	req := request{OP_ACKNOWLEDGE, n.ackid, n.inodeid, n.ackid, 0, 0}
 	n.c.sendRequestNoResponse(req)
 	return nil
 }
 
 func (n NotifyEvent) Inodeid() uint64 {
 	return n.inodeid
+}
+
+func (n NotifyEvent) OffAndLength() (int64, int64) {
+	return n.offset, n.length
 }
 
 type Lease struct {
@@ -89,7 +95,7 @@ type Lease struct {
 // lets go of lock, committing our changes to all open readleases
 func (l *Lease) Release() error {
 	var op = OP_READLEASE_RELEASE
-	req := request{op, l.leaseid, l.inodeid, 0}
+	req := request{op, l.leaseid, l.inodeid, 0, 0, 0}
 	_, err := l.c.doRequest(req)
 	return err
 }
