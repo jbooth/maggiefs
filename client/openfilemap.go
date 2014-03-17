@@ -66,6 +66,7 @@ func (o *OpenFileMap) handleNotifications() {
 		openIno.ino = nil
 		openIno.l.Unlock()
 		o.onNotify(inodeid)
+		fmt.Printf("Nilled openIno %d, acking\n", openIno.inodeid)
 		err := event.Ack()
 		if err != nil {
 			log.Printf("Error acking on notify for ino %d : %s", inodeid, err)
@@ -130,7 +131,10 @@ func (o *OpenFileMap) Close(fh uint64) (err error) {
 	}
 	ino.l.Unlock()
 	o.l.Unlock()
-	return f.w.Close()
+	if f.w != nil {
+		return f.w.Close()
+	}
+	return nil
 }
 
 func (o *OpenFileMap) Read(fd uint64, buf fuse.ReadPipe, pos uint64, length uint32) (err error) {
@@ -158,7 +162,10 @@ func (o *OpenFileMap) Sync(fd uint64) (err error) {
 	if err != nil {
 		return err
 	}
-	return f.w.Sync()
+	if f.w != nil {
+		return f.w.Sync()
+	}
+	return nil
 	//Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []byte, position uint64, length uint32)
 }
 

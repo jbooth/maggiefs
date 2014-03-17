@@ -23,16 +23,15 @@ func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, po
 		// truncate length to the EOF
 		length = uint32(inode.Length - position)
 	}
-  // write header
-  err = p.WriteHeader(0, int(length))
-  if err != nil {
-    log.Printf("Error writing resp header to splice pipe : %s", err)
-    return err
-  }
+	// write header
+	err = p.WriteHeader(0, int(length))
+	if err != nil {
+		log.Printf("Error writing resp header to splice pipe : %s", err)
+		return err
+	}
 
-
-  // splice bytes and commit
-  nRead := uint32(0)
+	// splice bytes and commit
+	nRead := uint32(0)
 	for nRead < length {
 		if position == inode.Length {
 			break
@@ -54,16 +53,16 @@ func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, po
 		}
 		// read bytes
 		//fmt.Printf("reading from block %+v at posInBlock %d, length %d array offset %d \n",block,posInBlock,numBytesFromBlock,offset)
-    if numBytesFromBlock == length - nRead {
-      // if the rest of the read is coming from this block, read and commit
-      // note this call is async, not done when we return
-      err = datas.ReadCommit(block,p,posInBlock,numBytesFromBlock)
-    } else {
-      // else, read and wait till done, commit next time around
-      onDone := make(chan bool,1)
-      err = datas.ReadNoCommit(block,p,posInBlock,numBytesFromBlock,onDone)
-      <- onDone
-    }
+		if numBytesFromBlock == length-nRead {
+			// if the rest of the read is coming from this block, read and commit
+			// note this call is async, not done when we return
+			err = datas.ReadCommit(block, p, posInBlock, numBytesFromBlock)
+		} else {
+			// else, read and wait till done, commit next time around
+			onDone := make(chan bool, 1)
+			err = datas.ReadNoCommit(block, p, posInBlock, numBytesFromBlock, onDone)
+			<-onDone
+		}
 		if err != nil && err != io.EOF {
 			return fmt.Errorf("reader.go error reading from block %+v : %s", block, err.Error())
 		}
@@ -100,7 +99,7 @@ type Writer struct {
 }
 
 func NewWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, myDnId *uint32) *Writer {
-	ret := &Writer{leases, names, datas, myDnId, inodeid, make(chan pendingWrite, 64), new(sync.Mutex), false}
+	ret := &Writer{leases, names, datas, myDnId, inodeid, make(chan pendingWrite, 16), new(sync.Mutex), false}
 	go ret.process()
 	return ret
 }
@@ -122,8 +121,8 @@ func (w *Writer) process() {
 			return
 		}
 		updates := []pendingWrite{write}
-		// pull as many updates as we can without blocking
-		numUpdates := 0
+		numUpdates := 1
+		// pull up to 32 updates as we can without blocking
 	INNER:
 		for {
 			select {
@@ -137,7 +136,7 @@ func (w *Writer) process() {
 				}
 				updates = append(updates, write)
 				numUpdates += 1
-				if numUpdates > 128 {
+				if numUpdates > 32 {
 					break INNER
 				}
 			default:
@@ -188,7 +187,7 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 		w.pendingWrites <- pending
 		lengthAtEndOfWrite := wri.b.StartPos + wri.posInBlock + uint64(len(wri.p))
 		err = w.datas.Write(wri.b, wri.p, wri.posInBlock, func() {
-			//fmt.Printf("Finished write, ino length %d, in callback now \n", lengthAtEndOfWrite)
+			log.Printf("Finished write, ino length %d, in callback now \n", lengthAtEndOfWrite)
 			pending.done <- lengthAtEndOfWrite
 		})
 		if err != nil {
