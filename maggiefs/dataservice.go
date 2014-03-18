@@ -9,9 +9,9 @@ type DataService interface {
 	// exposed for hadoop integration
 	VolHost(volId uint32) (*net.TCPAddr, error)
 
-  // we have 2 methods to read, in order to optimize by avoiding a context switch for singleblock reads
-  ReadNoCommit(blk Block, buf SplicerTo, pos uint64, length uint32, onDone chan bool) error
-  ReadCommit(blk Block, buf SplicerTo, pos uint64, length uint32) error 
+	// we have 2 methods to read, in order to optimize by avoiding a context switch for singleblock reads
+	ReadNoCommit(blk Block, buf SplicerTo, pos uint64, length uint32, onDone chan bool) error
+	ReadCommit(blk Block, buf SplicerTo, pos uint64, length uint32) error
 
 	// executes an async write to the provided block, replicating to each volume in the order specified on the block
 	// when done, onDone will be called
@@ -21,16 +21,14 @@ type DataService interface {
 // represents one half of a pipe for splice-based communication with fuse, implemented by fuse.ReadPipe
 // or a buffer on non-fuse-supporting platforms (unimplemented)
 type SplicerTo interface {
-	// write the header prior to splicing any bytes -- code should be 0 on OK, or a syscall value like syscall.EIO on error
-	WriteHeader(code int32, returnBytesLength int) error
-	// splice bytes from the FD to the return buffer
-	SpliceBytes(fd uintptr, length int) (int, error)
-	// splice bytes from the FD at the given offset to the return buffer
-	SpliceBytesAt(fd uintptr, length int, offset int64) (int, error)
+	// splice bytes from the FD to this buffer
+	LoadFrom(fd uintptr, length int) (int, error)
+	// splice bytes from the FD at the given offset to this buffer
+	LoadFromAt(fd uintptr, length int, offset int64) (int, error)
 	// write bytes to the pipe from an in-memory buffer
-	WriteBytes(b []byte) (int, error)
-  // splices our read result to fuse server
-  Commit() (error)
+	Write(b []byte) (int, error)
+	// splices our read result to fuse server
+	Commit() error
 }
 
 // interface exposed from datanodes to namenode (and tests)

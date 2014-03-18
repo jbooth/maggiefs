@@ -193,7 +193,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 	l := new(sync.Mutex)
 	for {
 		req := &RequestHeader{}
-		fmt.Printf("Dataserver reading header\n")
+		log.Printf("Dataserver reading header\n")
 		_, err := req.ReadFrom(conn)
 
 		if err != nil {
@@ -206,7 +206,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 				return
 			}
 		}
-		fmt.Printf("Got header %+v\n", req)
+		log.Printf("Dataserver: Got header %+v\n", req)
 		// figure out which of our volumes
 		volForBlock := uint32(0)
 		for volId, _ := range ds.volumes {
@@ -221,19 +221,19 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 			resp := &ResponseHeader{STAT_BADVOLUME, req.Reqno}
 			_, err := resp.WriteTo(conn)
 			if err != nil {
-				log.Printf("Err serving conn %s : %s", "tcpconn", err.Error())
+				log.Printf("DataServer: Err serving conn %s : %s", "tcpconn", err.Error())
 				return
 			}
 		} else {
 			vol := ds.volumes[volForBlock]
 			if req.Op == OP_READ {
 				l.Lock()
-				fmt.Printf("Serving read..\n")
+				log.Printf("Dataserver: Serving read..\n")
 				err = vol.serveRead(conn, req)
-				fmt.Printf("Done with read to sock %s \n", conn)
+				log.Printf("Dataserver: Done with read to sock %s \n", conn)
 				l.Unlock()
 				if err != nil {
-					log.Printf("Err serving read : %s", err.Error())
+					log.Printf("Dataserver: Err serving read : %s", err.Error())
 					return
 				}
 			} else if req.Op == OP_WRITE {
@@ -247,14 +247,14 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 					}
 					nRead += uint32(n)
 				}
-				fmt.Printf("Dataserver read %d into buffer for write\n", nRead)
 				insureWriteFinished := make(chan bool, 1)
 				resp := ResponseHeader{STAT_OK, req.Reqno}
 				lastNode := false
 				if len(req.Blk.Volumes) == 1 {
 					lastNode = true
 				}
-				fmt.Printf("LastNode: %t\n")
+
+				log.Printf("Dataserver read %d into buffer for write. lastNode %t\n", nRead, lastNode)
 				if !lastNode {
 					// forward to next node if appropriate with callback
 					req.Blk.Volumes = req.Blk.Volumes[1:]
@@ -263,7 +263,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 						<-insureWriteFinished
 						// send response to client
 						l.Lock()
-						fmt.Printf("Intermediate note writing response %+v to client %s\n", resp, conn)
+						log.Printf("DataServer: Intermediate note writing response %+v to client %s\n", resp, conn)
 						_, err := resp.WriteTo(conn)
 						l.Unlock()
 						if err != nil {
@@ -272,28 +272,25 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 					})
 				}
 				// write to our copy of block
-				fmt.Printf("Acquiring lock to write for req %+v\n", req)
+				log.Printf("Dataserver acquiring lock to write to File for req %+v\n", req)
 				err = vol.withFile(req.Blk.Id, func(f *os.File) error {
-					fmt.Printf("Doing actual write for req %+v\n", req)
 					n, e1 := f.WriteAt(writeBuff, int64(req.Pos))
 					insureWriteFinished <- true
-					fmt.Printf("Finished write for req %+v, wrote %d bytes \n", req, n)
-					stat, _ := f.Stat()
-					fmt.Printf("New file size: %d, name %d\n", stat.Size(), stat.Name())
+					log.Printf("Dataserver Finished write for req %+v, wrote %d bytes \n", req, n)
 					return e1
 				})
 				if err != nil {
-					fmt.Printf("Err writing to file: %s\n")
+					log.Printf("Dataserver: Err writing to file: %s\n")
 					return
 				}
 				if lastNode {
 					// respond here
 					l.Lock()
-					fmt.Printf("Terminal node writing response %+v to client %s\n", resp, conn)
+					log.Printf("Dataserver: Terminal node writing response %+v to client %s\n", resp, conn)
 					_, err := resp.WriteTo(conn)
 					l.Unlock()
 					if err != nil {
-						log.Printf("Error sending response to client %s\n", err)
+						log.Printf("Dataserver: Error sending response to client %s\n", err)
 						return
 					}
 				}
@@ -334,11 +331,11 @@ func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos
 		// return error and reloop
 		return fmt.Errorf("No valid volume for block %+v", blk)
 	}
-	err =  volWithBlock.serveDirectRead(buf, req)
-  if err != nil {
-    onDone()
-  }
-  return err
+	err = volWithBlock.serveDirectRead(buf, req)
+	if err != nil {
+		onDone()
+	}
+	return err
 }
 
 func (ds *DataServer) HeartBeat() (stat *maggiefs.DataNodeStat, err error) {

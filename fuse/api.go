@@ -7,7 +7,6 @@ package fuse
 import (
 	"github.com/jbooth/maggiefs/splice"
 	"log"
-  "fmt"
 )
 
 type MountOptions struct {
@@ -49,44 +48,45 @@ type MountOptions struct {
 
 // represents an OS pipe which read results will be piped through
 type ReadPipe interface {
-	// write the header for this response
+	// write the header prior to splicing any bytes -- code should be 0 on OK, or a syscall value like syscall.EIO on error
 	WriteHeader(code int32, returnBytesLength int) error
-	// write bytes from memory
-	WriteBytes(b []byte) (int,error)
-	// splice bytes from the given fd
-	SpliceBytes(fd uintptr, length int) (int,error)
-	// splice bytes from the given fd at the given offset
-	SpliceBytesAt(fd uintptr, length int, offset int64) (int,error)
-  // finish our read and write bytes to fuse channel
-  Commit() error
+	// write bytes from memory into this buffer
+	Write(b []byte) (int, error)
+	// splice bytes from the given fd into this buffer
+	LoadFrom(fd uintptr, length int) (int, error)
+	// splice bytes from the given fd at the given offset into this buffer
+	LoadFromAt(fd uintptr, length int, offset int64) (int, error)
+	// finish our read and write bytes to fuse channel
+	Commit() error
 }
 
 type readPipe struct {
-  fuseServer *Server
-	req *request
-	pipe *splice.Pair
+	fuseServer *Server
+	req        *request
+	pipe       *splice.Pair
+	numInPipe  int
 }
 
 // func to write our header response prior to splicing bytes
 // returnBytesLength should be the amount requested unless we are hitting EOF
 
-// note that after calling this method, you MUST either write returnBytesLength to this pipe 
+// note that after calling this method, you MUST either write returnBytesLength to this pipe
 // or return an error code from the Read() method
 func (r *readPipe) WriteHeader(code int32, returnBytesLength int) error {
 	r.req.status = Status(code)
 	headerBytes := r.req.serializeHeader(returnBytesLength)
-	r.req.readNumBytesInChan = len(headerBytes) + returnBytesLength
-	err := r.pipe.Grow(r.req.readNumBytesInChan)
+
+	r.numInPipe = len(headerBytes) + returnBytesLength
+	err := r.pipe.Grow(r.numInPipe)
 	if err != nil {
-		log.Printf("Error growing pipe to size %d : %s", r.req.readNumBytesInChan, err.Error())
+		log.Printf("Error growing pipe to size %d : %s", r.numInPipe, err.Error())
 		r.req.status = EIO
 		splice.Drop(r.pipe)
 		r.pipe = nil
 		return err
 	}
 	// response header goes in buffer first, before read results
-	
-	_,err = r.pipe.Write(headerBytes)
+	_, err = r.pipe.Write(headerBytes)
 	if err != nil {
 		log.Printf("Error writing header to pipe prior to read: %s\n", err)
 		r.req.status = EIO
@@ -96,34 +96,25 @@ func (r *readPipe) WriteHeader(code int32, returnBytesLength int) error {
 	return nil
 }
 
-func (r *readPipe) WriteBytes(b []byte) (int,error) {
+func (r *readPipe) Write(b []byte) (int, error) {
 	return r.pipe.Write(b)
 }
 
-func (r *readPipe) SpliceBytes(fd uintptr, length int) (int,error) {
-	return r.pipe.LoadFrom(fd,length)
+func (r *readPipe) LoadFrom(fd uintptr, length int) (int, error) {
+	return r.pipe.LoadFrom(fd, length)
 }
 
-func (r *readPipe) SpliceBytesAt(fd uintptr, length int, offset int64) (int,error) {
-	return r.pipe.LoadFromAt(fd,length,offset)
+func (r *readPipe) LoadFromAt(fd uintptr, length int, offset int64) (int, error) {
+	return r.pipe.LoadFromAt(fd, length, offset)
 }
 
 func (r *readPipe) Commit() error {
-  stat := r.fuseServer.write(r.req)
-  // return req to pool
-  r.fuseServer.returnRequest(r.req)
-  if stat != OK {
-    return fmt.Errorf("Error splicing read back to fuse! %s",stat)
-  }
-  return nil
+	log.Printf("Committing results for write from api.go..")
+	r.fuseServer.commitReadResults(r.req, r.pipe, r.numInPipe, nil)
+	return nil
 }
 
 // RawFileSystem is an interface close to the FUSE wire protocol.
-//
-// Unless you really know what you are doing, you should not implement
-// this, but rather the FileSystem interface; the details of getting
-// interactions with open files, renames, and threading right etc. are
-// somewhat tricky and not very interesting.
 //
 // A null implementation is provided by NewDefaultRawFileSystem.
 type RawFileSystem interface {
@@ -146,7 +137,6 @@ type RawFileSystem interface {
 	Rmdir(header *InHeader, name string) (code Status)
 	Rename(input *RenameIn, oldName string, newName string) (code Status)
 	Link(input *LinkIn, filename string, out *EntryOut) (code Status)
-
 	Symlink(header *InHeader, pointedTo string, linkName string, out *EntryOut) (code Status)
 	Readlink(header *InHeader) (out []byte, code Status)
 	Access(input *AccessIn) (code Status)
@@ -161,15 +151,15 @@ type RawFileSystem interface {
 	// File handling.
 	Create(input *CreateIn, name string, out *CreateOut) (code Status)
 	Open(input *OpenIn, out *OpenOut) (status Status)
-	
+
 	// note you must accurately report how many bytes you spliced into the pipe, if you cannot you should return an error status
 	Read(input *ReadIn, buf ReadPipe) (code Status)
 
 	Release(input *ReleaseIn)
-	
-	// receives 
+
+	// receives
 	Write(input *WriteIn, data []byte) (written uint32, code Status)
-	
+
 	Flush(input *FlushIn) Status
 	Fsync(input *FsyncIn) (code Status)
 	Fallocate(input *FallocateIn) (code Status)

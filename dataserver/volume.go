@@ -246,7 +246,7 @@ func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) 
 		}
 		// send data
 		//		fmt.Printf("splicing data from pos %d length %d\n", sendPos, sendLength)
-		_, err = result.SpliceBytesAt(file.Fd(), int(sendLength), sendPos)
+		_, err = result.LoadFromAt(file.Fd(), int(sendLength), sendPos)
 		if err != nil {
 			return err
 		}
@@ -256,7 +256,7 @@ func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) 
 			if zerosSend > 65536 {
 				zerosSend = 65536
 			}
-			sent, err := result.WriteBytes(ZERO_64KB[:zerosSend])
+			sent, err := result.Write(ZERO_64KB[:zerosSend])
 			if err != nil {
 				return err
 			}
@@ -288,48 +288,48 @@ func (v *volume) serveRead(client *os.File, req *RequestHeader) (err error) {
 			log.Printf("Error in sendfile: %s", err)
 			return err
 		}
-    // if we sent less than the full amount
-    if sent < int(req.Length) {
-      // check size
-		  // send only the bytes we have, then we'll send zeroes for the rest -- this is to support sparse files
-		  stat, _ := file.Stat()
-      sendLength := int(req.Length)
-      if sent > 0 {
-        sendLength -= sent
-      }
-		  zerosLength := 0
-		  fileSize := int64(stat.Size())
-		  if sendPos+int64(sendLength) > fileSize {
-			  log.Printf("file name %s, length %d less than sendLength %d", stat.Name(), stat.Size(), sendLength)
-			  sendLength = int(stat.Size() - sendPos)
-			  zerosLength = int(uint32(req.Length) - uint32(sendLength))
-		  }
-      // send remaining bytes
-      for sent < sendLength {
-        s,err := syscall.Sendfile(int(client.Fd()),int(file.Fd()), &sendPos,sendLength)
-        if err != nil {
-          log.Printf("Error in sendFile second try: %s",err)
-          return err
-        }
-        if s > 0 {
-          sendLength -= s
-        }
-      }
-      // send remaining zeroes
-		  for zerosLength > 0 {
-			  log.Printf("Sending %d zeros", zerosLength)
-			  zerosSend := zerosLength
-			  if zerosSend > 65536 {
-				  zerosSend = 65536
-			  }
-			  s, err := client.Write(ZERO_64KB[:zerosSend])
-			  if err != nil {
-				  return err
-			  }
-			  zerosLength -= s
-		  }
+		// if we sent less than the full amount
+		if sent < int(req.Length) {
+			// check size
+			// send only the bytes we have, then we'll send zeroes for the rest -- this is to support sparse files
+			stat, _ := file.Stat()
+			sendLength := int(req.Length)
+			if sent > 0 {
+				sendLength -= sent
+			}
+			zerosLength := 0
+			fileSize := int64(stat.Size())
+			if sendPos+int64(sendLength) > fileSize {
+				log.Printf("file name %s, length %d less than sendLength %d", stat.Name(), stat.Size(), sendLength)
+				sendLength = int(stat.Size() - sendPos)
+				zerosLength = int(uint32(req.Length) - uint32(sendLength))
+			}
+			// send remaining bytes
+			for sent < sendLength {
+				s, err := syscall.Sendfile(int(client.Fd()), int(file.Fd()), &sendPos, sendLength)
+				if err != nil {
+					log.Printf("Error in sendFile second try: %s", err)
+					return err
+				}
+				if s > 0 {
+					sendLength -= s
+				}
+			}
+			// send remaining zeroes
+			for zerosLength > 0 {
+				log.Printf("Sending %d zeros", zerosLength)
+				zerosSend := zerosLength
+				if zerosSend > 65536 {
+					zerosSend = 65536
+				}
+				s, err := client.Write(ZERO_64KB[:zerosSend])
+				if err != nil {
+					return err
+				}
+				zerosLength -= s
+			}
 
-    }
+		}
 		return nil
 	})
 	if os.IsNotExist(err) {

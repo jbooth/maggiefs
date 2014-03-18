@@ -48,7 +48,7 @@ func NewRawClient(host *net.TCPAddr, numStripes int) (*RawClient, error) {
 func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *os.File)) error {
 	// set reqno
 	header.Reqno = atomic.AddUint32(c.reqnoCtr, 1)
-	fmt.Printf("Executing request with header %+v to sock %s\n", header, c.server)
+	log.Printf("DataServer.RawClient: executing request with header %+v to sock %s\n", header, c.server)
 	// encode header
 	headerLen := uint16(header.BinSize())
 	headerBytes := make([]byte, headerLen+2, headerLen+2)
@@ -81,7 +81,7 @@ func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *
 	c.stripeLock[mod].Lock()
 	c.callBacks[mod][header.Reqno] = onResp
 	c.stripeLock[mod].Unlock()
-	fmt.Printf("Registered callback %d on client %s\n", header.Reqno, c.server)
+	log.Printf("DataServer.RawClient: Registered callback %d on client %s\n", header.Reqno, c.server)
 	totalBytes := uint64(0)
 	for _, iovec := range iovecs {
 		totalBytes += iovec.Len
@@ -105,18 +105,18 @@ func (c *RawClient) handleResponses() {
 	b := make([]byte, 5, 5)
 	resp := ResponseHeader{}
 	for {
-		fmt.Printf("HandleResponses reading from %s\n", c.server)
+		log.Printf("RawClient.HandleResponses reading from %s\n", c.server)
 		nRead := 0
 		for nRead < 5 {
 			n, err := c.server.Read(b[nRead:])
 			if err != nil {
-				fmt.Printf("Error reading response from socket %s! %s\n", c.server, err)
+				log.Printf("Error reading response from socket %s! %s\n", c.server, err)
 				return
 			}
 			nRead += n
 		}
 		resp.FromBytes(b)
-		fmt.Printf("HandleResponses got resp %+v from sock %s\n", resp, c.server)
+		log.Printf("RawClient.HandleResponses got resp %+v from sock %s\n", resp, c.server)
 		// TODO look at status
 		mod := resp.Reqno % uint32(len(c.stripeLock))
 		c.stripeLock[mod].Lock()
@@ -125,7 +125,7 @@ func (c *RawClient) handleResponses() {
 		delete(subMap, resp.Reqno)
 		c.stripeLock[mod].Unlock()
 		if cb == nil {
-			fmt.Printf("Nil callback for reqno %d on client %s\n", resp.Reqno, c.server)
+			log.Printf("RawClient.HandleResponses: Nil callback for reqno %d on client %s\n", resp.Reqno, c.server)
 		}
 		cb(c.server)
 	}

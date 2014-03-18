@@ -25,13 +25,12 @@ func (p *Pair) Grow(n int) error {
 	if n > maxPipeSize {
 		return fmt.Errorf("splice: want %d bytes, max pipe size %d", n, maxPipeSize)
 	}
-
 	newsize, errNo := fcntl(p.r.Fd(), F_SETPIPE_SZ, n)
 	if errNo != 0 {
 		return fmt.Errorf("splice: fcntl returned %v", errNo)
 	}
 	if newsize < n {
-		return fmt.Errorf("splice: F_SETPIPE_SZ only increased size to %d, had requested %d",newsize,n)
+		return fmt.Errorf("splice: F_SETPIPE_SZ only increased size to %d, had requested %d", newsize, n)
 	}
 	p.size = newsize
 	return nil

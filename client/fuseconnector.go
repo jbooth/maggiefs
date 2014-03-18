@@ -248,7 +248,9 @@ func (m *MaggieFuse) SetAttr(input *fuse.SetAttrIn, out *fuse.AttrOut) (code fus
 		if err != nil {
 			log.Printf("Error truncating from SetAttr: %s", err)
 		}
-		_ = m.leases.Notify(input.NodeId)
+		// we changed the region from newSize to oldSize
+		// TODO might have to fetch old size to signal those pages as gone -- fillAttrOut at end should handle it with new size though
+		_ = m.leases.Notify(input.NodeId, int64(input.Size), int64(input.Size))
 	}
 	// only make the call to SetAttr if we have a valid param
 	if input.Valid&(fuse.FATTR_MODE|fuse.FATTR_UID|fuse.FATTR_GID|fuse.FATTR_MTIME|fuse.FATTR_MTIME_NOW|fuse.FATTR_MTIME|fuse.FATTR_MTIME_NOW) != 0 {

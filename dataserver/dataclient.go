@@ -3,11 +3,11 @@ package dataserver
 import (
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"log"
 	"math/rand"
 	"net"
 	"os"
 	"sync"
-  "log"
 )
 
 // compile-time check for type safety
@@ -63,62 +63,60 @@ func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr, error) {
 	return raddr, nil
 }
 
-  // we have 2 methods to read, in order to optimize by avoiding a context switch for singleblock reads
-    //ReadNoCommit(blk Block, buf SplicerTo, pos uint32, length uint32, onDone chan bool) error
-      //ReadCommit(blk Block, buf SplicerTo, pos uint32, length uint32) error 
+// we have 2 methods to read, in order to optimize by avoiding a context switch for singleblock reads
+//ReadNoCommit(blk Block, buf SplicerTo, pos uint32, length uint32, onDone chan bool) error
+//ReadCommit(blk Block, buf SplicerTo, pos uint32, length uint32) error
 
-
-
-func (dc *DataClient) ReadCommit (blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) error {
-  return dc.doRead(blk,buf,pos,length,func() {
-    err := buf.Commit()
-    if err != nil {
-      log.Printf("Err committing buff in dataclient.ReadCommit: %s",err)
-    }
-  })
+func (dc *DataClient) ReadCommit(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) error {
+	return dc.doRead(blk, buf, pos, length, func() {
+		err := buf.Commit()
+		if err != nil {
+			log.Printf("Err committing buff in dataclient.ReadCommit: %s", err)
+		}
+	})
 }
 
 func (dc *DataClient) ReadNoCommit(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone chan bool) error {
-  return dc.doRead(blk,buf,pos,length,func() {
-    onDone <- true
-  })
+	return dc.doRead(blk, buf, pos, length, func() {
+		onDone <- true
+	})
 
 }
 
 // does the read and calls onDone in receiver thread after splicing to SplicerTo
 func (dc *DataClient) doRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func()) error {
-  if dc.isLocal(blk.Volumes) {
-    // local direct read
-    return dc.localDS.DirectRead(blk, buf, pos, length, onDone)
-  }
-  host, err := dc.VolHost(pickVol(blk.Volumes))
-  if err != nil {
-    return nil
-  }
+	if dc.isLocal(blk.Volumes) {
+		// local direct read
+		return dc.localDS.DirectRead(blk, buf, pos, length, onDone)
+	}
+	host, err := dc.VolHost(pickVol(blk.Volumes))
+	if err != nil {
+		return nil
+	}
 
-  conn, err := dc.pool.getConn(host)
-  if err != nil {
-    return err
-  }
-  header := RequestHeader{OP_READ, 0, blk, pos, length}
-  conn.DoRequest(header, nil, func(d *os.File) {
-    // read resp bytes
-    //fmt.Printf("Entering loop to read %d bytes\n",length)
-    numRead := 0
-    for uint32(numRead) < length {
-      fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length-uint32(numRead), d, numRead, int(length))
-      //      fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
-      n, err := buf.SpliceBytes(d.Fd(), int(length)-numRead)
-      //      fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
-      if err != nil {
-        fmt.Printf("Error while splicing: %s\n", err)
-        return
-      }
-      numRead += n
-    }
-    onDone()
-  })
-  return nil
+	conn, err := dc.pool.getConn(host)
+	if err != nil {
+		return err
+	}
+	header := RequestHeader{OP_READ, 0, blk, pos, length}
+	conn.DoRequest(header, nil, func(d *os.File) {
+		// read resp bytes
+		//fmt.Printf("Entering loop to read %d bytes\n",length)
+		numRead := 0
+		for uint32(numRead) < length {
+			//fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length-uint32(numRead), d, numRead, int(length))
+			//      fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
+			n, err := buf.LoadFrom(d.Fd(), int(length)-numRead)
+			//      fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
+			if err != nil {
+				log.Printf("Error while splicing: %s\n", err)
+				return
+			}
+			numRead += n
+		}
+		onDone()
+	})
+	return nil
 }
 
 func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64, onDone func()) (err error) {

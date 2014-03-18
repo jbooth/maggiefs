@@ -288,17 +288,13 @@ func doRead(server *Server, req *request) {
 		}
 		return
 	}
-	readResult := &readPipe{server, req, pipe}
+	readPipe := &readPipe{server, req, pipe, 0}
 	// execute filesystem handler to splice header and actual read results into buffer
-	req.status = server.fileSystem.Read(in, readResult)
-	req.flatData = nil
+	req.status = server.fileSystem.Read(in, readPipe)
+	// note, FS handler will handle read asynchronously, we just proceed along our way
 	if !req.status.Ok() {
-		log.Printf("Error code while reading\n")
-		req.readNumBytesInChan = 0
+		log.Printf("fuse.opcode.doRead: Error code while firing read command: %s\n", req.status)
 		splice.Drop(pipe)
-	} else {
-		// mountstate will handle this pipe specially since it has a pipe attached
-		req.readBuffer = pipe
 	}
 }
 

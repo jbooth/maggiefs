@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 	"unsafe"
-	"github.com/jbooth/maggiefs/splice"
 )
 
 var sizeOfOutHeader = unsafe.Sizeof(OutHeader{})
@@ -27,11 +26,6 @@ type request struct {
 	outData  unsafe.Pointer
 	status   Status
 	flatData []byte
-
-	// In case of read, keep read result buffer here so we can call
-	// splice on it
-	readNumBytesInChan int
-	readBuffer *splice.Pair
 
 	// Start timestamp for timing info.
 	startTime time.Time
@@ -65,7 +59,6 @@ func (r *request) clear() {
 	r.outData = nil
 	r.status = OK
 	r.flatData = nil
-	r.readBuffer = nil
 	r.startTime = time.Time{}
 	r.handler = nil
 }
@@ -105,10 +98,6 @@ func (r *request) OutputDebug() string {
 		if r.handler.FileNameOut {
 			s := strings.TrimRight(string(r.flatData), "\x00")
 			flatStr = fmt.Sprintf(" %q", s)
-		} else {
-			if r.readBuffer != nil {
-				flatStr = fmt.Sprintf(" (has pipe buffer with %d bytes in chan)",r.readNumBytesInChan)
-			}
 		}
 	}
 
@@ -201,8 +190,5 @@ func (r *request) serializeHeader(dataSize int) (header []byte) {
 }
 
 func (r *request) flatDataSize() int {
-	if r.readBuffer != nil {
-		return int(r.readNumBytesInChan)
-	}
 	return len(r.flatData)
 }

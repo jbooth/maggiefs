@@ -104,9 +104,14 @@ func NewWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.Name
 	return ret
 }
 
+type offAndLen struct {
+	off    int64
+	length int64
+}
+
 // represents either an outstanding write or a sync request
 type pendingWrite struct {
-	done   chan uint64
+	done   chan offAndLen
 	isSync bool
 }
 
@@ -143,22 +148,47 @@ func (w *Writer) process() {
 				break INNER
 			}
 		}
-		// coalesce
-		newLen := uint64(0)
-		for _, w := range updates {
-			l := <-w.done
-			if l > newLen {
-				newLen = l
+		// coalesce updates if we can
+		newOff := int64(0)
+		newLen := int64(0)
+		for _, write := range updates {
+			newOffAndLen := <-write.done
+			if newOff == 0 {
+				// don't have a previous write we're extending, so set them and reloop
+				newOff = newOffAndLen.off
+				newLen = newOffAndLen.length
+			} else if newOff+newLen == newOffAndLen.off {
+				// aligns with our existing write, so extend before notifying
+				newLen += newOffAndLen.length
+			} else {
+				// we have a previous write that needs flushing
+
+				// make sure namenode thinks inode is at least this long
+				_, err := w.names.Extend(w.inodeid, uint64(newLen+newOff))
+				if err != nil {
+					log.Printf("Error extending ino %d to length %d", w.inodeid, uint64(newLen+newOff))
+				}
+				// notify other nodes in cluster
+				err = w.leases.Notify(w.inodeid, newOff, newLen)
+				if err != nil {
+					log.Printf("Error notifying on ino %d to length %d", w.inodeid, uint64(newLen+newOff))
+				}
+				// re-initialize vals
+				newOff = newOffAndLen.off
+				newLen = newOffAndLen.length
 			}
 		}
-		if newLen > 0 {
-			_, err := w.names.Extend(w.inodeid, newLen)
+		if newOff > 0 && newLen > 0 {
+			// one last update
+			_, err := w.names.Extend(w.inodeid, uint64(newOff+newLen))
 			if err != nil {
-				log.Printf("Error extending ino %d : %s", err)
+				log.Printf("Error extending ino %d to length %d", w.inodeid, uint64(newLen+newOff))
 			}
-			err = w.leases.Notify(w.inodeid)
-			fmt.Printf("Finished updating ino %d to len %d\n", w.inodeid, newLen)
-			newLen = 0
+
+			err = w.leases.Notify(w.inodeid, newOff, newLen)
+			if err != nil {
+				log.Printf("Error notifying on ino %d to length %d", w.inodeid, uint64(newLen+newOff))
+			}
 		}
 		if syncRequest.done != nil {
 			<-syncRequest.done
@@ -183,12 +213,12 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 	}
 	writes := blockwrites(inode, p, position, length)
 	for _, wri := range writes {
-		pending := pendingWrite{make(chan uint64, 1), false}
+		pending := pendingWrite{make(chan offAndLen, 1), false}
 		w.pendingWrites <- pending
-		lengthAtEndOfWrite := wri.b.StartPos + wri.posInBlock + uint64(len(wri.p))
 		err = w.datas.Write(wri.b, wri.p, wri.posInBlock, func() {
-			log.Printf("Finished write, ino length %d, in callback now \n", lengthAtEndOfWrite)
-			pending.done <- lengthAtEndOfWrite
+			finishedWrite := offAndLen{int64(wri.b.StartPos + wri.posInBlock), int64(len(wri.p))}
+			log.Printf("Finished write, operation %+v, in callback now \n", finishedWrite)
+			pending.done <- finishedWrite
 		})
 		if err != nil {
 			return err
@@ -198,7 +228,7 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 }
 
 func (w *Writer) Sync() error {
-	syncRequest := pendingWrite{make(chan uint64), true}
+	syncRequest := pendingWrite{make(chan offAndLen), true}
 	w.l.Lock()
 	if w.closed {
 		w.l.Unlock()
@@ -207,7 +237,7 @@ func (w *Writer) Sync() error {
 	w.pendingWrites <- syncRequest
 	w.l.Unlock()
 	// since syncRequest is unbuffered, this will block until processed
-	syncRequest.done <- 0
+	syncRequest.done <- offAndLen{0, 0}
 	return nil
 }
 
@@ -215,9 +245,9 @@ func (w *Writer) Close() error {
 	w.l.Lock()
 	defer w.l.Unlock()
 	w.closed = true
-	syncRequest := pendingWrite{make(chan uint64), true}
+	syncRequest := pendingWrite{make(chan offAndLen), true}
 	w.pendingWrites <- syncRequest
-	syncRequest.done <- 0
+	syncRequest.done <- offAndLen{0, 0}
 	close(w.pendingWrites)
 	return nil
 }

@@ -2,6 +2,7 @@ package fuse
 
 import (
 	"fmt"
+	"github.com/jbooth/maggiefs/splice"
 	"log"
 	"os"
 	"path/filepath"
@@ -10,7 +11,6 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
-	"github.com/jbooth/maggiefs/splice"
 )
 
 const (
@@ -321,7 +321,7 @@ func (ms *Server) handleRequest(req *request) {
 	if req.handler == nil {
 		req.status = ENOSYS
 	}
-
+	initialHeader := req.inHeader
 	if req.status.Ok() && ms.debug {
 		log.Println(req.InputDebug())
 	}
@@ -334,15 +334,21 @@ func (ms *Server) handleRequest(req *request) {
 	if req.status.Ok() {
 		req.handler.Func(ms, req)
 	}
-  // read requests are a special case, filesystem is responsible for Commit() ing them, see api.go:readpipe
-  if req.inHeader.Opcode != _OP_READ {
-	  errNo := ms.write(req)
-	  if errNo != 0 {
-		  log.Printf("writer: Write/Writev failed, err: %v. opcode: %v",
-			  errNo, operationName(req.inHeader.Opcode))
-	  }
-	  ms.returnRequest(req)
-  }
+	// read requests are a special case, filesystem is responsible for Commit() ing them, so we return early here.
+	// see api.go:readpipe
+	if req.inHeader == nil {
+		log.Printf("Request.inheader is nil!  Going to panic soon, original header was %+v", initialHeader)
+	}
+	if req.inHeader.Opcode == _OP_READ {
+		return
+	}
+
+	errNo := ms.write(req)
+	if errNo != 0 {
+		log.Printf("writer: Write/Writev failed, err: %v. opcode: %v",
+			errNo, operationName(req.inHeader.Opcode))
+	}
+	ms.returnRequest(req)
 }
 
 func (ms *Server) allocOut(req *request, size uint32) []byte {
@@ -366,7 +372,7 @@ func (ms *Server) write(req *request) Status {
 	if ms.debug {
 		log.Println(req.OutputDebug())
 	}
-	
+
 	// use writev to push header and flatData atomically
 	s := ms.systemWrite(req)
 	if req.inHeader.Opcode == _OP_INIT {
@@ -375,31 +381,65 @@ func (ms *Server) write(req *request) Status {
 	return s
 }
 
-
 func (ms *Server) systemWrite(req *request) Status {
+	if req.inHeader.Opcode == _OP_READ {
+		log.Printf("Error, called systemWrite with a read request, this shouldn't happen")
+		return ENOSYS
+	}
 	var err error
-	if req.readBuffer != nil {
-		// if we have a pipe, then use splice
-		// header is already in pipe
-		_,err = req.readBuffer.WriteTo(uintptr(ms.mountFd),req.readNumBytesInChan) 
-		splice.Done(req.readBuffer)
-		req.readBuffer = nil
+	// serialize header
+	header := req.serializeHeader(req.flatDataSize())
+	if header == nil {
+		return OK
+	}
+	// write header and body
+	log.Printf("Acquiring log for write %s", req.OutputDebug())
+	ms.reqMu.Lock()
+	log.Printf("Got lock, writing")
+	if req.flatDataSize() == 0 {
+		// if no body just header
+		_, err = syscall.Write(ms.mountFd, header)
 	} else {
-		// serialize header
-		header := req.serializeHeader(req.flatDataSize())
-		if header == nil {
-			return OK
-		}
-		// write header and body
-		if req.flatDataSize() == 0 {
-			// if no body just header
-			_, err = syscall.Write(ms.mountFd, header)
-		} else {
-			// if body, use writev to push header and flatData atomically
-			_, err = writev(ms.mountFd, [][]byte{header, req.flatData})
-		}
+		// if body, use writev to push header and flatData atomically
+		_, err = writev(ms.mountFd, [][]byte{header, req.flatData})
+	}
+	log.Printf("Done write, releasing lock")
+	ms.reqMu.Unlock()
+	if err != nil {
+		log.Printf("server.systemWrite: Error writing request to mount FD: %s", err)
 	}
 	return ToStatus(err)
+}
+
+func (ms *Server) commitReadResults(req *request, pair *splice.Pair, numInPipe int, err error) {
+	if err != nil {
+		// write header with err status and 0 bytes
+		req.status = ToStatus(err)
+		header := req.serializeHeader(0)
+		ms.reqMu.Lock()
+		log.Printf("Fuse client writing err response for read, err %s req %v", err, req)
+		_, e1 := syscall.Write(ms.mountFd, header)
+		ms.reqMu.Unlock()
+		if err != nil {
+			log.Printf("fuse.server.commitReadResults error writing err header: origErr: %s writeErr: %s", err, e1)
+		}
+		splice.Drop(pair)
+		//ms.returnRequest(req)
+		return
+	}
+	// normal send
+	ms.reqMu.Lock()
+	log.Printf("Fuse client writing response for req %v", req)
+	_, err = pair.WriteTo(uintptr(ms.mountFd), numInPipe)
+	log.Printf("Fuse client finished writing response")
+	ms.reqMu.Unlock()
+	if err != nil {
+		log.Printf("fuse.server.commitReadResults error splicing from pipe: %s", err)
+		splice.Drop(pair)
+	} else {
+		ms.returnRequest(req)
+		splice.Done(pair)
+	}
 }
 
 // InodeNotify invalidates the information associated with the inode
@@ -418,11 +458,7 @@ func (ms *Server) InodeNotify(node uint64, off int64, length int64) Status {
 		status:  NOTIFY_INVAL_INODE,
 	}
 	req.outData = unsafe.Pointer(entry)
-
-	// Protect against concurrent close.
-	ms.reqMu.Lock()
 	result := ms.write(&req)
-	ms.reqMu.Unlock()
 
 	if ms.debug {
 		log.Println("Response: INODE_NOTIFY", result)
@@ -460,10 +496,7 @@ func (ms *Server) DeleteNotify(parent uint64, child uint64, name string) Status 
 	req.outData = unsafe.Pointer(entry)
 	req.flatData = nameBytes
 
-	// Protect against concurrent close.
-	ms.reqMu.Lock()
 	result := ms.write(&req)
-	ms.reqMu.Unlock()
 
 	if ms.debug {
 		log.Printf("Response: DELETE_NOTIFY: %v", result)
@@ -494,10 +527,7 @@ func (ms *Server) EntryNotify(parent uint64, name string) Status {
 	req.outData = unsafe.Pointer(entry)
 	req.flatData = nameBytes
 
-	// Protect against concurrent close.
-	ms.reqMu.Lock()
 	result := ms.write(&req)
-	ms.reqMu.Unlock()
 
 	if ms.debug {
 		log.Printf("Response: ENTRY_NOTIFY: %v", result)
