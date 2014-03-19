@@ -13,6 +13,7 @@ import (
 func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, position uint64, length uint32) (err error) {
 	if position == inode.Length {
 		// write header for OK, 0 bytes at EOF
+		log.Printf("Read at EOF, position %d length %d, returning 0", position, inode.Length)
 		p.WriteHeader(0, 0)
 		return nil
 	}
@@ -21,6 +22,7 @@ func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, po
 	}
 	if position+uint64(length) > inode.Length {
 		// truncate length to the EOF
+		log.Printf("Truncating length from %d to %d", length, inode.Length-position)
 		length = uint32(inode.Length - position)
 	}
 	// write header
@@ -70,6 +72,7 @@ func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, po
 		position += uint64(numBytesFromBlock)
 		//fmt.Printf("finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
 	}
+	log.Printf("Done with read, successfully read %d out of %d", nRead, length)
 	// sometimes the length can be more bytes than there are in the file, so always just give that back
 	return nil
 }
@@ -126,6 +129,7 @@ func (w *Writer) process() {
 		if !ok {
 			return
 		}
+		log.Printf("process() Got write %+v from channel in blocking call", write)
 		updates := []pendingWrite{write}
 		numUpdates := 1
 		// pull up to 32 updates as we can without blocking
@@ -140,6 +144,7 @@ func (w *Writer) process() {
 					syncRequest = write
 					break INNER
 				}
+				log.Printf("process() Got write %+v from channel w/ nonblocking call", write)
 				updates = append(updates, write)
 				numUpdates += 1
 				if numUpdates > 32 {
@@ -153,8 +158,10 @@ func (w *Writer) process() {
 		newOff := int64(0)
 		newLen := int64(0)
 		for _, write := range updates {
+			log.Printf("Handling update %+v", write)
 			newOffAndLen := <-write.done
-			if newOff == 0 {
+			log.Printf("New off and len : %+v", newOffAndLen)
+			if newOff == 0 && newLen == 0 {
 				// don't have a previous write we're extending, so set them and reloop
 				newOff = newOffAndLen.off
 				newLen = newOffAndLen.length
@@ -164,6 +171,7 @@ func (w *Writer) process() {
 			} else {
 				// we have a previous write that needs flushing
 
+				log.Printf("Updating master with off %d len %d", newOff, newLen)
 				// make sure namenode thinks inode is at least this long
 				_, err := w.names.Extend(w.inodeid, uint64(newLen+newOff))
 				if err != nil {
@@ -179,13 +187,13 @@ func (w *Writer) process() {
 				newLen = newOffAndLen.length
 			}
 		}
-		if newOff > 0 && newLen > 0 {
+		if newLen > 0 {
+			log.Printf("Updating master with off %d len %d", newOff, newLen)
 			// one last update
 			_, err := w.names.Extend(w.inodeid, uint64(newOff+newLen))
 			if err != nil {
 				log.Printf("Error extending ino %d to length %d", w.inodeid, uint64(newLen+newOff))
 			}
-
 			err = w.doNotify(w.inodeid, newOff, newLen)
 			if err != nil {
 				log.Printf("Error notifying on ino %d to length %d", w.inodeid, uint64(newLen+newOff))
@@ -205,8 +213,8 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 		return fmt.Errorf("Can't write, already closed!")
 	}
 	if len(inode.Blocks) == 0 || inode.Blocks[len(inode.Blocks)-1].EndPos < position+uint64(length) {
-		log.Printf("Syncing before adding block")
-		w.doSync()
+		//log.Printf("Syncing before adding block")
+		//w.doSync()
 		log.Printf("Adding a block to inode %+v..", inode)
 		blockPos := uint64(0)
 		if len(inode.Blocks) > 0 {
@@ -217,6 +225,10 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 			return err
 		}
 		log.Printf("Added a block, new inode %+v", inode)
+		// invalidate local ino cache to make sure future reads see this block
+		// 0 length and offset prevent spurious cluster notify
+		w.doNotify(inode.Inodeid, 0, 0)
+
 	}
 	writes := blockwrites(inode, p, position, length)
 	for _, wri := range writes {

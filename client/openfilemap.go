@@ -73,7 +73,9 @@ func (o *OpenFileMap) handleNotifications() {
 // of inodes associated with open files are updated properly
 // does NOT call our local onNotify method (we don't want to mess with page locks and possibly conflict with writes)
 func (o *OpenFileMap) doNotify(inodeid uint64, off int64, length int64) (err error) {
-	err = o.leases.Notify(inodeid, off, length)
+	if off > 0 || length > 0 {
+		err = o.leases.Notify(inodeid, off, length)
+	}
 	o.clear(inodeid)
 	return err
 }
@@ -152,7 +154,9 @@ func (o *OpenFileMap) Close(fh uint64) (err error) {
 }
 
 func (o *OpenFileMap) Read(fd uint64, buf fuse.ReadPipe, pos uint64, length uint32) (err error) {
+	log.Printf("Reading %d bytes from fd %d", length, fd)
 	_, ino, err := o.getInode(fd)
+	log.Printf("Got ino for read %+v", ino)
 	if err != nil {
 		return err
 	}

@@ -230,8 +230,8 @@ func TestShortRead(t *testing.T) {
 	}
 
 	readBytes := newTestReadPipe()
+	fmt.Printf("Reading %d bytes\n", n)
 	err = openFiles.Read(writefd, readBytes, 0, 5)
-	fmt.Printf("Read %d bytes\n", n)
 	if err != nil {
 		t.Fatal(err)
 	}
