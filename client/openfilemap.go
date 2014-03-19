@@ -58,20 +58,34 @@ func (o *OpenFileMap) handleNotifications() {
 	notifications := o.leases.GetNotifier()
 	for event := range notifications {
 		inodeid := event.Inodeid()
-		o.l.RLock()
-		openIno := o.inodes[inodeid]
-		o.l.RUnlock()
-		openIno.l.Lock()
-		fmt.Printf("Nilling openInode %d after notify\n", openIno.inodeid)
-		openIno.ino = nil
-		openIno.l.Unlock()
+		o.clear(inodeid)
+		log.Printf("Sending notify to OS through fuse chan")
 		o.onNotify(inodeid)
-		fmt.Printf("Nilled openIno %d, acking\n", openIno.inodeid)
+		log.Printf("acking %d", inodeid)
 		err := event.Ack()
 		if err != nil {
 			log.Printf("Error acking on notify for ino %d : %s", inodeid, err)
 		}
 	}
+}
+
+// all clients should call leaseservice.Notify through here, so our local copies
+// of inodes associated with open files are updated properly
+// does NOT call our local onNotify method (we don't want to mess with page locks and possibly conflict with writes)
+func (o *OpenFileMap) doNotify(inodeid uint64, off int64, length int64) (err error) {
+	err = o.leases.Notify(inodeid, off, length)
+	o.clear(inodeid)
+	return err
+}
+
+func (o *OpenFileMap) clear(inodeid uint64) {
+	o.l.RLock()
+	openIno := o.inodes[inodeid]
+	o.l.RUnlock()
+	openIno.l.Lock()
+	fmt.Printf("Nilling openInode %d after notify\n", openIno.inodeid)
+	openIno.ino = nil
+	openIno.l.Unlock()
 }
 
 func (o *OpenFileMap) Open(inodeid uint64, writable bool) (fh uint64, err error) {
@@ -81,7 +95,7 @@ func (o *OpenFileMap) Open(inodeid uint64, writable bool) (fh uint64, err error)
 	fh = o.fhCtr
 	var w *Writer
 	if writable {
-		w = NewWriter(inodeid, o.leases, o.names, o.datas, o.localDnId)
+		w = NewWriter(inodeid, o.doNotify, o.names, o.datas, o.localDnId)
 	}
 	// check inode
 	ino, exists := o.inodes[inodeid]

@@ -88,7 +88,7 @@ func blockForPos(position uint64, inode *maggiefs.Inode) (blk maggiefs.Block, er
 
 // manages async writes
 type Writer struct {
-	leases        maggiefs.LeaseService
+	doNotify      func(inodeid uint64, offset int64, length int64) error
 	names         maggiefs.NameService
 	datas         maggiefs.DataService
 	myDnId        *uint32
@@ -98,8 +98,9 @@ type Writer struct {
 	closed        bool
 }
 
-func NewWriter(inodeid uint64, leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, myDnId *uint32) *Writer {
-	ret := &Writer{leases, names, datas, myDnId, inodeid, make(chan pendingWrite, 16), new(sync.Mutex), false}
+// on construction, we pass in a wrapper for the notify method which invalidates openFileMap's inode cache
+func NewWriter(inodeid uint64, doNotify func(inodeid uint64, offset int64, length int64) error, names maggiefs.NameService, datas maggiefs.DataService, myDnId *uint32) *Writer {
+	ret := &Writer{doNotify, names, datas, myDnId, inodeid, make(chan pendingWrite, 16), new(sync.Mutex), false}
 	go ret.process()
 	return ret
 }
@@ -169,7 +170,7 @@ func (w *Writer) process() {
 					log.Printf("Error extending ino %d to length %d", w.inodeid, uint64(newLen+newOff))
 				}
 				// notify other nodes in cluster
-				err = w.leases.Notify(w.inodeid, newOff, newLen)
+				err = w.doNotify(w.inodeid, newOff, newLen)
 				if err != nil {
 					log.Printf("Error notifying on ino %d to length %d", w.inodeid, uint64(newLen+newOff))
 				}
@@ -185,7 +186,7 @@ func (w *Writer) process() {
 				log.Printf("Error extending ino %d to length %d", w.inodeid, uint64(newLen+newOff))
 			}
 
-			err = w.leases.Notify(w.inodeid, newOff, newLen)
+			err = w.doNotify(w.inodeid, newOff, newLen)
 			if err != nil {
 				log.Printf("Error notifying on ino %d to length %d", w.inodeid, uint64(newLen+newOff))
 			}
@@ -204,12 +205,18 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 		return fmt.Errorf("Can't write, already closed!")
 	}
 	if len(inode.Blocks) == 0 || inode.Blocks[len(inode.Blocks)-1].EndPos < position+uint64(length) {
-		fmt.Printf("Adding a block..")
+		log.Printf("Syncing before adding block")
+		w.doSync()
+		log.Printf("Adding a block to inode %+v..", inode)
 		blockPos := uint64(0)
 		if len(inode.Blocks) > 0 {
 			blockPos = inode.Blocks[len(inode.Blocks)-1].EndPos + 1
 		}
 		inode, err = w.names.AddBlock(inode.Inodeid, blockPos, w.myDnId)
+		if err != nil {
+			return err
+		}
+		log.Printf("Added a block, new inode %+v", inode)
 	}
 	writes := blockwrites(inode, p, position, length)
 	for _, wri := range writes {
@@ -228,6 +235,8 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 }
 
 func (w *Writer) Sync() error {
+	// questionable optimization, we let go of the lock while waiting on sync,
+	// so other writes can get in behind us and keep the pipeline full
 	syncRequest := pendingWrite{make(chan offAndLen), true}
 	w.l.Lock()
 	if w.closed {
@@ -245,11 +254,16 @@ func (w *Writer) Close() error {
 	w.l.Lock()
 	defer w.l.Unlock()
 	w.closed = true
-	syncRequest := pendingWrite{make(chan offAndLen), true}
-	w.pendingWrites <- syncRequest
-	syncRequest.done <- offAndLen{0, 0}
+	w.doSync()
 	close(w.pendingWrites)
 	return nil
+}
+
+func (w *Writer) doSync() {
+	syncRequest := pendingWrite{make(chan offAndLen), true}
+	w.pendingWrites <- syncRequest
+	// since syncRequest is unbuffered, this will block until processed
+	syncRequest.done <- offAndLen{0, 0}
 }
 
 type blockwrite struct {
