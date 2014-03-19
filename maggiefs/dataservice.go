@@ -6,15 +6,15 @@ import (
 
 type DataService interface {
 	// given a volume ID (see struct Block), get the associated hostname
-	// exposed for hadoop integration
+	// exposed to support getattr blocklocations
 	VolHost(volId uint32) (*net.TCPAddr, error)
 
 	// we have 2 methods to read, in order to optimize by avoiding a context switch for singleblock reads
-	ReadNoCommit(blk Block, buf SplicerTo, pos uint64, length uint32, onDone chan bool) error
-	ReadCommit(blk Block, buf SplicerTo, pos uint64, length uint32) error
+	// when done, onDone will be called from a dedicated goroutine (so don't block on anything)
+	Read(blk Block, buf SplicerTo, pos uint64, length uint32, onDone func()) error
 
 	// executes an async write to the provided block, replicating to each volume in the order specified on the block
-	// when done, onDone will be called
+	// when done, onDone will be called from a dedicated goroutine (so don't block on anything)
 	Write(blk Block, p []byte, posInBlock uint64, onDone func()) (err error)
 }
 
@@ -27,8 +27,6 @@ type SplicerTo interface {
 	LoadFromAt(fd uintptr, length int, offset int64) (int, error)
 	// write bytes to the pipe from an in-memory buffer
 	Write(b []byte) (int, error)
-	// splices our read result to fuse server
-	Commit() error
 }
 
 // interface exposed from datanodes to namenode (and tests)

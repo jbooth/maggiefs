@@ -321,7 +321,7 @@ func (ms *Server) handleRequest(req *request) {
 	if req.handler == nil {
 		req.status = ENOSYS
 	}
-	initialHeader := req.inHeader
+	isRead := req.inHeader.Opcode == _OP_READ
 	if req.status.Ok() && ms.debug {
 		log.Println(req.InputDebug())
 	}
@@ -334,20 +334,16 @@ func (ms *Server) handleRequest(req *request) {
 	if req.status.Ok() {
 		req.handler.Func(ms, req)
 	}
-	// read requests are a special case, filesystem is responsible for Commit() ing them, so we return early here.
+	// read requests are a special case, filesystem is responsible for Commit() ing them, so we don't write to pipe here
 	// see api.go:readpipe
-	if req.inHeader == nil {
-		log.Printf("Request.inheader is nil!  Going to panic soon, original header was %+v", initialHeader)
-	}
-	if req.inHeader.Opcode == _OP_READ {
-		return
+	if !isRead {
+		errNo := ms.write(req)
+		if errNo != 0 {
+			log.Printf("writer: Write/Writev failed, err: %v. opcode: %v",
+				errNo, operationName(req.inHeader.Opcode))
+		}
 	}
 
-	errNo := ms.write(req)
-	if errNo != 0 {
-		log.Printf("writer: Write/Writev failed, err: %v. opcode: %v",
-			errNo, operationName(req.inHeader.Opcode))
-	}
 	ms.returnRequest(req)
 }
 
@@ -424,7 +420,6 @@ func (ms *Server) commitReadResults(req *request, pair *splice.Pair, numInPipe i
 			log.Printf("fuse.server.commitReadResults error writing err header: origErr: %s writeErr: %s", err, e1)
 		}
 		splice.Drop(pair)
-		//ms.returnRequest(req)
 		return
 	}
 	// normal send

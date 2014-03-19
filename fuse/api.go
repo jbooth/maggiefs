@@ -46,6 +46,72 @@ type MountOptions struct {
 	SingleThreaded bool
 }
 
+// RawFileSystem is an interface close to the FUSE wire protocol.
+//
+// A null implementation is provided by NewDefaultRawFileSystem.
+type RawFileSystem interface {
+	String() string
+
+	// If called, provide debug output through the log package.
+	SetDebug(debug bool)
+
+	Lookup(header *InHeader, name string, out *EntryOut) (status Status)
+	Forget(nodeid, nlookup uint64)
+
+	// Attributes.
+	GetAttr(input *GetAttrIn, out *AttrOut) (code Status)
+	SetAttr(input *SetAttrIn, out *AttrOut) (code Status)
+
+	// Modifying structure.
+	Mknod(input *MknodIn, name string, out *EntryOut) (code Status)
+	Mkdir(input *MkdirIn, name string, out *EntryOut) (code Status)
+	Unlink(header *InHeader, name string) (code Status)
+	Rmdir(header *InHeader, name string) (code Status)
+	Rename(input *RenameIn, oldName string, newName string) (code Status)
+	Link(input *LinkIn, filename string, out *EntryOut) (code Status)
+	Symlink(header *InHeader, pointedTo string, linkName string, out *EntryOut) (code Status)
+	Readlink(header *InHeader) (out []byte, code Status)
+	Access(input *AccessIn) (code Status)
+
+	// Extended attributes.
+	GetXAttrSize(header *InHeader, attr string) (sz int, code Status)
+	GetXAttrData(header *InHeader, attr string) (data []byte, code Status)
+	ListXAttr(header *InHeader) (attributes []byte, code Status)
+	SetXAttr(input *SetXAttrIn, attr string, data []byte) Status
+	RemoveXAttr(header *InHeader, attr string) (code Status)
+
+	// File handling.
+	Create(input *CreateIn, name string, out *CreateOut) (code Status)
+	Open(input *OpenIn, out *OpenOut) (status Status)
+
+	// note you must accurately report how many bytes you spliced into the pipe, if you cannot you should return an error status
+	Read(input *ReadIn, buf ReadPipe) (code Status)
+
+	Release(input *ReleaseIn)
+
+	// receives
+	Write(input *WriteIn, data []byte) (written uint32, code Status)
+
+	Flush(input *FlushIn) Status
+	Fsync(input *FsyncIn) (code Status)
+	Fallocate(input *FallocateIn) (code Status)
+
+	// Directory handling
+	OpenDir(input *OpenIn, out *OpenOut) (status Status)
+	ReadDir(input *ReadIn, out *DirEntryList) Status
+	ReadDirPlus(input *ReadIn, out *DirEntryList) Status
+	ReleaseDir(input *ReleaseIn)
+	FsyncDir(input *FsyncIn) (code Status)
+
+	//
+	StatFs(input *InHeader, out *StatfsOut) (code Status)
+
+	// This is called on processing the first request. The
+	// filesystem implementation can use the server argument to
+	// talk back to the kernel (through notify methods).
+	Init(*Server)
+}
+
 // represents an OS pipe which read results will be piped through
 type ReadPipe interface {
 	// write the header prior to splicing any bytes -- code should be 0 on OK, or a syscall value like syscall.EIO on error
@@ -112,70 +178,4 @@ func (r *readPipe) Commit() error {
 	log.Printf("Committing results for write from api.go..")
 	r.fuseServer.commitReadResults(r.req, r.pipe, r.numInPipe, nil)
 	return nil
-}
-
-// RawFileSystem is an interface close to the FUSE wire protocol.
-//
-// A null implementation is provided by NewDefaultRawFileSystem.
-type RawFileSystem interface {
-	String() string
-
-	// If called, provide debug output through the log package.
-	SetDebug(debug bool)
-
-	Lookup(header *InHeader, name string, out *EntryOut) (status Status)
-	Forget(nodeid, nlookup uint64)
-
-	// Attributes.
-	GetAttr(input *GetAttrIn, out *AttrOut) (code Status)
-	SetAttr(input *SetAttrIn, out *AttrOut) (code Status)
-
-	// Modifying structure.
-	Mknod(input *MknodIn, name string, out *EntryOut) (code Status)
-	Mkdir(input *MkdirIn, name string, out *EntryOut) (code Status)
-	Unlink(header *InHeader, name string) (code Status)
-	Rmdir(header *InHeader, name string) (code Status)
-	Rename(input *RenameIn, oldName string, newName string) (code Status)
-	Link(input *LinkIn, filename string, out *EntryOut) (code Status)
-	Symlink(header *InHeader, pointedTo string, linkName string, out *EntryOut) (code Status)
-	Readlink(header *InHeader) (out []byte, code Status)
-	Access(input *AccessIn) (code Status)
-
-	// Extended attributes.
-	GetXAttrSize(header *InHeader, attr string) (sz int, code Status)
-	GetXAttrData(header *InHeader, attr string) (data []byte, code Status)
-	ListXAttr(header *InHeader) (attributes []byte, code Status)
-	SetXAttr(input *SetXAttrIn, attr string, data []byte) Status
-	RemoveXAttr(header *InHeader, attr string) (code Status)
-
-	// File handling.
-	Create(input *CreateIn, name string, out *CreateOut) (code Status)
-	Open(input *OpenIn, out *OpenOut) (status Status)
-
-	// note you must accurately report how many bytes you spliced into the pipe, if you cannot you should return an error status
-	Read(input *ReadIn, buf ReadPipe) (code Status)
-
-	Release(input *ReleaseIn)
-
-	// receives
-	Write(input *WriteIn, data []byte) (written uint32, code Status)
-
-	Flush(input *FlushIn) Status
-	Fsync(input *FsyncIn) (code Status)
-	Fallocate(input *FallocateIn) (code Status)
-
-	// Directory handling
-	OpenDir(input *OpenIn, out *OpenOut) (status Status)
-	ReadDir(input *ReadIn, out *DirEntryList) Status
-	ReadDirPlus(input *ReadIn, out *DirEntryList) Status
-	ReleaseDir(input *ReleaseIn)
-	FsyncDir(input *FsyncIn) (code Status)
-
-	//
-	StatFs(input *InHeader, out *StatfsOut) (code Status)
-
-	// This is called on processing the first request. The
-	// filesystem implementation can use the server argument to
-	// talk back to the kernel (through notify methods).
-	Init(*Server)
 }

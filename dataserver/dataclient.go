@@ -63,28 +63,8 @@ func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr, error) {
 	return raddr, nil
 }
 
-// we have 2 methods to read, in order to optimize by avoiding a context switch for singleblock reads
-//ReadNoCommit(blk Block, buf SplicerTo, pos uint32, length uint32, onDone chan bool) error
-//ReadCommit(blk Block, buf SplicerTo, pos uint32, length uint32) error
-
-func (dc *DataClient) ReadCommit(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32) error {
-	return dc.doRead(blk, buf, pos, length, func() {
-		err := buf.Commit()
-		if err != nil {
-			log.Printf("Err committing buff in dataclient.ReadCommit: %s", err)
-		}
-	})
-}
-
-func (dc *DataClient) ReadNoCommit(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone chan bool) error {
-	return dc.doRead(blk, buf, pos, length, func() {
-		onDone <- true
-	})
-
-}
-
 // does the read and calls onDone in receiver thread after splicing to SplicerTo
-func (dc *DataClient) doRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func()) error {
+func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func()) error {
 	log.Printf("starting read")
 	if dc.isLocal(blk.Volumes) {
 		// local direct read

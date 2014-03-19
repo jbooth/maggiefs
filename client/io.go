@@ -58,11 +58,19 @@ func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, po
 		if numBytesFromBlock == length-nRead {
 			// if the rest of the read is coming from this block, read and commit
 			// note this call is async, not done when we return
-			err = datas.ReadCommit(block, p, posInBlock, numBytesFromBlock)
+			onDone := make(chan bool, 1)
+			err = datas.Read(block, p, posInBlock, numBytesFromBlock, func() {
+				e1 := p.Commit()
+				if e1 != nil {
+					log.Printf("Err committing to pipe from remote read of block %+v, read at posInBlock %d", block, posInBlock)
+				}
+				onDone <- true
+			})
+			<-onDone
 		} else {
 			// else, read and wait till done, commit next time around
 			onDone := make(chan bool, 1)
-			err = datas.ReadNoCommit(block, p, posInBlock, numBytesFromBlock, onDone)
+			err = datas.Read(block, p, posInBlock, numBytesFromBlock, func() { onDone <- true })
 			<-onDone
 		}
 		if err != nil && err != io.EOF {
@@ -122,16 +130,20 @@ type pendingWrite struct {
 // this method greedily pulls as many inode updates as it can in between actually updating
 func (w *Writer) process() {
 	for {
-		// this will be non-nil if we have a sync request to inform when up to date
-		syncRequest := pendingWrite{nil, true}
 		// pull one update in blocking mode
 		write, ok := <-w.pendingWrites
 		if !ok {
 			return
 		}
+		if write.isSync {
+			<-write.done
+			continue
+		}
 		log.Printf("process() Got write %+v from channel in blocking call", write)
 		updates := []pendingWrite{write}
 		numUpdates := 1
+		// this will be non-nil if we have a sync request to inform when up to date
+		syncRequest := pendingWrite{nil, true}
 		// pull up to 32 updates as we can without blocking
 	INNER:
 		for {

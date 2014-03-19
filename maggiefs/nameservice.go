@@ -2,8 +2,8 @@ package maggiefs
 
 import ()
 
-// the lease service provides leases (duh), and streams of notifications about file state change
-// it's incumbent on client to Acknowledge() each notification in a timely manner or lose leases
+// the lease service manages notifications on changes to file data in order to support our use of local page cache
+// as well as certain posix conventions regarding delayed delete of unlinked files which are still open by some process
 type LeaseService interface {
 
 	// takes out a lease for an inode, this is to keep the posix convention that unlinked files
@@ -19,7 +19,7 @@ type LeaseService interface {
 
 	// returns a chan which will contain an event every time any inode in the system is changed
 	// used for cache coherency
-	// the fuse client runs a goroutine reading all changes from this chan
+	// the fuse client OpenFileMap runs a goroutine reading all changes from this chan
 	GetNotifier() chan NotifyEvent
 	// blocks until all leases are released for the given node
 	WaitAllReleased(nodeid uint64) error

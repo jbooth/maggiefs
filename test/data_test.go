@@ -19,7 +19,7 @@ type testReadPipe struct {
 }
 
 func newTestReadPipe() *testReadPipe {
-	return &testReadPipe{0, make([]byte, 128*1024, 128*1024), 0, make(chan bool), new(sync.Mutex)}
+	return &testReadPipe{0, make([]byte, 128*1024, 128*1024), 0, make(chan bool, 1), new(sync.Mutex)}
 }
 
 func (t *testReadPipe) Reset() {
