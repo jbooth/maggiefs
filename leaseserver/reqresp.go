@@ -3,7 +3,6 @@ package leaseserver
 import ()
 
 const (
-	LEASESERVER_PORT          = 1111
 	OP_READLEASE         byte = 1
 	OP_READLEASE_RELEASE byte = 2
 	OP_NOTIFY            byte = 3

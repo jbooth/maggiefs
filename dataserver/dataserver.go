@@ -18,30 +18,18 @@ type DataServer struct {
 	info maggiefs.DataNodeInfo
 	// live and unformatted volumes
 	volumes map[uint32]*volume
-	// accepts data conns for read/write requests
-	dataClientAddr *net.TCPAddr
-	dataIface      *net.TCPListener
-	// accepts conn from namenode
-	nameDataIface *mrpc.CloseableServer
-	nameDataAddr  string
 	// dataservice for pipelining writes
 	dc maggiefs.DataService
-	// locks to manage shutdown
-	clos   *sync.Cond
-	closed bool
 }
 
 // create a new dataserver serving the specified volumes, on the specified addrs, joining the specified nameservice
 func NewDataServer(volRoots []string,
-	dataClientBindAddr string,
-	nameDataBindAddr string,
-	webBindAddr string,
 	ns maggiefs.NameService,
-	dc *DataClient) (ds *DataServer, err error) {
+	dc maggiefs.DataService) (ds *DataServer, err error) {
 	// scan volumes
 	volumes := make(map[uint32]*volume)
 	unformatted := make([]string, 0)
-	fp := NewFilePool(256, 128)
+	fp := NewFilePool(512, 256)
 	for _, volRoot := range volRoots {
 		if validVolume(volRoot) {
 			// initialize existing volume
@@ -87,112 +75,28 @@ func NewDataServer(volRoots []string,
 	}
 
 	// bind to listener sockets
-	dataClientBind, err := net.ResolveTCPAddr("tcp", dataClientBindAddr)
-	if err != nil {
-		return nil, err
-	}
+	ds = &DataServer{ns, dnInfo, volumes, dc, false}
 
-	dataClientListen, err := net.ListenTCP("tcp", dataClientBind)
-	if err != nil {
-		return nil, err
-	}
-	ds = &DataServer{ns, dnInfo, volumes, dataClientBind, dataClientListen, nil, nameDataBindAddr, dc, sync.NewCond(new(sync.Mutex)), false}
-
-	ds.nameDataIface, err = mrpc.CloseableRPC(nameDataBindAddr, mrpc.NewNameDataIfaceService(ds), "NameDataIface")
-	if err != nil {
-		return ds, err
-	}
 	return ds, nil
 }
 
-func (ds *DataServer) Serve() error {
-	errChan := make(chan error, 3)
-	go func() {
-		defer func() {
-			if x := recover(); x != nil {
-				fmt.Printf("run time panic from nameserver rpc: %v\n", x)
-				errChan <- fmt.Errorf("Run time panic: %v", x)
-			}
-		}()
-		errChan <- ds.nameDataIface.Serve()
-	}()
-
-	go func() {
-		defer func() {
-			if x := recover(); x != nil {
-				fmt.Printf("run time panic from nameserver web: %v\n", x)
-				errChan <- fmt.Errorf("Run time panic: %v", x)
-			}
-		}()
-		errChan <- ds.serveClientData()
-	}()
-	// tell namenode we're joining cluster
-	err := ds.ns.Join(ds.info.DnId, ds.nameDataAddr)
+func (ds *DataServer) ServeReadConn(c *net.TCPConn) {
+	conn, err := c.File()
+	c.Close()
+	err = syscall.SetNonblock(int(conn.Fd()), false)
 	if err != nil {
-		ds.Close()
 		return err
 	}
-	err = <-errChan
-	return err
-}
-
-func (ds *DataServer) Close() error {
-	log.Printf("Dataserver shutting down..")
-	ds.clos.L.Lock()
-	defer ds.clos.L.Unlock()
-	if ds.closed {
-		return nil
+	if err != nil {
+		log.Printf("Couldn't convert tcpConn %s to file!  Err %s", c, err)
+		return
 	}
-	ds.nameDataIface.Close()
-	ds.dataIface.Close()
-	for _, v := range ds.volumes {
-		v.Close()
-	}
-	ds.closed = true
-	ds.clos.Broadcast()
-	return nil
-}
-
-func (ds *DataServer) WaitClosed() error {
-	ds.clos.L.Lock()
-	for !ds.closed {
-		ds.clos.Wait()
-	}
-	ds.clos.L.Unlock()
-	return ds.nameDataIface.WaitClosed()
-}
-
-func (ds *DataServer) serveClientData() error {
-	for {
-		tcpConn, err := ds.dataIface.AcceptTCP()
-		if err != nil {
-			log.Printf("Error accepting client on listen addr, shutting down: %s\n", err.Error())
-			return err
-		}
-		tcpConn.SetNoDelay(true)
-		tcpConn.SetReadBuffer(5 * 1024 * 1024)
-		tcpConn.SetWriteBuffer(5 * 1024 * 1024)
-		f, err := tcpConn.File()
-		if err != nil {
-			return err
-		}
-		err = syscall.SetNonblock(int(f.Fd()), false)
-		if err != nil {
-			return err
-		}
-		go ds.serveClientConn(f)
-	}
-}
-
-func (ds *DataServer) serveClientConn(conn *os.File) {
 	defer func() {
 		log.Printf("Dataserver connection shutting down and closing conn %s", conn)
 		conn.Close()
 	}()
-	buff := make([]byte, 128*1024, 128*1024)
-	l := new(sync.Mutex)
+	req := &RequestHeader{}
 	for {
-		req := &RequestHeader{}
 		log.Printf("Dataserver reading header\n")
 		_, err := req.ReadFrom(conn)
 
@@ -206,7 +110,7 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 				return
 			}
 		}
-		log.Printf("Dataserver: Got header %+v\n", req)
+		log.Printf("Dataserver: Got header %+v from conn %s", req, conn)
 		// figure out which of our volumes
 		volForBlock := uint32(0)
 		for volId, _ := range ds.volumes {
@@ -227,16 +131,71 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 		} else {
 			vol := ds.volumes[volForBlock]
 			if req.Op == OP_READ {
-				l.Lock()
 				log.Printf("Dataserver: Serving read..\n")
 				err = vol.serveRead(conn, req)
 				log.Printf("Dataserver: Done with read to sock %s \n", conn)
-				l.Unlock()
 				if err != nil {
 					log.Printf("Dataserver: Err serving read : %s", err.Error())
 					return
 				}
-			} else if req.Op == OP_WRITE {
+			} else {
+				// unrecognized req, send err response
+				resp := &ResponseHeader{STAT_BADOP, req.Reqno}
+				log.Printf("Dataserver got bad op %d", req.Op)
+				_, err := resp.WriteTo(conn)
+				if err != nil {
+					log.Printf("Err serving conn %s : %s", "conn", err.Error())
+					return
+				}
+			}
+		}
+	}
+}
+
+func (ds *DataServer) ServeWriteConn(conn *net.TCPConn) {
+	defer func() {
+		log.Printf("Dataserver connection shutting down and closing conn %s", conn)
+		conn.Close()
+	}()
+	buff := make([]byte, 128*1024, 128*1024)
+	l := new(sync.Mutex)
+	req := &RequestHeader{}
+
+	for {
+		log.Printf("Dataserver reading header\n")
+		_, err := req.ReadFrom(conn)
+
+		if err != nil {
+			// don't log error for remote closed connection
+			if err != io.EOF && err != io.ErrClosedPipe {
+				log.Printf("Err serving conn while reading header : %s\n", err.Error())
+				return
+			} else {
+				log.Printf("Remote closed connection, dataserver conn shutting down: %s", err)
+				return
+			}
+		}
+		log.Printf("Dataserver: Got header %+v from conn %s", req, conn)
+		// figure out which of our volumes
+		volForBlock := uint32(0)
+		for volId, _ := range ds.volumes {
+			for _, blockVolId := range req.Blk.Volumes {
+				if blockVolId == volId {
+					volForBlock = blockVolId
+				}
+			}
+		}
+		if volForBlock == 0 {
+			// return error and reloop
+			resp := &ResponseHeader{STAT_BADVOLUME, req.Reqno}
+			_, err := resp.WriteTo(conn)
+			if err != nil {
+				log.Printf("DataServer: Err serving conn %s : %s", "tcpconn", err.Error())
+				return
+			}
+		} else {
+			vol := ds.volumes[volForBlock]
+			if req.Op == OP_WRITE {
 				writeBuff := buff[:int(req.Length)]
 				nRead := uint32(0)
 				for nRead < req.Length {
@@ -313,7 +272,6 @@ func (ds *DataServer) serveClientConn(conn *os.File) {
 
 	}
 }
-
 func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func()) (err error) {
 	req := &RequestHeader{OP_READ, 0, blk, pos, length}
 	// figure out which of our volumes

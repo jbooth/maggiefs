@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
-	"github.com/jbooth/maggiefs/mrpc"
 	"log"
 	"net"
 	"sync"
@@ -188,73 +187,50 @@ type LeaseServer struct {
 	leaseIdCounter  uint64
 	clientIdCounter uint64
 	ackIdCounter    uint64
-	server          *mrpc.CloseableServer
 }
 
 // new lease server listening on bindAddr
 // bindAddr should be like 0.0.0.0:9999
-func NewLeaseServer(bindAddr string) (*LeaseServer, error) {
-
-	laddr, err := net.ResolveTCPAddr("tcp", bindAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	listener, err := net.ListenTCP("tcp", laddr)
-	if err != nil {
-		return nil, err
-	}
+func NewLeaseServer() *LeaseServer {
 	ls := &LeaseServer{}
 	ls.req = make(chan queuedServerRequest)
 	ls.leasesByInode = make(map[uint64][]lease)
 	ls.leasesById = make(map[uint64]lease)
-	ls.server = mrpc.NewCloseServer(listener, func(conn *net.TCPConn) {
-		// instantiate conn object
-		client, err := newClientConn(ls, conn)
-		fmt.Println("got new client")
-		if err != nil {
-			fmt.Printf("error wrapping clientConn %s\n", err)
-		}
-		// launch goroutines to serve
-		go func() {
-			defer func() {
-				if x := recover(); x != nil {
-					fmt.Printf("run time panic on LeaseServ reading requests for client %s : %s, shutting down \n", client.String(), x)
-					client.closeAndDie()
-				}
-			}()
-			client.readRequests()
+	go ls.process()
+	return ls
+}
+
+func (ls *LeaseServer) ServeConn(conn *net.TCPConn) {
+	// instantiate conn object
+	client, err := newClientConn(ls, conn)
+	fmt.Println("got new client")
+	if err != nil {
+		fmt.Printf("error wrapping clientConn %s\n", err)
+	}
+	// launch goroutines to serve
+	go func() {
+		defer func() {
+			if x := recover(); x != nil {
+				fmt.Printf("run time panic on LeaseServ reading requests for client %s : %s, shutting down \n", client.String(), x)
+				client.closeAndDie()
+			}
 		}()
-		go func() {
-			defer func() {
-				if x := recover(); x != nil {
-					fmt.Printf("run time panic on LeaseServ sending responses from client %s, shutting down \n", client.String(), x)
-					client.closeAndDie()
-				}
-			}()
-			client.sendResponses()
+		client.readRequests()
+	}()
+	go func() {
+		defer func() {
+			if x := recover(); x != nil {
+				fmt.Printf("run time panic on LeaseServ sending responses from client %s, shutting down \n", client.String(), x)
+				client.closeAndDie()
+			}
 		}()
-	})
-	return ls, err
+		client.sendResponses()
+	}()
 }
 
 type queuedServerRequest struct {
 	req  request
 	conn *clientConn
-}
-
-func (ls *LeaseServer) Serve() error {
-	go ls.process()
-	return ls.server.Serve()
-}
-
-func (ls *LeaseServer) Close() error {
-	// TODO unwind pending lease requests?  or notify clients of shutdown?
-	return ls.server.Close()
-}
-
-func (ls *LeaseServer) WaitClosed() error {
-	return ls.server.WaitClosed()
 }
 
 func (ls *LeaseServer) process() {

@@ -3,6 +3,7 @@ package leaseserver
 import (
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -14,19 +15,41 @@ var (
 	ls2 maggiefs.LeaseService
 )
 
+// TODO HERE
+
 func startServer() {
+	leaseServer := NewLeaseServer()
+	port := 1103
 	fmt.Println("starting lease server")
-	server, err := NewLeaseServer(fmt.Sprintf("0.0.0.0:%d", LEASESERVER_PORT))
+	laddr, _ := net.ResolveTCPAddr("tcp", fmt.Sprintf("0.0.0.0:%d", port))
+	acceptor, err := net.ListenTCP("tcp", laddr)
 	if err != nil {
 		panic(err)
 	}
-	go server.Serve()
-	fmt.Println("connecting client")
-	ls, err = NewLeaseClient(fmt.Sprintf("127.0.0.1:%d", LEASESERVER_PORT))
+	go func() {
+		for {
+			tcpConn, err := acceptor.AcceptTCP()
+			if err != nil {
+				panic(err)
+			}
+			go leaseServer.ServeConn(tcpConn)
+		}
+	}()
+
+	serverAddr, _ := net.ResolveTCPAddr("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	lsConn1, err := net.DialTCP("tcp", nil, serverAddr)
 	if err != nil {
 		panic(err)
 	}
-	ls2, err = NewLeaseClient(fmt.Sprintf("127.0.0.1:%d", LEASESERVER_PORT))
+	lsConn2, err := net.DialTCP("tcp", nil, serverAddr)
+	if err != nil {
+		panic(err)
+	}
+	ls, err = NewLeaseClient(lsConn1)
+	if err != nil {
+		panic(err)
+	}
+	ls2, err = NewLeaseClient(lsConn2)
 	if err != nil {
 		panic(err)
 	}

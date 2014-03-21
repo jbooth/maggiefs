@@ -2,6 +2,7 @@ package leaseserver
 
 import (
 	"github.com/jbooth/maggiefs/maggiefs"
+	"net"
 	"time"
 )
 
@@ -9,12 +10,9 @@ type LeaseClient struct {
 	c *rawclient
 }
 
-func NewLeaseClient(hostAddr string) (*LeaseClient, error) {
-	raw, err := newRawClient(hostAddr)
-	if err != nil {
-		return nil, err
-	}
-	return &LeaseClient{raw}, nil
+func NewLeaseClient(leaseServer *net.TCPConn) (*LeaseClient, error) {
+	raw, err := newRawClient(leaseServer)
+	return &LeaseClient{raw}, err
 }
 
 // sends notification

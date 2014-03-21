@@ -4,6 +4,7 @@ import (
 	"net"
 )
 
+// provides read and write capability to blocks, as well as a utility for displaying their locations
 type DataService interface {
 	// given a volume ID (see struct Block), get the associated hostname
 	// exposed to support getattr blocklocations
@@ -18,8 +19,9 @@ type DataService interface {
 	Write(blk Block, p []byte, posInBlock uint64, onDone func()) (err error)
 }
 
-// represents one half of a pipe for splice-based communication with fuse, implemented by fuse.ReadPipe
-// or a buffer on non-fuse-supporting platforms (unimplemented)
+// represents one half of a pipe* for splice-based communication with fuse, implemented by fuse.ReadPipe
+//
+// * or a circular buffer on non-splice-supporting platforms (unimplemented)
 type SplicerTo interface {
 	// splice bytes from the FD to this buffer
 	LoadFrom(fd uintptr, length int) (int, error)
@@ -29,8 +31,9 @@ type SplicerTo interface {
 	Write(b []byte) (int, error)
 }
 
-// interface exposed from datanodes to namenode (and tests)
-type NameDataIface interface {
+// interface exposed from peers to master for administration (and tests)
+// client never interacts with peer interface directly
+type Peer interface {
 	// periodic heartbeat with datanode stats so namenode can keep total stats and re-replicate
 	HeartBeat() (stat *DataNodeStat, err error)
 	// add a block to this datanode/volume

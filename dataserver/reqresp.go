@@ -16,6 +16,10 @@ const (
 	STAT_NOBLOCK   = uint8(2)
 	STAT_BADVOLUME = uint8(3)
 	STAT_BADOP     = uint8(4)
+
+	// routing #s to get us to read or write connections
+	DIAL_READ  = 3
+	DIAL_WRITE = 4
 )
 
 type RequestHeader struct {

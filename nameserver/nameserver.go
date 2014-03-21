@@ -17,7 +17,7 @@ var typeCheck maggiefs.NameService = &NameServer{}
 
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
 // addresses should be a 0.0.0.0:9999 type address
-func NewNameServer(ls maggiefs.LeaseService, nameAddr string, webAddr string, dataDir string, replicationFactor uint32, format bool) (*NameServer, error) {
+func NewNameServer(webAddr string, dataDir string, replicationFactor uint32, format bool) (*NameServer, error) {
 	ns := &NameServer{}
 	var err error = nil
 	ns.ls = ls
@@ -38,13 +38,7 @@ func NewNameServer(ls maggiefs.LeaseService, nameAddr string, webAddr string, da
 	if err != nil {
 		return nil, err
 	}
-	ns.webServer = newNameWebServer(ns, webAddr)
-	ns.rpcServer, err = mrpc.CloseableRPC(ns.listenAddr, mrpc.NewNameServiceService(ns), "NameService")
-	if err != nil {
-		return nil, err
-	}
-	ns.clos = sync.NewCond(new(sync.Mutex))
-	ns.closed = false
+	ns.webServer = newNameWebServer(ns, webAddr) // todo get rid of webserver and do this stuff via setattr
 	return ns, nil
 }
 
@@ -53,27 +47,14 @@ type NameServer struct {
 	nd          *NameData
 	rm          *replicationManager
 	listenAddr  string
-	dirTreeLock *sync.Mutex           // used so all dir tree operations (link/unlink) are atomic
-	rpcServer   *mrpc.CloseableServer // created at start time, need to be closed
+	dirTreeLock *sync.Mutex // used so all dir tree operations (link/unlink) are atomic
 	webListen   net.Listener
 	webServer   *http.Server
-	clos        *sync.Cond
-	closed      bool
 }
 
-func (ns *NameServer) Serve() error {
+// func to serve web stuff
+func (ns *NameServer) ServeWeb() error {
 	var err error = nil
-	errChan := make(chan error, 3)
-	go func() {
-		defer func() {
-			if x := recover(); x != nil {
-				fmt.Printf("run time panic from nameserver rpc: %v\n", x)
-				errChan <- fmt.Errorf("Run time panic: %v", x)
-			}
-		}()
-		errChan <- ns.rpcServer.Serve()
-	}()
-
 	go func() {
 		defer func() {
 			if x := recover(); x != nil {
@@ -81,24 +62,14 @@ func (ns *NameServer) Serve() error {
 				errChan <- fmt.Errorf("Run time panic: %v", x)
 			}
 		}()
-		errChan <- ns.webServer.Serve(ns.webListen)
+		err = ns.webServer.Serve(ns.webListen)
 	}()
-	err = <-errChan
 	return err
 }
 
 func (ns *NameServer) Close() error {
-	ns.clos.L.Lock()
-	defer ns.clos.L.Unlock()
-	if ns.closed {
-		return nil
-	}
 	var retError error = nil
 	err := ns.nd.Close()
-	if err != nil {
-		retError = err
-	}
-	err = ns.rpcServer.Close()
 	if err != nil {
 		retError = err
 	}
@@ -106,18 +77,7 @@ func (ns *NameServer) Close() error {
 	if err != nil {
 		retError = err
 	}
-	ns.closed = true
-	ns.clos.Broadcast()
 	return retError
-}
-
-func (ns *NameServer) WaitClosed() error {
-	ns.clos.L.Lock()
-	for !ns.closed {
-		ns.clos.Wait()
-	}
-	ns.clos.L.Unlock()
-	return ns.rpcServer.WaitClosed()
 }
 
 func (ns *NameServer) HttpAddr() string {
@@ -448,9 +408,13 @@ func (ns *NameServer) DelXAttr(nodeid uint64, name []byte) (err error) {
 }
 
 func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
-	fmt.Printf("Got connection from dn id %d, addr %s\n", dnId, nameDataAddr)
 	// TODO confirm not duplicate datanode
-	client, err := rpc.Dial("tcp", nameDataAddr)
+	fmt.Printf("Got connection from dn id %d, addr %s\n", dnId, nameDataAddr)
+	raddr, err := net.ResolveTCPAddr("tcp", nameDataAddr)
+	if err != nil {
+		return err
+	}
+	client, err := mrpc.DialRPC(raddr)
 	if err != nil {
 		err = fmt.Errorf("Error connecting to client %d at %s : %s", dnId, nameDataAddr, err.Error())
 		fmt.Println(err)

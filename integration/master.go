@@ -4,9 +4,14 @@ import (
 	"fmt"
 	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/leaseserver"
-	"github.com/jbooth/maggiefs/nameserver"
 	"github.com/jbooth/maggiefs/mrpc"
+	"github.com/jbooth/maggiefs/nameserver"
+	"net"
 	"time"
+)
+
+const (
+	SERVNO_LEASESERVER = uint32(1)
 )
 
 var typeCheck mrpc.Service = &NameLeaseServer{}
@@ -14,10 +19,9 @@ var typeCheck mrpc.Service = &NameLeaseServer{}
 type NameLeaseServer struct {
 	leaseServer *leaseserver.LeaseServer
 	nameserver  *nameserver.NameServer
-	serv   mrpc.Service
+	serv        mrpc.Service
 }
 
-// no-op, we are started at construction time
 func (n *NameLeaseServer) Serve() error {
 	return n.serv.Serve()
 }
@@ -32,29 +36,19 @@ func (n *NameLeaseServer) WaitClosed() error {
 
 // returns a started nameserver -- we must start lease server in order to boot up nameserver, so
 func NewNameServer(cfg *conf.MasterConfig, format bool) (*NameLeaseServer, error) {
-	multiServ := NewMultiService()
 	nls := &NameLeaseServer{}
-	nls.serv = multiServ
 	var err error = nil
 	fmt.Println("creating lease server")
-	nls.leaseServer, err = leaseserver.NewLeaseServer(cfg.LeaseBindAddr)
-	if err != nil {
-		return nls, err
-	}
-	multiServ.AddService(nls.leaseServer)
-	fmt.Println("creating lease client")
-	leaseService, err := leaseserver.NewLeaseClient(cfg.LeaseBindAddr)
-	if err != nil {
-		return nls, err
-	}
+	nls.leaseServer = leaseserver.NewLeaseServer()
 	fmt.Println("creating name server")
-	nls.nameserver, err = nameserver.NewNameServer(leaseService, cfg.NameBindAddr, cfg.WebBindAddr, cfg.NameHome, cfg.ReplicationFactor, format)
+	nls.nameserver, err = nameserver.NewNameServer(cfg.WebBindAddr, cfg.NameHome, cfg.ReplicationFactor, format)
 	if err != nil {
 		fmt.Printf("Error creating nameserver: %s\n\n Nameserver config: %+v\n", err.Error(), cfg)
 		return nls, err
 	}
-
-	multiServ.AddService(nls.nameserver)
-	time.Sleep(time.Second)
+	opMap := make(map[uint32]func(*net.TCPConn))
+	opMap[SERVNO_LEASESERVER] = nls.leaseServer.ServeConn
+	
+	nls.serv,err = mrpc.CloseableRPC(cfg.BindAddr, impl interface{}, customHandlers map[uint32]func(newlyAcceptedConn *net.TCPConn), name string) (*CloseableServer, error) {
 	return nls, err
 }

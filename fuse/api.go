@@ -175,7 +175,6 @@ func (r *readPipe) LoadFromAt(fd uintptr, length int, offset int64) (int, error)
 }
 
 func (r *readPipe) Commit() error {
-	log.Printf("Committing results for write from api.go..")
 	r.fuseServer.commitReadResults(r.req, r.pipe, r.numInPipe, nil)
 	return nil
 }

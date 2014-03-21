@@ -326,7 +326,7 @@ func (ms *Server) handleRequest(req *request) {
 		log.Println(req.InputDebug())
 	}
 
-	if req.status.Ok() && req.handler.Func == nil {
+	if req.status.Ok() && req.handler == nil || req.handler.Func == nil {
 		log.Printf("Unimplemented opcode %v", operationName(req.inHeader.Opcode))
 		req.status = ENOSYS
 	}
@@ -389,9 +389,9 @@ func (ms *Server) systemWrite(req *request) Status {
 		return OK
 	}
 	// write header and body
-	log.Printf("Acquiring log for write %s", req.OutputDebug())
-	ms.reqMu.Lock()
-	log.Printf("Got lock, writing")
+	//log.Printf("Acquiring log for write %s", req.OutputDebug())
+	//ms.reqMu.Lock()
+	//log.Printf("Got lock, writing")
 	if req.flatDataSize() == 0 {
 		// if no body just header
 		_, err = syscall.Write(ms.mountFd, header)
@@ -399,8 +399,8 @@ func (ms *Server) systemWrite(req *request) Status {
 		// if body, use writev to push header and flatData atomically
 		_, err = writev(ms.mountFd, [][]byte{header, req.flatData})
 	}
-	log.Printf("Done write, releasing lock")
-	ms.reqMu.Unlock()
+	//log.Printf("Done write, releasing lock")
+	//ms.reqMu.Unlock()
 	if err != nil {
 		log.Printf("server.systemWrite: Error writing request to mount FD: %s", err)
 	}
@@ -412,10 +412,10 @@ func (ms *Server) commitReadResults(req *request, pair *splice.Pair, numInPipe i
 		// write header with err status and 0 bytes
 		req.status = ToStatus(err)
 		header := req.serializeHeader(0)
-		ms.reqMu.Lock()
+		//ms.reqMu.Lock()
 		log.Printf("Fuse client writing err response for read, err %s req %v", err, req)
 		_, e1 := syscall.Write(ms.mountFd, header)
-		ms.reqMu.Unlock()
+		//ms.reqMu.Unlock()
 		if err != nil {
 			log.Printf("fuse.server.commitReadResults error writing err header: origErr: %s writeErr: %s", err, e1)
 		}
@@ -423,16 +423,13 @@ func (ms *Server) commitReadResults(req *request, pair *splice.Pair, numInPipe i
 		return
 	}
 	// normal send
-	ms.reqMu.Lock()
-	log.Printf("Fuse client writing response for req %v", req)
+	//ms.reqMu.Lock()
 	_, err = pair.WriteTo(uintptr(ms.mountFd), numInPipe)
-	log.Printf("Fuse client finished writing response")
-	ms.reqMu.Unlock()
+	//ms.reqMu.Unlock()
 	if err != nil {
 		log.Printf("fuse.server.commitReadResults error splicing from pipe: %s", err)
 		splice.Drop(pair)
 	} else {
-		ms.returnRequest(req)
 		splice.Done(pair)
 	}
 }

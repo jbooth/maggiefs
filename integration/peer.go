@@ -59,10 +59,18 @@ func NewPeer(cfg *conf.PeerConfig, debug bool) (*Peer, error) {
 		}	
 		ret.Mfs = fuseConnector
 		ret.Mountpoint,err = NewMount(fuseConnector,cfg.MountPoint,false)
-		
+
+		opMap := make(map[uint32]func(*net.TCPConn))
+		opMap[dataserver.DIAL_READ] = ret.Datanode.ServeReadConn
+		opMap[dataserver.DIAL_WRITE] = ret.Datanode.ServeWriteConn
+	
+		dataServ,err := mrpc.CloseableRPC(cfg.BindAddr, impl interface{}, customHandlers map[uint32]func(newlyAcceptedConn *net.TCPConn), name string) (*CloseableServer, error) {
+		if err != nil {
+			return ret,err
+		}
 		multiServ := NewMultiService()
 
-		err = multiServ.AddService(ret.Datanode)
+		err = multiServ.AddService(dataServ)
 		if err != nil {
 			return ret,err
 		}

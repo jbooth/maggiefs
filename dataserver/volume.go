@@ -234,33 +234,41 @@ func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) 
 		//		fmt.Printf("Serving read to file %s\n", file.Name())
 		// check off
 		sendPos := int64(req.Pos)
-		stat, _ := file.Stat()
 		// send only the bytes we have, then we'll send zeroes for the rest
 		sendLength := uint64(req.Length)
-		zerosLength := 0
-		fileSize := uint64(stat.Size())
-		if uint64(sendPos)+sendLength > fileSize {
+		//stat, _ := file.Stat()
+		//zerosLength := 0
+		//fileSize := uint64(stat.Size())
+		//if uint64(sendPos)+sendLength > fileSize {
 
-			sendLength = uint64(stat.Size() - sendPos)
-			zerosLength = int(uint32(req.Length) - uint32(sendLength))
-		}
+		//	sendLength = uint64(stat.Size() - sendPos)
+		//	zerosLength = int(uint32(req.Length) - uint32(sendLength))
+		//}
 		// send data
 		//		fmt.Printf("splicing data from pos %d length %d\n", sendPos, sendLength)
-		_, err = result.LoadFromAt(file.Fd(), int(sendLength), sendPos)
+		nRead := 0
+		nRead, err = result.LoadFromAt(file.Fd(), int(sendLength), sendPos)
 		if err != nil {
 			return err
 		}
-		for zerosLength > 0 {
-			// send some zeroes
-			zerosSend := zerosLength
-			if zerosSend > 65536 {
-				zerosSend = 65536
+		if nRead < req.Length {
+			stat, _ := file.Stat()
+			sendPos += int64(nRead)
+			sendLength -= uint64(nRead)
+			// just send 0s for rest -- i don't think it's possible to short-splice into a pipe
+			for sendLength > 0 {
+				zerosToSend := sendLength
+				if zerosToSend > 65536 {
+					zerosToSend = 65536
+				}
+
+				sent, err := result.Write(ZERO_64KB[:zerosSend])
+				if err != nil {
+					return err
+				}
+				sendLength -= sent
 			}
-			sent, err := result.Write(ZERO_64KB[:zerosSend])
-			if err != nil {
-				return err
-			}
-			zerosLength -= sent
+
 		}
 		return nil
 	})

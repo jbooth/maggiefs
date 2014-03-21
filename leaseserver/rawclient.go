@@ -23,19 +23,11 @@ type queuedRequest struct {
 	whenDone chan response
 }
 
-func newRawClient(addr string) (*rawclient, error) {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	c, err := net.DialTCP("tcp", nil, tcpAddr)
-	if err != nil {
-		return nil, err
-	}
+func newRawClient(c *net.TCPConn) (*rawclient, error) {
 	c.SetNoDelay(true)
 	c.SetKeepAlive(true)
 	idBuff := make([]byte, 8, 8)
-	_, err = c.Read(idBuff)
+	_, err := c.Read(idBuff)
 	if err != nil {
 		return nil, err
 	}
