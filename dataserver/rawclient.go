@@ -16,21 +16,17 @@ type RawClient struct {
 	server     *os.File
 	reqnoCtr   *uint32
 	callBacks  map[uint32]map[uint32]func(s *os.File)
-	stripeLock []*sync.Mutex
+	stripeLock []*sync.Mutex // guards callback map
+	writeLock  *sync.Mutex   // guard socket
 }
 
-func NewRawClient(host *net.TCPAddr, numStripes int) (*RawClient, error) {
+func NewRawClient(conn *net.TCPConn, numStripes int) (*RawClient, error) {
 	stripeLock := make([]*sync.Mutex, numStripes, numStripes)
 	callBacks := make(map[uint32]map[uint32]func(s *os.File))
 	for i := 0; i < numStripes; i++ {
 		stripeLock[i] = new(sync.Mutex)
 		callBacks[uint32(i)] = make(map[uint32]func(s *os.File))
 	}
-	conn, err := net.DialTCP("tcp", nil, host)
-	conn.SetNoDelay(true)
-	conn.SetKeepAlive(true)
-	conn.SetWriteBuffer(5 * 1024 * 1024)
-	conn.SetReadBuffer(5 * 1024 * 1024)
 	f, err := conn.File()
 	if err != nil {
 		return nil, err
@@ -38,7 +34,7 @@ func NewRawClient(host *net.TCPAddr, numStripes int) (*RawClient, error) {
 	conn.Close()
 	syscall.SetNonblock(int(f.Fd()), false)
 	ctr := uint32(0)
-	ret := &RawClient{f, &ctr, callBacks, stripeLock}
+	ret := &RawClient{f, &ctr, callBacks, stripeLock, new(sync.Mutex)}
 	go ret.handleResponses()
 	return ret, nil
 }
@@ -87,9 +83,11 @@ func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *
 		totalBytes += iovec.Len
 	}
 	// send request
+	c.writeLock.Lock()
 	ret1, ret2, errno := syscall.Syscall(
 		syscall.SYS_WRITEV,
 		uintptr(c.server.Fd()), uintptr(unsafe.Pointer(&iovecs[0])), uintptr(len(iovecs)))
+	c.writeLock.Unlock()
 	if errno != 0 {
 		log.Printf("Error calling writev in rawclient!  %s", syscall.Errno(errno))
 		return os.NewSyscallError("writev", syscall.Errno(errno))

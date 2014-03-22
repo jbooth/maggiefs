@@ -38,7 +38,7 @@ func DialHandler(addr *net.TCPAddr, handler uint32) (*net.TCPConn, error) {
 // wraps the provided impl for gob rpc, along with any custom handlers provided,
 // while providing convenient Service interface
 // custom handler funcs should execute perpetually and die without panicking, we spin them off in a goroutine as accepted
-func CloseableRPC(listenAddr string, impl interface{}, customHandlers map[uint32]func(newlyAcceptedConn *net.TCPConn), name string) (*CloseableServer, error) {
+func CloseableRPC(listenAddr string, impl interface{}, customHandlers map[uint32]func(newlyAcceptedConn *net.TCPConn)) (*CloseableServer, error) {
 	listenTCPAddr, err := net.ResolveTCPAddr("tcp", listenAddr)
 	if err != nil {
 		return nil, err

@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/integration"
 	"github.com/jbooth/maggiefs/mrpc"
 	"github.com/jbooth/maggiefs/nameserver"
@@ -122,7 +121,7 @@ func main() {
 		if len(args) > 0 {
 			masterHome = args[0]
 		}
-		conf.DefaultMasterConfig(masterHome).Write(os.Stdout)
+		integration.DefaultMasterConfig(masterHome).Write(os.Stdout)
 		return
 	case "format":
 		if len(args) < 1 {
@@ -191,7 +190,7 @@ func main() {
 // -nameHost string
 // -mountPoint string
 // -volRoots []string (comma delimited)
-func peerConfig(args []string) (*conf.PeerConfig, error) {
+func peerConfig(args []string) (*integration.PeerConfig, error) {
 	flagSet := flag.NewFlagSet("peerconfig", flag.ContinueOnError)
 	var bindAddr, masterHost, mountPoint, volRootsStr string
 	var usage bool
@@ -217,7 +216,7 @@ func peerConfig(args []string) (*conf.PeerConfig, error) {
 	if volRootsStr != "" {
 		volRoots = strings.Split(volRootsStr, ",")
 	}
-	return conf.DefaultPeerConfig(bindAddr, masterHost, mountPoint, volRoots), nil
+	return integration.DefaultPeerConfig(bindAddr, masterHost, mountPoint, volRoots), nil
 }
 
 func runMaster(args []string) (s mrpc.Service, err error) {
@@ -225,7 +224,7 @@ func runMaster(args []string) (s mrpc.Service, err error) {
 		err = fmt.Errorf("Must run master with config:  mfs master [/path/to/config]")
 		return
 	}
-	cfg := &conf.MasterConfig{}
+	cfg := &integration.MasterConfig{}
 	err = cfg.ReadConfig(args[0])
 	if err != nil {
 		return

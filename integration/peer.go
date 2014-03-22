@@ -2,7 +2,6 @@ package integration
 
 import (
 	"github.com/jbooth/maggiefs/dataserver"
-	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/mrpc"
 )
@@ -11,7 +10,7 @@ import (
 var peerTypeCheck mrpc.Service = &Peer{}
 
 type Peer struct {
-	Cfg 	 *conf.PeerConfig
+	Cfg 	 *PeerConfig
 	Mfs      *client.MaggieFuse
 	Datanode *dataserver.DataServer
 	Mountpoint *Mount
@@ -37,7 +36,7 @@ func (p *Peer) HttpAddr() string {
 	return p.Cfg.WebBindAddr
 }
 
-func NewPeer(cfg *conf.PeerConfig, debug bool) (*Peer, error) {
+func NewPeer(cfg *PeerConfig, debug bool) (*Peer, error) {
 		
 		cl,err :=  NewClient(cfg)
 		if err != nil {
@@ -64,7 +63,7 @@ func NewPeer(cfg *conf.PeerConfig, debug bool) (*Peer, error) {
 		opMap[dataserver.DIAL_READ] = ret.Datanode.ServeReadConn
 		opMap[dataserver.DIAL_WRITE] = ret.Datanode.ServeWriteConn
 	
-		dataServ,err := mrpc.CloseableRPC(cfg.BindAddr, impl interface{}, customHandlers map[uint32]func(newlyAcceptedConn *net.TCPConn), name string) (*CloseableServer, error) {
+		dataServ,err := mrpc.CloseableRPC(cfg.BindAddr, impl interface{}, customHandlers map[uint32]func(newlyAcceptedConn *net.TCPConn), name string)
 		if err != nil {
 			return ret,err
 		}

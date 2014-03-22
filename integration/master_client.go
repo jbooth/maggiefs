@@ -2,7 +2,6 @@ package integration
 
 import (
 	"fmt"
-	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/dataserver"
 	"github.com/jbooth/maggiefs/leaseserver"
 	"github.com/jbooth/maggiefs/maggiefs"
@@ -17,13 +16,14 @@ type Client struct {
 	Datas  *dataserver.DataClient // TODO generalize this to maggiefs.DataService
 }
 
-func NewClient(cfg *conf.PeerConfig) (*Client, error) {
+// takes masterAddr in host:port format
+func NewClient(masterAddr string) (*Client, error) {
 	ret := &Client{}
-	masterAddr, err := net.ResolveTCPAddr(cfg.MasterAddr)
+	masterTCPAddr, err := net.ResolveTCPAddr(masterAddr)
 	if err != nil {
 		return nil, err
 	}
-	leaseConn, err := mrpc.Dial("tcp", masterAddr, SERVNO_LEASESERVER)
+	leaseConn, err := mrpc.Dial("tcp", masterTCPAddr, SERVNO_LEASESERVER)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +31,7 @@ func NewClient(cfg *conf.PeerConfig) (*Client, error) {
 	if err != nil {
 		return ret, err
 	}
-	nameClient, err := mrpc.DialRPC(masterAddr)
+	nameClient, err := mrpc.DialRPC(masterTCPAddr)
 	if err != nil {
 		return ret, nil
 	}

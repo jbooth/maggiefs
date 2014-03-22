@@ -14,16 +14,17 @@ import (
 var typeCheck maggiefs.DataService = &DataClient{}
 
 type DataClient struct {
-	names     maggiefs.NameService
-	volMap    map[uint32]*net.TCPAddr
-	volLock   *sync.RWMutex // guards volMap
-	pool      *connPool
-	localDS   *DataServer
-	localVols []uint32
+	names      maggiefs.NameService
+	volMap     map[uint32]*net.TCPAddr
+	volLock    *sync.RWMutex // guards volMap
+	readConns  *readConnPool
+	writeConns *writeConnPool
+	localDS    *DataServer
+	localVols  []uint32
 }
 
 func NewDataClient(names maggiefs.NameService, connsPerDn int) (*DataClient, error) {
-	return &DataClient{names, make(map[uint32]*net.TCPAddr), &sync.RWMutex{}, &connPool{make(map[*net.TCPAddr]*RawClient), new(sync.RWMutex)}, nil, nil}, nil
+	return &DataClient{names, make(map[uint32]*net.TCPAddr), &sync.RWMutex{}, &readConnPool{make(map[*net.TCPAddr]*RawClient), &writeConnPool{make(map[*net.TCPAddr]*RawClient), new(sync.RWMutex)}, nil, nil}, nil
 }
 
 func pickVol(vols []uint32) uint32 {
@@ -75,7 +76,7 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 		return nil
 	}
 	log.Printf("Picked host %s for remote read, getting conn", host)
-	conn, err := dc.pool.getConn(host)
+	conn, err := dc.readConns.getConn(host)
 	if err != nil {
 		return err
 	}
@@ -108,7 +109,7 @@ func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64, onDone fun
 	if err != nil {
 		return err
 	}
-	conn, err := dc.pool.getConn(host)
+	conn, err := dc.writeConns.getConn(host)
 	if err != nil {
 		return err
 	}
@@ -146,7 +147,10 @@ type connPool struct {
 	l     *sync.RWMutex
 }
 
-func (c *connPool) getConn(host *net.TCPAddr) (*RawClient, error) {
+type readConnPool connPool
+type writeConnPool connPool
+
+func (c *readConnPool) getConn(host *net.TCPAddr) (*RawClient, error) {
 	c.l.RLock()
 	ret := c.conns[host]
 	c.l.RUnlock()
@@ -154,7 +158,31 @@ func (c *connPool) getConn(host *net.TCPAddr) (*RawClient, error) {
 		return ret, nil
 	}
 	c.l.Lock()
-	conn, err := NewRawClient(host, 16)
+	conn, err := mrpc.DialHandler(host, DIAL_READ)
+	if err != nil {
+		return nil, err
+	}
+	cli, err := NewRawClient(conn, 16)
+	if err == nil {
+		c.conns[host] = conn
+	}
+	c.l.Unlock()
+	return conn, err
+}
+
+func (c *writeConnPool) getConn(host *net.TCPAddr) (*RawClient, error) {
+	c.l.RLock()
+	ret := c.conns[host]
+	c.l.RUnlock()
+	if ret != nil {
+		return ret, nil
+	}
+	c.l.Lock()
+	conn, err := mrpc.DialHandler(host, DIAL_WRITE)
+	if err != nil {
+		return nil, err
+	}
+	cli, err := NewRawClient(conn, 16)
 	if err == nil {
 		c.conns[host] = conn
 	}

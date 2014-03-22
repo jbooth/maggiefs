@@ -2,7 +2,6 @@ package integration
 
 import (
 	"fmt"
-	"github.com/jbooth/maggiefs/conf"
 	"github.com/jbooth/maggiefs/leaseserver"
 	"github.com/jbooth/maggiefs/mrpc"
 	"github.com/jbooth/maggiefs/nameserver"
@@ -35,7 +34,7 @@ func (n *NameLeaseServer) WaitClosed() error {
 }
 
 // returns a started nameserver -- we must start lease server in order to boot up nameserver, so
-func NewNameServer(cfg *conf.MasterConfig, format bool) (*NameLeaseServer, error) {
+func NewNameServer(cfg *MasterConfig, format bool) (*NameLeaseServer, error) {
 	nls := &NameLeaseServer{}
 	var err error = nil
 	fmt.Println("creating lease server")
@@ -48,7 +47,7 @@ func NewNameServer(cfg *conf.MasterConfig, format bool) (*NameLeaseServer, error
 	}
 	opMap := make(map[uint32]func(*net.TCPConn))
 	opMap[SERVNO_LEASESERVER] = nls.leaseServer.ServeConn
-	
-	nls.serv,err = mrpc.CloseableRPC(cfg.BindAddr, impl interface{}, customHandlers map[uint32]func(newlyAcceptedConn *net.TCPConn), name string) (*CloseableServer, error) {
+
+	nls.serv, err = mrpc.CloseableRPC(cfg.BindAddr, nls.nameserver, opMap)
 	return nls, err
 }
