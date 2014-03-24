@@ -3,39 +3,42 @@ package integration
 import (
 	"fmt"
 	"github.com/jbooth/maggiefs/leaseserver"
+	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
 	"github.com/jbooth/maggiefs/nameserver"
 	"net"
-	"time"
+	"strconv"
 )
 
 const (
 	SERVNO_LEASESERVER = uint32(1)
+	SERVNO_PEERJOIN    = uint32(2)
 )
 
-var typeCheck mrpc.Service = &NameLeaseServer{}
+var typeCheck Service = &Master{}
 
-type NameLeaseServer struct {
+type Master struct {
 	leaseServer *leaseserver.LeaseServer
 	nameserver  *nameserver.NameServer
-	serv        mrpc.Service
+	serv        *mrpc.CloseableServer
+	port        int
 }
 
-func (n *NameLeaseServer) Serve() error {
+func (n *Master) Serve() error {
 	return n.serv.Serve()
 }
 
-func (n *NameLeaseServer) Close() error {
+func (n *Master) Close() error {
 	return n.serv.Close()
 }
 
-func (n *NameLeaseServer) WaitClosed() error {
+func (n *Master) WaitClosed() error {
 	return n.serv.WaitClosed()
 }
 
 // returns a started nameserver -- we must start lease server in order to boot up nameserver, so
-func NewNameServer(cfg *MasterConfig, format bool) (*NameLeaseServer, error) {
-	nls := &NameLeaseServer{}
+func NewMaster(cfg *MasterConfig, format bool) (*Master, error) {
+	nls := &Master{}
 	var err error = nil
 	fmt.Println("creating lease server")
 	nls.leaseServer = leaseserver.NewLeaseServer()
@@ -48,6 +51,11 @@ func NewNameServer(cfg *MasterConfig, format bool) (*NameLeaseServer, error) {
 	opMap := make(map[uint32]func(*net.TCPConn))
 	opMap[SERVNO_LEASESERVER] = nls.leaseServer.ServeConn
 
-	nls.serv, err = mrpc.CloseableRPC(cfg.BindAddr, nls.nameserver, opMap)
+	nls.serv, err = mrpc.CloseableRPC(cfg.BindAddr, "NameService", maggiefs.NewNameServiceService(nls.nameserver), opMap)
+	if err != nil {
+		return nls, err
+	}
+	_, port, _ := net.SplitHostPort(cfg.BindAddr)
+	nls.port, _ = strconv.Atoi(port)
 	return nls, err
 }

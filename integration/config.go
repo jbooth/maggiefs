@@ -8,15 +8,15 @@ import (
 )
 
 var (
-	DEFAULT_DATABIND = fmt.Sprintf("0.0.0.0:%d", 1102)
+	DEFAULT_NAMEBIND = fmt.Sprintf("0.0.0.0:%d", 1102)
 	DEFAULT_WEBBIND  = fmt.Sprintf("0.0.0.0:%d", 1103)
 )
 
 // config for a peer -- connects to MasterAddr and binds to BindAddr and WebBindAddr
 type PeerConfig struct {
-	MasterAddr  string   `json: nameAddr`    // addr to connect to for master service, should be in host:PORT syntax
-	BindAddr    string   `json: bindAddr`    // addr  we expose for our services in "x.x.x.x:PORT" syntax
-	WebBindAddr string   `json: webBindAddr` // addr  we expose for our web services in "x.x.x.x:PORT" syntax, will be removed eventually
+	MasterAddr  string   `json: masterAddr`  // addr to connect to for master service, should be in host:PORT syntax
+	BindAddr    string   `json: bindAddr`    // addr we expose for our services in "x.x.x.x:PORT" syntax, needs to be externally routable, can NOT be 0.0.0.0,
+	WebBindAddr string   `json: webBindAddr` // addr we expose for our web services in "x.x.x.x:PORT" syntax, will be removed eventually
 	VolumeRoots []string `json: volumeRoots` // list of paths to the roots of the volumes we're exposing
 	MountPoint  string   `json: mountPoint`  // dir to mount to on the client machine, must exist prior to program run
 }
@@ -32,17 +32,16 @@ type MasterConfig struct {
 func DefaultPeerConfig(bindAddr string, nameHost string, mountPoint string, volRoots []string) *PeerConfig {
 	return &PeerConfig{
 		fmt.Sprintf("%s:%d", nameHost, 1102),
-		DEFAULT_DATABIND,
+		bindAddr,
 		DEFAULT_WEBBIND,
 		volRoots,
 		mountPoint,
-		2,
 	}
 }
 
 func DefaultMasterConfig(nameHome string) *MasterConfig {
 	return &MasterConfig{
-		DEFAULT_DATABIND,
+		DEFAULT_NAMEBIND,
 		DEFAULT_WEBBIND,
 		nameHome,
 		3,

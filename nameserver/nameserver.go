@@ -6,7 +6,6 @@ import (
 	"github.com/jbooth/maggiefs/mrpc"
 	"net"
 	"net/http"
-	"net/rpc"
 	"os"
 	"sync"
 	"time"
@@ -20,8 +19,6 @@ var typeCheck maggiefs.NameService = &NameServer{}
 func NewNameServer(webAddr string, dataDir string, replicationFactor uint32, format bool) (*NameServer, error) {
 	ns := &NameServer{}
 	var err error = nil
-	ns.ls = ls
-	ns.listenAddr = nameAddr
 	if format {
 		err = Format(dataDir, uint32(os.Getuid()), uint32(os.Getgid()))
 		if err != nil {
@@ -38,7 +35,7 @@ func NewNameServer(webAddr string, dataDir string, replicationFactor uint32, for
 	if err != nil {
 		return nil, err
 	}
-	ns.webServer = newNameWebServer(ns, webAddr) // todo get rid of webserver and do this stuff via setattr
+	ns.webServer = newNameWebServer(ns, webAddr) // todo get rid of webserver and do this stuff via getattr
 	return ns, nil
 }
 
@@ -54,7 +51,7 @@ type NameServer struct {
 
 // func to serve web stuff
 func (ns *NameServer) ServeWeb() error {
-	var err error = nil
+	errChan := make(chan error)
 	go func() {
 		defer func() {
 			if x := recover(); x != nil {
@@ -62,8 +59,9 @@ func (ns *NameServer) ServeWeb() error {
 				errChan <- fmt.Errorf("Run time panic: %v", x)
 			}
 		}()
-		err = ns.webServer.Serve(ns.webListen)
+		errChan <- ns.webServer.Serve(ns.webListen)
 	}()
+	err := <-errChan
 	return err
 }
 
@@ -414,14 +412,15 @@ func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
 	if err != nil {
 		return err
 	}
-	client, err := mrpc.DialRPC(raddr)
+
+	cli, err := mrpc.DialRPC(raddr)
 	if err != nil {
-		err = fmt.Errorf("Error connecting to client %d at %s : %s", dnId, nameDataAddr, err.Error())
+		err = fmt.Errorf("Error connecting to peer %d at %s : %s", dnId, nameDataAddr, err.Error())
 		fmt.Println(err)
 		return err
 	}
-	nameData := mrpc.NewNameDataIfaceClient(client)
-	return ns.rm.addDn(nameData)
+	peer := maggiefs.NewPeerClient(cli)
+	return ns.rm.addDn(peer)
 }
 
 func (ns *NameServer) NextVolId() (id uint32, err error) {

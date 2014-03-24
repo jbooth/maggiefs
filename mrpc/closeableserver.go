@@ -25,20 +25,22 @@ func DialRPC(addr *net.TCPAddr) (*rpc.Client, error) {
 // connects to the indexed customHandler on remote server
 func DialHandler(addr *net.TCPAddr, handler uint32) (*net.TCPConn, error) {
 	handlerIdBytes := make([]byte, 4, 4)
-	binary.LittleEndian.PutUint32(handlerIdBytes[:], rpcHandlerId)
+	binary.LittleEndian.PutUint32(handlerIdBytes, handler)
 	conn, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("CloseableServer.DialHandler: Error connecting to host %s : %s", addr, err)
 	}
 	// route to handler and let it take over
-	_, err = conn.Write(handlerIdBytes[:])
+	log.Printf("Dialing handler %d for conn %s", handler, conn)
+	log.Printf("HandlerID bytes: %x", handlerIdBytes)
+	_, err = conn.Write(handlerIdBytes)
 	return conn, err
 }
 
 // wraps the provided impl for gob rpc, along with any custom handlers provided,
 // while providing convenient Service interface
 // custom handler funcs should execute perpetually and die without panicking, we spin them off in a goroutine as accepted
-func CloseableRPC(listenAddr string, impl interface{}, customHandlers map[uint32]func(newlyAcceptedConn *net.TCPConn)) (*CloseableServer, error) {
+func CloseableRPC(listenAddr string, rpcServiceName string, rpcImpl interface{}, customHandlers map[uint32]func(newlyAcceptedConn *net.TCPConn)) (*CloseableServer, error) {
 	listenTCPAddr, err := net.ResolveTCPAddr("tcp", listenAddr)
 	if err != nil {
 		return nil, err
@@ -49,7 +51,7 @@ func CloseableRPC(listenAddr string, impl interface{}, customHandlers map[uint32
 		}
 	}
 	rpcServer := rpc.NewServer()
-	rpcServer.RegisterName(name, impl)
+	rpcServer.RegisterName(rpcServiceName, rpcImpl)
 	customHandlers[rpcHandlerId] = func(conn *net.TCPConn) {
 		buf := bufio.NewWriter(conn)
 		codec := &gobServerCodec{conn, gob.NewDecoder(conn), gob.NewEncoder(buf), buf}
@@ -59,29 +61,34 @@ func CloseableRPC(listenAddr string, impl interface{}, customHandlers map[uint32
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("listening on %s\n", listenAddr)
-	ret := NewCloseServer(listener)
+	log.Printf("CloseableServer opened listener on %s\n", listenAddr)
+	ret := &CloseableServer{
+		make(map[int]*net.TCPConn),
+		listener,
+		customHandlers,
+		false,
+		sync.NewCond(&sync.Mutex{}),
+		new(sync.Mutex)}
 	return ret, nil
 }
 
 type CloseableServer struct {
-	conns       map[int]*net.TCPConn
-	listen      *net.TCPListener
-	stopRequest bool
-	closed      bool
-	closeCnd    *sync.Cond
-	l           *sync.Mutex
+	conns    map[int]*net.TCPConn
+	listen   *net.TCPListener
+	handlers map[uint32]func(newlyAcceptedConn *net.TCPConn)
+	closed   bool
+	closeCnd *sync.Cond
+	l        *sync.Mutex
 }
 
-// A closeable Server wraps a tcpListener and a serveConn function and spins off the accept loop while
-// implementing Service reliably.
-func NewCloseServer(listen *net.TCPListener) *CloseableServer {
-	return &CloseableServer{make(map[int]*net.TCPConn), listen, false, false, sync.NewCond(&sync.Mutex{}), new(sync.Mutex)}
+func (r *CloseableServer) Addr() net.Addr {
+	return r.listen.Addr()
 }
 
 // blocking accept loop
 func (r *CloseableServer) Serve() error {
 	sockIdCounter := 0
+	log.Printf("Closable server listening on %s", r.listen)
 	for {
 		conn, err := r.listen.AcceptTCP()
 		if err != nil {
@@ -92,10 +99,8 @@ func (r *CloseableServer) Serve() error {
 		}
 		conn.SetNoDelay(true)
 		r.l.Lock()
-		if r.stopRequest { // double check after locking
+		if r.closed { // double check after locking
 			// close before shutting down
-			conn.Close()
-			r.Close()
 			return nil
 		} else {
 			// store reference and serve requests
@@ -117,6 +122,7 @@ func (r *CloseableServer) Serve() error {
 }
 
 func (r *CloseableServer) serveConn(conn *net.TCPConn) {
+	log.Printf("CloseableServer got conn %s, reading handler ID", conn)
 	handlerIdBytes := make([]byte, 4, 4)
 	nRead := 0
 	for nRead < 4 {
@@ -127,6 +133,15 @@ func (r *CloseableServer) serveConn(conn *net.TCPConn) {
 		}
 		nRead += n
 	}
+	log.Printf("CloseableServer got handler bytes %x", handlerIdBytes)
+	handlerId := binary.LittleEndian.Uint32(handlerIdBytes)
+	log.Printf("CloseableServer got handler ID %d from conn %s", handlerId, conn)
+	handler, ok := r.handlers[handlerId]
+	if !ok {
+		log.Printf("CloseableServer has no registered handler for id %d", handlerId)
+		return
+	}
+	handler(conn)
 }
 
 func (r *CloseableServer) Close() error {

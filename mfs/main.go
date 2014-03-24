@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/jbooth/maggiefs/integration"
-	"github.com/jbooth/maggiefs/mrpc"
 	"github.com/jbooth/maggiefs/nameserver"
 	"log"
 	"os"
@@ -81,7 +80,7 @@ func main() {
 		return
 	}
 
-	var running mrpc.Service = nil
+	var running integration.Service = nil
 	var err error
 	cmd := args[0]
 	// pop first instr
@@ -219,7 +218,7 @@ func peerConfig(args []string) (*integration.PeerConfig, error) {
 	return integration.DefaultPeerConfig(bindAddr, masterHost, mountPoint, volRoots), nil
 }
 
-func runMaster(args []string) (s mrpc.Service, err error) {
+func runMaster(args []string) (s integration.Service, err error) {
 	if len(args) < 1 {
 		err = fmt.Errorf("Must run master with config:  mfs master [/path/to/config]")
 		return
@@ -253,8 +252,8 @@ func singlenode(args []string) (s *integration.SingleNodeCluster, err error) {
 	return
 }
 
-func runPeer(args []string) (peer mrpc.Service, err error) {
-	cfg := &conf.PeerConfig{}
+func runPeer(args []string) (peer integration.Service, err error) {
+	cfg := &integration.PeerConfig{}
 	err = cfg.ReadConfig(args[0])
 	if err != nil {
 		return

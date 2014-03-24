@@ -3,6 +3,7 @@ package dataserver
 import (
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"github.com/jbooth/maggiefs/mrpc"
 	"log"
 	"math/rand"
 	"net"
@@ -23,8 +24,15 @@ type DataClient struct {
 	localVols  []uint32
 }
 
-func NewDataClient(names maggiefs.NameService, connsPerDn int) (*DataClient, error) {
-	return &DataClient{names, make(map[uint32]*net.TCPAddr), &sync.RWMutex{}, &readConnPool{make(map[*net.TCPAddr]*RawClient), &writeConnPool{make(map[*net.TCPAddr]*RawClient), new(sync.RWMutex)}, nil, nil}, nil
+func NewDataClient(names maggiefs.NameService) (*DataClient, error) {
+	return &DataClient{
+		names,
+		make(map[uint32]*net.TCPAddr),
+		&sync.RWMutex{},
+		&readConnPool{make(map[*net.TCPAddr]*RawClient), new(sync.RWMutex)},
+		&writeConnPool{make(map[*net.TCPAddr]*RawClient), new(sync.RWMutex)},
+		nil,
+		nil}, nil
 }
 
 func pickVol(vols []uint32) uint32 {
@@ -164,10 +172,10 @@ func (c *readConnPool) getConn(host *net.TCPAddr) (*RawClient, error) {
 	}
 	cli, err := NewRawClient(conn, 16)
 	if err == nil {
-		c.conns[host] = conn
+		c.conns[host] = cli
 	}
 	c.l.Unlock()
-	return conn, err
+	return cli, err
 }
 
 func (c *writeConnPool) getConn(host *net.TCPAddr) (*RawClient, error) {
@@ -184,8 +192,8 @@ func (c *writeConnPool) getConn(host *net.TCPAddr) (*RawClient, error) {
 	}
 	cli, err := NewRawClient(conn, 16)
 	if err == nil {
-		c.conns[host] = conn
+		c.conns[host] = cli
 	}
 	c.l.Unlock()
-	return conn, err
+	return cli, err
 }

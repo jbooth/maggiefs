@@ -251,8 +251,8 @@ func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) 
 		if err != nil {
 			return err
 		}
-		if nRead < req.Length {
-			stat, _ := file.Stat()
+		if nRead < int(req.Length) {
+			//stat, _ := file.Stat()
 			sendPos += int64(nRead)
 			sendLength -= uint64(nRead)
 			// just send 0s for rest -- i don't think it's possible to short-splice into a pipe
@@ -262,11 +262,11 @@ func (v *volume) serveDirectRead(result maggiefs.SplicerTo, req *RequestHeader) 
 					zerosToSend = 65536
 				}
 
-				sent, err := result.Write(ZERO_64KB[:zerosSend])
+				sent, err := result.Write(ZERO_64KB[:zerosToSend])
 				if err != nil {
 					return err
 				}
-				sendLength -= sent
+				sendLength -= uint64(sent)
 			}
 
 		}

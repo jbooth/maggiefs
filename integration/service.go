@@ -1,5 +1,4 @@
-package mrpc
-
+package integration
 
 type Service interface {
 	// serves clients, blocking until we either crash or are told to stop

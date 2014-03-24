@@ -9,11 +9,14 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
 	"github.com/jbooth/maggiefs/nameserver"
+	"log"
+	"net"
 	"os"
+	"time"
 )
 
 // compile time check
-var singleClustCheck mrpc.Service = &SingleNodeCluster{}
+var singleClustCheck Service = &SingleNodeCluster{}
 
 // Encapsulates a single node, minus mountpoint.  Used for testing.
 type SingleNodeCluster struct {
@@ -23,10 +26,11 @@ type SingleNodeCluster struct {
 	Names       maggiefs.NameService
 	DataNodes   []*dataserver.DataServer
 	Datas       maggiefs.DataService
-	svc         mrpc.Service
+	svc         Service
 }
 
 func (snc *SingleNodeCluster) Serve() error {
+	log.Printf("Singlenodecluster starting..")
 	return snc.svc.Serve()
 }
 
@@ -39,6 +43,7 @@ func (snc *SingleNodeCluster) WaitClosed() error {
 }
 
 func (snc *SingleNodeCluster) HttpAddr() string {
+	log.Printf("Returning localhost:1103 from SingleNodeCluster.HttpAddr")
 	return "localhost:1103"
 }
 
@@ -48,27 +53,27 @@ func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, b
 	if err != nil {
 		return nil, err
 	}
-	nls, err := NewNameServer(nncfg, true)
+	log.Printf("Creating singleNodeCluster with master conf: %s, ds confs: %s", nncfg, ds)
+	nls, err := NewMaster(nncfg, true)
 	if err != nil {
 		return nil, err
 	}
 	cl.LeaseServer = nls.leaseServer
 	cl.NameServer = nls.nameserver
-	fmt.Println("Starting name client")
-	cl.Names, err = NewNameClient(nncfg.NameBindAddr)
+
+	// make service wrapper
+	multiServ := NewMultiService()
+	cl.svc = multiServ
+	multiServ.AddService(nls) // add nameLeaseServer
+	masterAddr := fmt.Sprintf("127.0.0.1:%d", nls.port)
+	log.Printf("Connecting client to started master at %s", masterAddr)
+	cli, err := NewClient(masterAddr)
 	if err != nil {
 		return cl, err
 	}
-	fmt.Println("starting lease client")
-	cl.Leases, err = leaseserver.NewLeaseClient(nncfg.LeaseBindAddr)
-	if err != nil {
-		return cl, err
-	}
-	// start data client
-	dc, err := dataserver.NewDataClient(cl.Names, 1)
-	if err != nil {
-		return cl, fmt.Errorf("error building dataclient : %s", err.Error())
-	}
+	cl.Names = cli.Names
+	cl.Leases = cli.Leases
+	cl.Datas = cli.Datas
 
 	// peer web server hardcoded to 1103
 	webServer, err := NewPeerWebServer(cl.Names, cl.Datas, mountPoint, "localhost:1103")
@@ -80,19 +85,13 @@ func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, b
 		return cl, err
 	}
 
-	// make service wrapper
-	multiServ := NewMultiService()
-	cl.svc = multiServ
-	multiServ.AddService(nls) // add nameLeaseServer
 	multiServ.AddService(webServer)
-
-	cl.Datas = dc
 	// start dataservers
 	cl.DataNodes = make([]*dataserver.DataServer, len(ds))
 	for idx, dscfg := range ds {
-		fmt.Println("Starting DS with cfg %+v\n", dscfg)
+		log.Printf("Starting DS with cfg %+v", dscfg)
 		// create and register with SingleNodeCluster struct
-		ds, err := dataserver.NewDataServer(dscfg.VolumeRoots, dscfg.BindAddr, cl.Names, dc)
+		ds, err := dataserver.NewDataServer(dscfg.BindAddr, dscfg.VolumeRoots, cl.Names, cl.Datas)
 		if err != nil {
 			return cl, err
 		}
@@ -101,13 +100,18 @@ func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, b
 		opMap := make(map[uint32]func(*net.TCPConn))
 		opMap[dataserver.DIAL_READ] = ds.ServeReadConn
 		opMap[dataserver.DIAL_WRITE] = ds.ServeWriteConn
-		dataServ, err := mrpc.CloseableRPC(cfg.BindAddr, ds, opMap)
+		dataServ, err := mrpc.CloseableRPC(dscfg.BindAddr, "Peer", maggiefs.NewPeerService(ds), opMap)
 		if err != nil {
-			return ret, err
+			return cl, err
 		}
 		err = multiServ.AddService(dataServ)
 		if err != nil {
-			return ret, err
+			return cl, err
+		}
+		dnInfo, _ := ds.HeartBeat()
+		err = cl.Names.Join(dnInfo.DnId, dscfg.BindAddr)
+		if err != nil {
+			return cl, err
 		}
 	}
 
@@ -126,32 +130,30 @@ func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, b
 			return cl, err
 		}
 	}
+	time.Sleep(1 * time.Second)
 	return cl, nil
 }
 
 // used to bootstrap singlenode clusters
 func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*MasterConfig, []*PeerConfig) {
-	nncfg := &conf.MasterConfig{}
+	nncfg := &MasterConfig{}
 	nncfg.BindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
-	startPort++
-	nncfg.NameBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+	masterAddr := fmt.Sprintf("127.0.0.1:%d", startPort)
 	startPort++
 	nncfg.WebBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
 	startPort++
 	nncfg.NameHome = nameHome
 	nncfg.ReplicationFactor = replicationFactor
-	dscfg := make([]*conf.PeerConfig, len(volRoots))
+	dscfg := make([]*PeerConfig, len(volRoots))
 	for idx, dnVolRoots := range volRoots {
-		thisDscfg := &conf.PeerConfig{}
-		thisDscfg.DataClientBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
-		startPort++
-		thisDscfg.NameDataBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+		thisDscfg := &PeerConfig{}
+		thisDscfg.MasterAddr = masterAddr
+		thisDscfg.BindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
 		startPort++
 		thisDscfg.WebBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
 		startPort++
 		thisDscfg.VolumeRoots = dnVolRoots
-		thisDscfg.LeaseAddr = nncfg.LeaseBindAddr
-		thisDscfg.NameAddr = nncfg.NameBindAddr
+		thisDscfg.MasterAddr = nncfg.BindAddr
 		dscfg[idx] = thisDscfg
 
 	}
@@ -192,6 +194,6 @@ func NewConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir st
 		}
 		volRoots[i] = dnRoots
 	}
-	nnc, dsc := NewConfSet(volRoots, nameBase, "0.0.0.0", 11001, replicationFactor, true)
+	nnc, dsc := NewConfSet(volRoots, nameBase, "127.0.0.1", 11004, replicationFactor, true)
 	return nnc, dsc, nil
 }

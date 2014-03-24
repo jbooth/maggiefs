@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
-	"github.com/jbooth/maggiefs/mrpc"
 	"io"
 	"log"
 	"net"
@@ -23,7 +22,9 @@ type DataServer struct {
 }
 
 // create a new dataserver serving the specified volumes, on the specified addrs, joining the specified nameservice
-func NewDataServer(volRoots []string,
+func NewDataServer(
+	publicAddr string,
+	volRoots []string,
 	ns maggiefs.NameService,
 	dc maggiefs.DataService) (ds *DataServer, err error) {
 	// scan volumes
@@ -45,6 +46,7 @@ func NewDataServer(volRoots []string,
 	}
 	// form consensus on host across volumes or error
 	var dnInfo maggiefs.DataNodeInfo = maggiefs.DataNodeInfo{}
+	dnInfo.Addr = publicAddr
 	for _, vol := range volumes {
 		// assign if we haven't assigned yet
 		if dnInfo.DnId == 0 {
@@ -59,7 +61,6 @@ func NewDataServer(volRoots []string,
 	if dnInfo.DnId == 0 {
 		dnInfo.DnId, err = ns.NextDnId()
 	}
-	dnInfo.Addr = dataClientBindAddr
 
 	// format unformatted volumes
 	for _, path := range unformatted {
@@ -75,9 +76,15 @@ func NewDataServer(volRoots []string,
 	}
 
 	// bind to listener sockets
-	ds = &DataServer{ns, dnInfo, volumes, dc, false}
+	ds = &DataServer{ns, dnInfo, volumes, dc}
 
 	return ds, nil
+}
+
+// calls out to Master and tells it about our volumes
+func (ds *DataServer) JoinCluster(myAddr string) error {
+	ds.info.Addr = myAddr
+	return ds.ns.Join(ds.info.DnId, myAddr)
 }
 
 func (ds *DataServer) ServeReadConn(c *net.TCPConn) {
@@ -85,7 +92,8 @@ func (ds *DataServer) ServeReadConn(c *net.TCPConn) {
 	c.Close()
 	err = syscall.SetNonblock(int(conn.Fd()), false)
 	if err != nil {
-		return err
+		log.Printf("Dataserver error setting non-block, really???: %s", err)
+		return
 	}
 	if err != nil {
 		log.Printf("Couldn't convert tcpConn %s to file!  Err %s", c, err)

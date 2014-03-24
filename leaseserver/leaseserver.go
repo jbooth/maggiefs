@@ -172,7 +172,7 @@ func newClientConn(ls *LeaseServer, raw *net.TCPConn) (*clientConn, error) {
 		pendingAcks: make(map[uint64]chan bool),
 	}
 	// send client id
-	fmt.Printf("sending id %d\n", ret.id)
+	log.Printf("leaseserver sending id %d to new conn %s", ret.id, raw)
 	idBuff := make([]byte, 8, 8)
 	binary.LittleEndian.PutUint64(idBuff, ret.id)
 	ret.c.Write(idBuff)
@@ -201,6 +201,7 @@ func NewLeaseServer() *LeaseServer {
 }
 
 func (ls *LeaseServer) ServeConn(conn *net.TCPConn) {
+	log.Printf("LeaseServer got conn %s", conn)
 	// instantiate conn object
 	client, err := newClientConn(ls, conn)
 	fmt.Println("got new client")

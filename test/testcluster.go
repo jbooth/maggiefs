@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/integration"
 	"os"
@@ -13,6 +14,10 @@ var (
 
 func init() {
 	initCluster()
+	go func() {
+		fmt.Printf("Starting test cluster\n")
+		testCluster.Serve()
+	}()
 }
 
 func initCluster() {

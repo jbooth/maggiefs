@@ -3,6 +3,7 @@ package nameserver
 import (
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -18,13 +19,13 @@ type replicationManager struct {
 // internal object representing live connection to DN
 type volume struct {
 	stat maggiefs.VolumeStat
-	conn maggiefs.NameDataIface
+	conn maggiefs.Peer
 }
 
 type dnChecker struct {
 	quit   chan bool
 	dnInfo *maggiefs.DataNodeInfo
-	dn     maggiefs.NameDataIface
+	dn     maggiefs.Peer
 }
 
 // monitors this volume, updating it's stats locally and notifying if DN dies
@@ -59,11 +60,12 @@ func (rm *replicationManager) monitorStat(c *dnChecker) {
 func (rm *replicationManager) dnDead() {
 }
 
-func (rm *replicationManager) addDn(dn maggiefs.NameDataIface) error {
+func (rm *replicationManager) addDn(dn maggiefs.Peer) error {
 	stat, err := dn.HeartBeat()
 	if err != nil {
 		return err
 	}
+	log.Printf("ReplicationManager got new datanode with stat %s", stat)
 	rm.l.Lock()
 	// setup stats
 	for _, volStat := range stat.Volumes {
@@ -121,6 +123,7 @@ func (rm *replicationManager) FsStat() (maggiefs.FsStat, error) {
 			ret.Used += dns.Used()
 		}
 	}
+	log.Printf("replication.FsStat returning %+v", ret)
 	return ret, nil
 }
 

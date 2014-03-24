@@ -4,26 +4,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
-	"github.com/jbooth/maggiefs/mrpc"
+	"log"
+	"net"
 	"net/http"
 	"strconv"
-	"time"
-	"net"
 	"sync"
+	"time"
 )
 
-var peerWebTypeCheck mrpc.Service = &PeerWebServer{}
+var peerWebTypeCheck Service = &PeerWebServer{}
 
-func NewPeerWebServer(ns maggiefs.NameService, dc maggiefs.DataService, mountPoint string, addr string) (*PeerWebServer,error) {
-	laddr,err := net.ResolveTCPAddr("tcp",addr)
+func NewPeerWebServer(ns maggiefs.NameService, dc maggiefs.DataService, mountPoint string, addr string) (*PeerWebServer, error) {
+	log.Printf("Peer webserver starting up on addr %s", addr)
+	laddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
-	l,err := net.ListenTCP("tcp",laddr)
+	l, err := net.ListenTCP("tcp", laddr)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
-	ret := &PeerWebServer {
+	ret := &PeerWebServer{
 		ns,
 		dc,
 		mountPoint,
@@ -36,7 +37,7 @@ func NewPeerWebServer(ns maggiefs.NameService, dc maggiefs.DataService, mountPoi
 	myHandler.HandleFunc("/inode", handle(ret.webInodeJson))
 	myHandler.HandleFunc("/blockLocations", handle(ret.getBlockLocations))
 	myHandler.HandleFunc("/mountPoint", handle(ret.getMountPoint))
-	
+
 	http := &http.Server{
 		Addr:           addr,
 		Handler:        myHandler,
@@ -45,17 +46,17 @@ func NewPeerWebServer(ns maggiefs.NameService, dc maggiefs.DataService, mountPoi
 		MaxHeaderBytes: 1 << 20,
 	}
 	ret.http = http
-	return ret,nil
+	return ret, nil
 }
 
 type PeerWebServer struct {
-	ns maggiefs.NameService
-	dc maggiefs.DataService
+	ns         maggiefs.NameService
+	dc         maggiefs.DataService
 	mountPoint string
-	l  *net.TCPListener
-	http *http.Server
-	clos *sync.Cond
-	closed bool
+	l          *net.TCPListener
+	http       *http.Server
+	clos       *sync.Cond
+	closed     bool
 }
 
 func (ws *PeerWebServer) Serve() error {
@@ -82,6 +83,7 @@ func (ws *PeerWebServer) WaitClosed() error {
 	ws.clos.L.Unlock()
 	return nil
 }
+
 // wraps a func taking nameserver to a standard http handler
 func handle(f func(w http.ResponseWriter, r *http.Request) error) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -113,14 +115,12 @@ func (ws *PeerWebServer) webInodeJson(w http.ResponseWriter, r *http.Request) er
 	return err
 }
 
-
 // spit out our mountpoint for hadoop clients to delegate to
 func (ws *PeerWebServer) getMountPoint(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Type", "text/plain")
 	_, err := w.Write([]byte(ws.mountPoint))
 	return err
 }
-
 
 // given a relative path and offset into the file, get the locations for that offset
 func (ws *PeerWebServer) getBlockLocations(w http.ResponseWriter, r *http.Request) error {
@@ -133,26 +133,26 @@ func (ws *PeerWebServer) getBlockLocations(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		return fmt.Errorf("getBlockLocations: err parsing length: %s", err.Error())
 	}
-	
+
 	ino, err := maggiefs.ResolveInode(filePath, ws.ns)
 	if err != nil {
 		return err
 	}
-	blocksInRange := maggiefs.BlocksInRange(ino.Blocks,start,length)
+	blocksInRange := maggiefs.BlocksInRange(ino.Blocks, start, length)
 	if len(blocksInRange) == 0 {
 		return fmt.Errorf("Offset %d not in any blocks on inode %+v", start, ino)
 	}
-	ret := make([]BlockLocation,len(blocksInRange))
-	for blockIdx,b := range blocksInRange {
+	ret := make([]BlockLocation, len(blocksInRange))
+	for blockIdx, b := range blocksInRange {
 		item := BlockLocation{}
 		item.Offset = int64(b.StartPos)
 		item.Length = int64(b.EndPos - b.StartPos)
-		item.Hosts = make([]string,len(b.Volumes))
-		item.Names = make([]string,len(b.Volumes))
-		item.TopologyPaths = make([]string,len(b.Volumes))
-		
-		for hostIdx,v := range b.Volumes {
-			addr,err := ws.dc.VolHost(v)
+		item.Hosts = make([]string, len(b.Volumes))
+		item.Names = make([]string, len(b.Volumes))
+		item.TopologyPaths = make([]string, len(b.Volumes))
+
+		for hostIdx, v := range b.Volumes {
+			addr, err := ws.dc.VolHost(v)
 			if err != nil {
 				return err
 			}
@@ -172,9 +172,9 @@ func (ws *PeerWebServer) getBlockLocations(w http.ResponseWriter, r *http.Reques
 }
 
 type BlockLocation struct {
-	Hosts []string `json:"hosts"` // hostnames of peers
-	Names []string `json:"names"` // hostname:port of peers
+	Hosts         []string `json:"hosts"`         // hostnames of peers
+	Names         []string `json:"names"`         // hostname:port of peers
 	TopologyPaths []string `json:"topologyPaths"` // full path name in network topology, unused
-	Offset int64 `json:"offset"`
-	Length int64 `json:"length"` 
+	Offset        int64    `json:"offset"`
+	Length        int64    `json:"length"`
 }
