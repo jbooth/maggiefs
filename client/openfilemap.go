@@ -36,6 +36,7 @@ type openFile struct {
 	fh  uint64
 	ino *openInode
 	w   *Writer
+	r   *Reader
 }
 
 func NewOpenFileMap(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, localDnId *uint32, onNotify func(uint64)) *OpenFileMap {
@@ -59,9 +60,7 @@ func (o *OpenFileMap) handleNotifications() {
 	for event := range notifications {
 		inodeid := event.Inodeid()
 		o.clear(inodeid)
-		log.Printf("Sending notify to OS through fuse chan")
 		o.onNotify(inodeid)
-		log.Printf("acking %d", inodeid)
 		err := event.Ack()
 		if err != nil {
 			log.Printf("Error acking on notify for ino %d : %s", inodeid, err)
@@ -85,7 +84,7 @@ func (o *OpenFileMap) clear(inodeid uint64) {
 	openIno := o.inodes[inodeid]
 	o.l.RUnlock()
 	openIno.l.Lock()
-	fmt.Printf("Nilling openInode %d after notify\n", openIno.inodeid)
+	log.Printf("Nilling openInode %d after notify\n", openIno.inodeid)
 	openIno.ino = nil
 	openIno.l.Unlock()
 }
@@ -125,6 +124,7 @@ func (o *OpenFileMap) Open(inodeid uint64, writable bool) (fh uint64, err error)
 		fh,
 		ino,
 		w,
+		NewReader(),
 	}
 	o.files[f.fh] = f
 	return fh, nil
@@ -154,14 +154,11 @@ func (o *OpenFileMap) Close(fh uint64) (err error) {
 }
 
 func (o *OpenFileMap) Read(fd uint64, buf fuse.ReadPipe, pos uint64, length uint32) (err error) {
-	log.Printf("Reading %d bytes from fd %d", length, fd)
-	_, ino, err := o.getInode(fd)
-	log.Printf("Got ino for read %+v", ino)
+	f, ino, err := o.getInode(fd)
 	if err != nil {
 		return err
 	}
 	return Read(o.datas, ino, buf, pos, length)
-	//doRead(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, position uint64, length uint32)
 }
 
 func (o *OpenFileMap) Write(fd uint64, p []byte, pos uint64, length uint32) (nWritten uint32, err error) {
@@ -171,7 +168,6 @@ func (o *OpenFileMap) Write(fd uint64, p []byte, pos uint64, length uint32) (nWr
 		return 0, err
 	}
 	return length, f.w.Write(o.datas, ino, p, pos, length)
-	//Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []byte, position uint64, length uint32)
 }
 
 func (o *OpenFileMap) Sync(fd uint64) (err error) {
@@ -184,7 +180,6 @@ func (o *OpenFileMap) Sync(fd uint64) (err error) {
 		return f.w.Sync()
 	}
 	return nil
-	//Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []byte, position uint64, length uint32)
 }
 
 // gets our local leased copy of an inode, if possible, or nil if we have no copy of that ino open
@@ -205,7 +200,6 @@ func (o *OpenFileMap) getInode(fd uint64) (*openFile, *maggiefs.Inode, error) {
 		return f, ret, nil
 	}
 	// could have been invalidated, in which case we should re-acquire a copy
-	fmt.Printf("OpenIno %d was nil, re-fetching..\n", openIno.inodeid)
 	openIno.l.Lock()
 	defer openIno.l.Unlock()
 	ino, err := o.names.GetInode(openIno.inodeid)

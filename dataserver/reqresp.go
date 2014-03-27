@@ -2,7 +2,6 @@ package dataserver
 
 import (
 	"encoding/binary"
-	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"io"
 )
@@ -91,7 +90,6 @@ func (req *RequestHeader) ReadFrom(r io.Reader) (n int, err error) {
 	}
 	nRead = 0
 	reqLen := int(binary.LittleEndian.Uint16(reqLenBuff[:]))
-	fmt.Printf("Reading header of length %d\n", reqLen)
 	reqBuff := make([]byte, reqLen)
 	for nRead < reqLen {
 		n, err := r.Read(reqBuff[nRead:])

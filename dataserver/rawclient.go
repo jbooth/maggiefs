@@ -44,7 +44,6 @@ func NewRawClient(conn *net.TCPConn, numStripes int) (*RawClient, error) {
 func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *os.File)) error {
 	// set reqno
 	header.Reqno = atomic.AddUint32(c.reqnoCtr, 1)
-	log.Printf("DataServer.RawClient: executing request with header %+v to sock %s\n", header, c.server)
 	// encode header
 	headerLen := uint16(header.BinSize())
 	headerBytes := make([]byte, headerLen+2, headerLen+2)
@@ -77,14 +76,13 @@ func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *
 	c.stripeLock[mod].Lock()
 	c.callBacks[mod][header.Reqno] = onResp
 	c.stripeLock[mod].Unlock()
-	log.Printf("DataServer.RawClient: Registered callback %d on client %s\n", header.Reqno, c.server)
 	totalBytes := uint64(0)
 	for _, iovec := range iovecs {
 		totalBytes += iovec.Len
 	}
 	// send request
 	c.writeLock.Lock()
-	ret1, ret2, errno := syscall.Syscall(
+	ret1, _, errno := syscall.Syscall(
 		syscall.SYS_WRITEV,
 		uintptr(c.server.Fd()), uintptr(unsafe.Pointer(&iovecs[0])), uintptr(len(iovecs)))
 	c.writeLock.Unlock()
@@ -95,7 +93,6 @@ func (c *RawClient) DoRequest(header RequestHeader, body []byte, onResp func(s *
 	if totalBytes > uint64(ret1) {
 		return fmt.Errorf("Writev wrote less than expected!  %d < %d", ret1, totalBytes)
 	}
-	log.Printf("Writev tried to write %d total bytes, returned args %d , %d\n", totalBytes, ret1, ret2)
 	return nil
 }
 
@@ -103,7 +100,6 @@ func (c *RawClient) handleResponses() {
 	b := make([]byte, 5, 5)
 	resp := ResponseHeader{}
 	for {
-		log.Printf("RawClient.HandleResponses reading from %s\n", c.server)
 		nRead := 0
 		for nRead < 5 {
 			n, err := c.server.Read(b[nRead:])
@@ -114,7 +110,6 @@ func (c *RawClient) handleResponses() {
 			nRead += n
 		}
 		resp.FromBytes(b)
-		log.Printf("RawClient.HandleResponses got resp %+v from sock %s\n", resp, c.server)
 		// TODO look at status
 		mod := resp.Reqno % uint32(len(c.stripeLock))
 		c.stripeLock[mod].Lock()

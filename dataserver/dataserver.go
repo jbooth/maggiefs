@@ -105,7 +105,6 @@ func (ds *DataServer) ServeReadConn(c *net.TCPConn) {
 	}()
 	req := &RequestHeader{}
 	for {
-		log.Printf("Dataserver reading header\n")
 		_, err := req.ReadFrom(conn)
 
 		if err != nil {
@@ -118,7 +117,7 @@ func (ds *DataServer) ServeReadConn(c *net.TCPConn) {
 				return
 			}
 		}
-		log.Printf("Dataserver: Got header %+v from conn %s", req, conn)
+		//log.Printf("Dataserver: Got header %+v from conn %s", req, conn)
 		// figure out which of our volumes
 		volForBlock := uint32(0)
 		for volId, _ := range ds.volumes {
@@ -139,9 +138,7 @@ func (ds *DataServer) ServeReadConn(c *net.TCPConn) {
 		} else {
 			vol := ds.volumes[volForBlock]
 			if req.Op == OP_READ {
-				log.Printf("Dataserver: Serving read..\n")
 				err = vol.serveRead(conn, req)
-				log.Printf("Dataserver: Done with read to sock %s \n", conn)
 				if err != nil {
 					log.Printf("Dataserver: Err serving read : %s", err.Error())
 					return
@@ -165,12 +162,11 @@ func (ds *DataServer) ServeWriteConn(conn *net.TCPConn) {
 		log.Printf("Dataserver connection shutting down and closing conn %s", conn)
 		conn.Close()
 	}()
-	buff := make([]byte, 128*1024, 128*1024)
+	buff := make([]byte, 64*1024, 64*1024)
 	l := new(sync.Mutex)
 	req := &RequestHeader{}
 
 	for {
-		log.Printf("Dataserver reading header\n")
 		_, err := req.ReadFrom(conn)
 
 		if err != nil {
@@ -183,7 +179,6 @@ func (ds *DataServer) ServeWriteConn(conn *net.TCPConn) {
 				return
 			}
 		}
-		log.Printf("Dataserver: Got header %+v from conn %s", req, conn)
 		// figure out which of our volumes
 		volForBlock := uint32(0)
 		for volId, _ := range ds.volumes {
@@ -221,7 +216,7 @@ func (ds *DataServer) ServeWriteConn(conn *net.TCPConn) {
 					lastNode = true
 				}
 
-				log.Printf("Dataserver read %d into buffer for write. lastNode %t\n", nRead, lastNode)
+				//log.Printf("Dataserver read %d into buffer for write. lastNode %t\n", nRead, lastNode)
 				if !lastNode {
 					// forward to next node if appropriate with callback
 					req.Blk.Volumes = req.Blk.Volumes[1:]
@@ -230,7 +225,7 @@ func (ds *DataServer) ServeWriteConn(conn *net.TCPConn) {
 						<-insureWriteFinished
 						// send response to client
 						l.Lock()
-						log.Printf("DataServer: Intermediate note writing response %+v to client %s\n", resp, conn)
+						//log.Printf("DataServer: Intermediate note writing response %+v to client %s\n", resp, conn)
 						_, err := resp.WriteTo(conn)
 						l.Unlock()
 						if err != nil {
@@ -239,11 +234,9 @@ func (ds *DataServer) ServeWriteConn(conn *net.TCPConn) {
 					})
 				}
 				// write to our copy of block
-				log.Printf("Dataserver acquiring lock to write to File for req %+v\n", req)
 				err = vol.withFile(req.Blk.Id, func(f *os.File) error {
-					n, e1 := f.WriteAt(writeBuff, int64(req.Pos))
+					_, e1 := f.WriteAt(writeBuff, int64(req.Pos))
 					insureWriteFinished <- true
-					log.Printf("Dataserver Finished write for req %+v, wrote %d bytes \n", req, n)
 					return e1
 				})
 				if err != nil {
@@ -253,7 +246,7 @@ func (ds *DataServer) ServeWriteConn(conn *net.TCPConn) {
 				if lastNode {
 					// respond here
 					l.Lock()
-					log.Printf("Dataserver: Terminal node writing response %+v to client %s\n", resp, conn)
+					//log.Printf("Dataserver: Terminal node writing response %+v to client %s\n", resp, conn)
 					_, err := resp.WriteTo(conn)
 					l.Unlock()
 					if err != nil {

@@ -74,7 +74,6 @@ func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr, error) {
 
 // does the read and calls onDone in receiver thread after splicing to SplicerTo
 func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func()) error {
-	log.Printf("starting read")
 	if dc.isLocal(blk.Volumes) {
 		// local direct read
 		return dc.localDS.DirectRead(blk, buf, pos, length, onDone)
@@ -83,17 +82,16 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 	if err != nil {
 		return nil
 	}
-	log.Printf("Picked host %s for remote read, getting conn", host)
+	//log.Printf("Picked host %s for remote read, getting conn", host)
 	conn, err := dc.readConns.getConn(host)
 	if err != nil {
 		return err
 	}
 	header := RequestHeader{OP_READ, 0, blk, pos, length}
-	fmt.Printf("Executing read with header %+v")
 	conn.DoRequest(header, nil, func(d *os.File) {
 		// read resp bytes
 		//fmt.Printf("Entering loop to read %d bytes\n",length)
-		fmt.Printf("In read callback, reading %d bytes", length)
+		//fmt.Printf("In read callback, reading %d bytes", length)
 		numRead := 0
 		for uint32(numRead) < length {
 			//fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length-uint32(numRead), d, numRead, int(length))

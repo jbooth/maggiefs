@@ -276,7 +276,6 @@ func (m *MaggieFuse) SetAttr(input *fuse.SetAttrIn, out *fuse.AttrOut) (code fus
 			log.Printf("Error getting ino for SetAttr return: %s", err)
 		}
 	}
-	fmt.Printf("SetAttr filling attr out with ino %+v\n", ino)
 	fillAttrOut(out, ino)
 	return fuse.OK
 }
@@ -520,8 +519,6 @@ func (m *MaggieFuse) GetXAttrData(header *fuse.InHeader, attr string) (data []by
 	if err != nil {
 		return nil, fuse.EROFS
 	}
-
-	// punt
 	return node.Xattr[attr], fuse.OK
 }
 
@@ -530,7 +527,6 @@ func (m *MaggieFuse) SetXAttr(input *fuse.SetXAttrIn, attr string, data []byte) 
 	if err != nil {
 		return fuse.ENOSYS
 	}
-	// punt
 	return fuse.OK
 }
 

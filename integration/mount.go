@@ -2,26 +2,26 @@ package integration
 
 import (
 	"fmt"
-	"sync"
 	"github.com/jbooth/maggiefs/fuse"
 	"runtime/debug"
+	"sync"
 )
 
 type Mount struct {
-	Mnt         *fuse.Server
+	Mnt        *fuse.Server
 	MountPoint string
-	closed bool
-	closeCnd *sync.Cond
+	closed     bool
+	closeCnd   *sync.Cond
 }
 
 func NewMount(mfs fuse.RawFileSystem, mountPoint string, debug bool) (*Mount, error) {
 	opts := &fuse.MountOptions{
 		MaxBackground: 12,
-		MaxWrite: 128 * 1024,
+		MaxWrite:      64 * 1024,
 	}
-	mnt,err := fuse.NewServer(mfs,mountPoint,opts)
+	mnt, err := fuse.NewServer(mfs, mountPoint, opts)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	mnt.SetDebug(debug)
 	return &Mount{mnt, mountPoint, false, sync.NewCond(new(sync.Mutex))}, err
@@ -32,7 +32,7 @@ func (m *Mount) Serve() error {
 	defer func() {
 		if x := recover(); x != nil {
 			fmt.Printf("run time panic serving mountpoint %s : %v\n", m.MountPoint, x)
-			fmt.Printf("stacktrace: %s\n",string(debug.Stack()))
+			fmt.Printf("stacktrace: %s\n", string(debug.Stack()))
 			m.Close()
 		}
 	}()
@@ -41,7 +41,7 @@ func (m *Mount) Serve() error {
 }
 
 func (m *Mount) Close() error {
-	fmt.Printf("Closing mountpoint at %s\n",m.MountPoint)
+	fmt.Printf("Closing mountpoint at %s\n", m.MountPoint)
 	defer func() {
 		if x := recover(); x != nil {
 			fmt.Printf("run time panic: %v\n", x)
@@ -64,5 +64,3 @@ func (m *Mount) WaitClosed() error {
 	m.closeCnd.L.Unlock()
 	return nil
 }
-
-

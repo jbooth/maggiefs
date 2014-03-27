@@ -229,7 +229,7 @@ func runMaster(args []string) (s integration.Service, err error) {
 		return
 	}
 	fmt.Printf("Running master with config: \n %+v\n", cfg)
-	s, err = integration.NewNameServer(cfg, false)
+	s, err = integration.NewMaster(cfg, false)
 	return
 }
 
