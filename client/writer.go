@@ -63,11 +63,10 @@ func (w *Writer) process() {
 			return
 		}
 		if write.isSync {
-			log.Printf("Finishing sync request for ino %d : %+v", w.inodeid, write)
+			//log.Printf("Finishing sync request for ino %d : %+v", w.inodeid, write)
 			<-write.done
 			continue
 		}
-		log.Printf("process() Got write %+v from channel in blocking call", write)
 		updates := []pendingWrite{write}
 		numUpdates := 1
 		// this will be non-nil if we have a sync request to inform when up to date
@@ -85,7 +84,6 @@ func (w *Writer) process() {
 					syncRequest = write
 					break INNER
 				}
-				log.Printf("process() Got write %+v from channel w/ nonblocking call", write)
 				updates = append(updates, write)
 				numUpdates += 1
 				if numUpdates > 32 {
@@ -99,9 +97,7 @@ func (w *Writer) process() {
 		newOff := int64(0)
 		newLen := int64(0)
 		for _, write := range updates {
-			log.Printf("Handling update %+v", write)
 			newOffAndLen := <-write.done
-			log.Printf("New off and len : %+v", newOffAndLen)
 			if newOff == 0 && newLen == 0 {
 				// don't have a previous write we're extending, so set them and reloop
 				newOff = newOffAndLen.off
@@ -112,7 +108,7 @@ func (w *Writer) process() {
 			} else {
 				// we have a previous write that needs flushing
 
-				log.Printf("Updating master with off %d len %d", newOff, newLen)
+				//log.Printf("Updating master with off %d len %d", newOff, newLen)
 				// make sure namenode thinks inode is at least this long
 				_, err := w.names.Extend(w.inodeid, uint64(newLen+newOff))
 				if err != nil {
@@ -129,7 +125,7 @@ func (w *Writer) process() {
 			}
 		}
 		if newLen > 0 {
-			log.Printf("Updating master with off %d len %d", newOff, newLen)
+			//log.Printf("Updating master with off %d len %d", newOff, newLen)
 			// one last update
 			_, err := w.names.Extend(w.inodeid, uint64(newOff+newLen))
 			if err != nil {
@@ -141,7 +137,7 @@ func (w *Writer) process() {
 			}
 		}
 		if syncRequest.done != nil {
-			log.Printf("Finishing sync request for ino %d : %+v", w.inodeid, syncRequest)
+			//log.Printf("Finishing sync request for ino %d : %+v", w.inodeid, syncRequest)
 			<-syncRequest.done
 			syncRequest = pendingWrite{nil, true}
 		}
@@ -166,7 +162,7 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 		if err != nil {
 			return err
 		}
-		log.Printf("Added a block, new inode %+v", inode)
+		//log.Printf("Added a block, new inode %+v", inode)
 		// invalidate local ino cache to make sure future reads see this block
 		// 0 length and offset prevent spurious cluster notify
 		w.doNotify(inode.Inodeid, 0, 0)
@@ -225,9 +221,7 @@ func (w *Writer) doSync() {
 	syncRequest := pendingWrite{make(chan offAndLen), true}
 	w.pendingWrites <- syncRequest
 	// since syncRequest is unbuffered, this will block until processed
-	log.Printf("Writer queuing syncRequest for inode %d : %+v", w.inodeid, syncRequest)
 	syncRequest.done <- offAndLen{0, 0}
-	log.Printf("Writer done sync for ino %d!", w.inodeid)
 }
 
 type blockwrite struct {

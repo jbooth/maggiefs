@@ -77,8 +77,8 @@ func doInit(server *Server, req *request) {
 
 	server.reqMu.Lock()
 	server.kernelSettings = *input
-	server.kernelSettings.Flags = input.Flags & (CAP_ASYNC_READ | CAP_BIG_WRITES | CAP_FILE_OPS |
-		CAP_AUTO_INVAL_DATA | CAP_READDIRPLUS)
+	// no CAP_AUTO_INVAL here nosirree
+	server.kernelSettings.Flags = input.Flags & (CAP_ASYNC_READ | CAP_BIG_WRITES | CAP_FILE_OPS | CAP_READDIRPLUS)
 
 	log.Printf("Fuse Init in opcode.go, max_readahead: %d\n", input.MaxReadAhead)
 	server.reqMu.Unlock()

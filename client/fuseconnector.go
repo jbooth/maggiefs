@@ -125,7 +125,7 @@ func fillEntryOut(out *fuse.EntryOut, i *maggiefs.Inode) {
 	out.Ino = i.Inodeid
 	out.Size = i.Length
 	out.Blocks = numBlocks(i.Length, maggiefs.PAGESIZE)
-	out.Atime = uint64(0)       // always 0 for atime
+	out.Atime = uint64(0)
 	out.Mtime = uint64(i.Mtime) // Mtime is user modifiable and is the last time data changed
 	out.Ctime = uint64(i.Ctime) // Ctime is tracked by the FS and changes when attrs or data change
 	out.Atimensec = uint32(0)
@@ -148,7 +148,7 @@ func fillAttrOut(out *fuse.AttrOut, i *maggiefs.Inode) {
 	out.Ino = i.Inodeid
 	out.Size = i.Length
 	out.Blocks = numBlocks(i.Length, maggiefs.PAGESIZE)
-	out.Atime = uint64(0)       // always 0 for atime
+	out.Atime = uint64(0)
 	out.Mtime = uint64(i.Mtime) // Mtime is user modifiable and is the last time data changed
 	out.Ctime = uint64(i.Ctime) // Ctime is tracked by the FS and changes when attrs or data change
 	out.Atimensec = uint32(0)
@@ -168,13 +168,17 @@ func fillAttrOut(out *fuse.AttrOut, i *maggiefs.Inode) {
 func (m *MaggieFuse) GetAttr(input *fuse.GetAttrIn, out *fuse.AttrOut) (code fuse.Status) {
 	// optimized path for open files
 	if input.Fh_ > 0 {
+		log.Printf("Fetching ino for GetAttr from openFileMap for fh %d", input.Fh_)
 		_, i, err := m.openFiles.getInode(input.Fh_)
 		if err != nil {
 			return fuse.ENOSYS
 		}
 		if i != nil {
+			log.Printf("Got ino for GetAttr from openFileMap")
 			fillAttrOut(out, i)
 			out.AttrValid = uint64(1) // hold onto it for a second
+			out.AttrValidNsec = uint32(1e9)
+			return fuse.OK
 		}
 	}
 	// normal case for files that aren't currently open
@@ -209,7 +213,7 @@ func (m *MaggieFuse) Open(input *fuse.OpenIn, out *fuse.OpenOut) (status fuse.St
 	// output
 	out.Fh = fh
 	out.OpenFlags = fuse.FOPEN_KEEP_CACHE
-	log.Printf("opened inode %d with fh %d", input.InHeader.NodeId, fh)
+	//log.Printf("opened inode %d with fh %d", input.InHeader.NodeId, fh)
 	return fuse.OK
 }
 
