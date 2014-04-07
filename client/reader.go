@@ -18,6 +18,7 @@ func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, po
 		// write header for OK, 0 bytes at EOF
 		log.Printf("Read at EOF, position %d length %d, returning 0", position, inode.Length)
 		p.WriteHeader(0, 0)
+		p.Commit()
 		return nil
 	}
 	if position > inode.Length {
@@ -25,7 +26,6 @@ func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, po
 	}
 	if position+uint64(length) > inode.Length {
 		// truncate length to the EOF
-		log.Printf("Truncating length from %d to %d", length, inode.Length-position)
 		length = uint32(inode.Length - position)
 	}
 	// write header

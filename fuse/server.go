@@ -424,6 +424,7 @@ func (ms *Server) commitReadResults(req *request, pair *splice.Pair, numInPipe i
 	}
 	// normal send
 	//ms.reqMu.Lock()
+	log.Printf("fuse.server.commitReadResults actually splicing %d bytes from pipe", numInPipe)
 	_, err = pair.WriteTo(uintptr(ms.mountFd), numInPipe)
 	//ms.reqMu.Unlock()
 	if err != nil {

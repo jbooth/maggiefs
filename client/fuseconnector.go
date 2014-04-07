@@ -166,6 +166,18 @@ func fillAttrOut(out *fuse.AttrOut, i *maggiefs.Inode) {
 }
 
 func (m *MaggieFuse) GetAttr(input *fuse.GetAttrIn, out *fuse.AttrOut) (code fuse.Status) {
+	// optimized path for open files
+	if input.Fh_ > 0 {
+		_, i, err := m.openFiles.getInode(input.Fh_)
+		if err != nil {
+			return fuse.ENOSYS
+		}
+		if i != nil {
+			fillAttrOut(out, i)
+			out.AttrValid = uint64(1) // hold onto it for a second
+		}
+	}
+	// normal case for files that aren't currently open
 	i, err := m.names.GetInode(input.InHeader.NodeId)
 	if err != nil {
 		return fuse.EROFS

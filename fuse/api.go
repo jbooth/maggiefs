@@ -141,7 +141,7 @@ type readPipe struct {
 func (r *readPipe) WriteHeader(code int32, returnBytesLength int) error {
 	r.req.status = Status(code)
 	headerBytes := r.req.serializeHeader(returnBytesLength)
-
+	log.Printf("readResponse.WriterHeader:  Code %d returnBytesLength %d", code, returnBytesLength)
 	r.numInPipe = len(headerBytes) + returnBytesLength
 	err := r.pipe.Grow(r.numInPipe)
 	if err != nil {
@@ -175,6 +175,7 @@ func (r *readPipe) LoadFromAt(fd uintptr, length int, offset int64) (int, error)
 }
 
 func (r *readPipe) Commit() error {
+	log.Printf("Committing read results with %d total bytes in pipe", r.numInPipe)
 	r.fuseServer.commitReadResults(r.req, r.pipe, r.numInPipe, nil)
 	return nil
 }

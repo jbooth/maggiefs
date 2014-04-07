@@ -154,7 +154,7 @@ func (o *OpenFileMap) Close(fh uint64) (err error) {
 }
 
 func (o *OpenFileMap) Read(fd uint64, buf fuse.ReadPipe, pos uint64, length uint32) (err error) {
-	f, ino, err := o.getInode(fd)
+	_, ino, err := o.getInode(fd)
 	if err != nil {
 		return err
 	}

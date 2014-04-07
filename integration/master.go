@@ -1,11 +1,11 @@
 package integration
 
 import (
-	"fmt"
 	"github.com/jbooth/maggiefs/leaseserver"
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
 	"github.com/jbooth/maggiefs/nameserver"
+	"log"
 	"net"
 	"strconv"
 )
@@ -40,17 +40,15 @@ func (n *Master) WaitClosed() error {
 func NewMaster(cfg *MasterConfig, format bool) (*Master, error) {
 	nls := &Master{}
 	var err error = nil
-	fmt.Println("creating lease server")
 	nls.leaseServer = leaseserver.NewLeaseServer()
-	fmt.Println("creating name server")
 	nls.nameserver, err = nameserver.NewNameServer(cfg.WebBindAddr, cfg.NameHome, cfg.ReplicationFactor, format)
 	if err != nil {
-		fmt.Printf("Error creating nameserver: %s\n\n Nameserver config: %+v\n", err.Error(), cfg)
+		log.Printf("Error creating nameserver: %s\n\n Nameserver config: %+v\n", err.Error(), cfg)
 		return nls, err
 	}
 	opMap := make(map[uint32]func(*net.TCPConn))
 	opMap[SERVNO_LEASESERVER] = nls.leaseServer.ServeConn
-
+	log.Printf("Starting master on addr %s", cfg.BindAddr)
 	nls.serv, err = mrpc.CloseableRPC(cfg.BindAddr, "NameService", maggiefs.NewNameServiceService(nls.nameserver), opMap)
 	if err != nil {
 		return nls, err

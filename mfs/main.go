@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/jbooth/maggiefs/client"
 	"github.com/jbooth/maggiefs/integration"
 	"github.com/jbooth/maggiefs/nameserver"
 	"log"
@@ -29,6 +30,7 @@ func usage(err error) {
 	fmt.Fprintf(os.Stderr, "usage: mfs [-debug] [-cpuprofile <filePath>] [-blockprofile <filePath>] <cmd>\n")
 	fmt.Fprintf(os.Stderr, "mfs master <path/to/config> : run a master\n")
 	fmt.Fprintf(os.Stderr, "mfs peer <path/to/config> : run a peer\n")
+	fmt.Fprintf(os.Stderr, "mfs client masterHostPort mountPoint : connect a non-peer client\n")
 	fmt.Fprintf(os.Stderr, "mfs masterconfig <homedir> : prints defaulted master config to stdout, with homedir set as the master's home\n")
 	fmt.Fprintf(os.Stderr, "mfs peerconfig [options] : prints peer config to stdout, run mfs peerconfig -usage to see options \n")
 	fmt.Fprintf(os.Stderr, "mfs format <path/to/NameDataDir>: formats a directory for use as the master's homedir \n")
@@ -101,6 +103,13 @@ func main() {
 		}
 	case "master":
 		running, err = runMaster(args)
+		if err != nil {
+			usage(err)
+			return
+		}
+	case "client":
+		// args are masterAddr, mountPoint
+		running, err = runClient(args[0], args[1])
 		if err != nil {
 			usage(err)
 			return
@@ -260,4 +269,17 @@ func runPeer(args []string) (peer integration.Service, err error) {
 	}
 	peer, err = integration.NewPeer(cfg, debug)
 	return
+}
+
+func runClient(masterHostPort string, mountPoint string) (integration.Service, error) {
+	cli, err := integration.NewClient(masterHostPort)
+	if err != nil {
+		return nil, err
+	}
+	mfs, err := client.NewMaggieFuse(cli.Leases, cli.Names, cli.Datas, nil)
+	if err != nil {
+		return nil, err
+	}
+	mount, err := integration.NewMount(mfs, mountPoint, debug)
+	return mount, err
 }
