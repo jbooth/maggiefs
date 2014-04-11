@@ -124,6 +124,8 @@ type ReadPipe interface {
 	LoadFromAt(fd uintptr, length int, offset int64) (int, error)
 	// finish our read and write bytes to fuse channel
 	Commit() error
+	// resets internal state (in case you had an error writing to the pipe and want to start over)
+	Reset() error
 }
 
 type readPipe struct {
@@ -178,4 +180,11 @@ func (r *readPipe) Commit() error {
 	log.Printf("Committing read results with %d total bytes in pipe", r.numInPipe)
 	r.fuseServer.commitReadResults(r.req, r.pipe, r.numInPipe, nil)
 	return nil
+}
+
+func (r *readPipe) Reset() (err error) {
+	splice.Drop(r.pipe)
+	r.pipe, err = splice.Get()
+	r.numInPipe = 0
+	return err
 }

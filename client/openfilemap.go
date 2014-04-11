@@ -83,7 +83,6 @@ func (o *OpenFileMap) clear(inodeid uint64) {
 	openIno := o.inodes[inodeid]
 	o.l.RUnlock()
 	openIno.l.Lock()
-	log.Printf("Nilling openInode %d after notify\n", openIno.inodeid)
 	openIno.ino = nil
 	openIno.l.Unlock()
 }
@@ -156,7 +155,15 @@ func (o *OpenFileMap) Read(fd uint64, buf fuse.ReadPipe, pos uint64, length uint
 	if err != nil {
 		return err
 	}
-	return Read(o.datas, ino, buf, pos, length)
+	// try 3 times before giving up
+	// DataService marks nodes as bad if we fail and will reroute to another on the next attempt
+	for i := 0; i < 3; i++ {
+		err = Read(o.datas, ino, buf, pos, length)
+		if err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 func (o *OpenFileMap) Write(fd uint64, p []byte, pos uint64, length uint32) (nWritten uint32, err error) {

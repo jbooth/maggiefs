@@ -106,7 +106,7 @@ func Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.ReadPipe, po
 		position += uint64(numBytesFromBlock)
 		//fmt.Printf("finished reading a block, nRead %d, pos %d, total to read %d\n",nRead,position,length)
 	}
-	log.Printf("Done with read, successfully read %d out of %d", nRead, length)
+	//log.Printf("Done with read, successfully read %d out of %d", nRead, length)
 	// sometimes the length can be more bytes than there are in the file, so always just give that back
 	return nil
 }

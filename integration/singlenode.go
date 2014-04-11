@@ -18,15 +18,16 @@ import (
 // compile time check
 var singleClustCheck Service = &SingleNodeCluster{}
 
-// Encapsulates a single node, minus mountpoint.  Used for testing.
+// Encapsulates a mini cluster, minus mountpoint.  Used for testing.
 type SingleNodeCluster struct {
-	LeaseServer *leaseserver.LeaseServer
-	Leases      maggiefs.LeaseService
-	NameServer  *nameserver.NameServer
-	Names       maggiefs.NameService
-	DataNodes   []*dataserver.DataServer
-	Datas       maggiefs.DataService
-	svc         Service
+	LeaseServer   *leaseserver.LeaseServer
+	Leases        maggiefs.LeaseService
+	NameServer    *nameserver.NameServer
+	Names         maggiefs.NameService
+	DataNodes     []*dataserver.DataServer
+	DataNodeServs []*mrpc.CloseableServer
+	Datas         maggiefs.DataService
+	svc           Service
 }
 
 func (snc *SingleNodeCluster) Serve() error {
@@ -47,9 +48,9 @@ func (snc *SingleNodeCluster) HttpAddr() string {
 	return "localhost:1103"
 }
 
-func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string, mountPoint string, debugMode bool) (*SingleNodeCluster, error) {
+func NewSingleNodeCluster(startPort int, webPort int, numDNs int, volsPerDn int, replicationFactor uint32, baseDir string, mountPoint string, debugMode bool) (*SingleNodeCluster, error) {
 	cl := &SingleNodeCluster{}
-	nncfg, ds, err := NewConfSet2(numDNs, volsPerDn, replicationFactor, baseDir)
+	nncfg, ds, err := NewConfSet2(startPort, numDNs, volsPerDn, replicationFactor, baseDir)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +77,7 @@ func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, b
 	cl.Datas = cli.Datas
 
 	// peer web server hardcoded to 1103
-	webServer, err := NewPeerWebServer(cl.Names, cl.Datas, mountPoint, "localhost:1103")
+	webServer, err := NewPeerWebServer(cl.Names, cl.Datas, mountPoint, fmt.Sprintf("localhost:%d", webPort))
 	if err != nil {
 		return cl, err
 	}
@@ -88,6 +89,7 @@ func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, b
 	multiServ.AddService(webServer)
 	// start dataservers
 	cl.DataNodes = make([]*dataserver.DataServer, len(ds))
+	cl.DataNodeServs = make([]*mrpc.CloseableServer, len(ds))
 	for idx, dscfg := range ds {
 		log.Printf("Starting DS with cfg %+v", dscfg)
 		// create and register with SingleNodeCluster struct
@@ -104,6 +106,7 @@ func NewSingleNodeCluster(numDNs int, volsPerDn int, replicationFactor uint32, b
 		if err != nil {
 			return cl, err
 		}
+		cl.DataNodeServs[idx] = dataServ
 		err = multiServ.AddService(dataServ)
 		if err != nil {
 			return cl, err
@@ -161,7 +164,7 @@ func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort
 }
 
 // used to bootstrap singlenode clusters
-func NewConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*MasterConfig, []*PeerConfig, error) {
+func NewConfSet2(startPort int, numDNs int, volsPerDn int, replicationFactor uint32, baseDir string) (*MasterConfig, []*PeerConfig, error) {
 	err := os.Mkdir(baseDir, 0777)
 	if err != nil {
 		return nil, nil, err
@@ -194,6 +197,6 @@ func NewConfSet2(numDNs int, volsPerDn int, replicationFactor uint32, baseDir st
 		}
 		volRoots[i] = dnRoots
 	}
-	nnc, dsc := NewConfSet(volRoots, nameBase, "127.0.0.1", 11004, replicationFactor, true)
+	nnc, dsc := NewConfSet(volRoots, nameBase, "127.0.0.1", startPort, replicationFactor, true)
 	return nnc, dsc, nil
 }

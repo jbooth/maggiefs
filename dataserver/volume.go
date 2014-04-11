@@ -289,7 +289,7 @@ func (v *volume) serveRead(client *os.File, req *RequestHeader) (err error) {
 			return err
 		}
 		// send data
-		log.Printf("sendfile data from pos %d length %d\n", sendPos, req.Length)
+		//log.Printf("sendfile data from pos %d length %d\n", sendPos, req.Length)
 		var sent int
 		sent, err = syscall.Sendfile(int(client.Fd()), int(file.Fd()), &sendPos, int(req.Length))
 		if err != nil {
