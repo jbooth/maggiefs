@@ -36,7 +36,6 @@ type openFile struct {
 	fh  uint64
 	ino *openInode
 	w   *Writer
-	r   *Reader
 }
 
 func NewOpenFileMap(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, localDnId *uint32, onNotify func(uint64)) *OpenFileMap {
@@ -124,7 +123,6 @@ func (o *OpenFileMap) Open(inodeid uint64, writable bool) (fh uint64, err error)
 		fh,
 		ino,
 		w,
-		NewReader(),
 	}
 	o.files[f.fh] = f
 	return fh, nil

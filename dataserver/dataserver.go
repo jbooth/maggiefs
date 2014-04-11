@@ -220,13 +220,17 @@ func (ds *DataServer) ServeWriteConn(conn *net.TCPConn) {
 				if !lastNode {
 					// forward to next node if appropriate with callback
 					req.Blk.Volumes = req.Blk.Volumes[1:]
-					ds.dc.Write(req.Blk, writeBuff, req.Pos, func() {
+					ds.dc.Write(req.Blk, writeBuff, req.Pos, func(err error) {
+						if err != nil {
+							resp.Stat = STAT_ERR
+							log.Printf("Error serving write on dataserver: %s", err)
+						}
 						// wait for local write to complete (should be done before we hear back from remote anyways)
 						<-insureWriteFinished
 						// send response to client
 						l.Lock()
 						//log.Printf("DataServer: Intermediate note writing response %+v to client %s\n", resp, conn)
-						_, err := resp.WriteTo(conn)
+						_, err = resp.WriteTo(conn)
 						l.Unlock()
 						if err != nil {
 							log.Printf("Error sending response to client %s\n", err)
@@ -254,11 +258,6 @@ func (ds *DataServer) ServeWriteConn(conn *net.TCPConn) {
 						return
 					}
 				}
-				//else {
-				//	// tell the responder thread it's ok to send
-				//	insureWriteFinished <- true
-				//}
-
 			} else {
 				// unrecognized req, send err response
 				resp := &ResponseHeader{STAT_BADOP, req.Reqno}
@@ -273,7 +272,7 @@ func (ds *DataServer) ServeWriteConn(conn *net.TCPConn) {
 
 	}
 }
-func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func()) (err error) {
+func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func(error)) (err error) {
 	req := &RequestHeader{OP_READ, 0, blk, pos, length}
 	// figure out which of our volumes
 	volForBlock := uint32(0)
@@ -292,7 +291,7 @@ func (ds *DataServer) DirectRead(blk maggiefs.Block, buf maggiefs.SplicerTo, pos
 	}
 	err = volWithBlock.serveDirectRead(buf, req)
 	if err != nil {
-		onDone()
+		onDone(nil)
 	}
 	return err
 }

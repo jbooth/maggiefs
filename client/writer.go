@@ -39,14 +39,15 @@ func NewWriter(inodeid uint64, doNotify func(inodeid uint64, offset int64, lengt
 	return ret
 }
 
-type offAndLen struct {
+type writeResult struct {
+	err    error
 	off    int64
 	length int64
 }
 
 // represents either an outstanding write or a sync request
 type pendingWrite struct {
-	done   chan offAndLen
+	done   chan writeResult
 	isSync bool
 }
 
@@ -98,6 +99,9 @@ func (w *Writer) process() {
 		newLen := int64(0)
 		for _, write := range updates {
 			newOffAndLen := <-write.done
+			if newOffAndLen.err != nil {
+				log.Printf("Error on write!  Implement proper behavior here, seriously!")
+			}
 			if newOff == 0 && newLen == 0 {
 				// don't have a previous write we're extending, so set them and reloop
 				newOff = newOffAndLen.off
@@ -170,10 +174,10 @@ func (w *Writer) Write(datas maggiefs.DataService, inode *maggiefs.Inode, p []by
 	}
 	writes := blockwrites(inode, p, position, length)
 	for _, wri := range writes {
-		pending := pendingWrite{make(chan offAndLen, 1), false}
+		pending := pendingWrite{make(chan writeResult, 1), false}
 		w.pendingWrites <- pending
-		err = w.datas.Write(wri.b, wri.p, wri.posInBlock, func() {
-			finishedWrite := offAndLen{int64(wri.b.StartPos + wri.posInBlock), int64(len(wri.p))}
+		err = w.datas.Write(wri.b, wri.p, wri.posInBlock, func(err error) {
+			finishedWrite := writeResult{err, int64(wri.b.StartPos + wri.posInBlock), int64(len(wri.p))}
 			//log.Printf("Finished write, operation %+v, in callback now \n", finishedWrite)
 			pending.done <- finishedWrite
 		})
@@ -188,17 +192,6 @@ func (w *Writer) Sync() error {
 	w.l.Lock()
 	defer w.l.Unlock()
 	w.doSync()
-	// questionable optimization, we let go of the lock while waiting on sync,
-	// so other writes can get in behind us and keep the pipeline full
-	//syncRequest := pendingWrite{make(chan offAndLen), true}
-	//if w.closed {
-	//	w.l.Unlock()
-	//	return fmt.Errorf("Can't sync, already closed!")
-	//}
-	//w.pendingWrites <- syncRequest
-	//w.l.Unlock()
-	//// since syncRequest is unbuffered, this will block until processed
-	//syncRequest.done <- offAndLen{0, 0}
 	return nil
 }
 
@@ -218,10 +211,10 @@ func (w *Writer) doSync() {
 	if w.closed {
 		return
 	}
-	syncRequest := pendingWrite{make(chan offAndLen), true}
+	syncRequest := pendingWrite{make(chan writeResult), true}
 	w.pendingWrites <- syncRequest
 	// since syncRequest is unbuffered, this will block until processed
-	syncRequest.done <- offAndLen{0, 0}
+	syncRequest.done <- writeResult{nil, 0, 0}
 }
 
 type blockwrite struct {

@@ -12,11 +12,13 @@ type DataService interface {
 
 	// we have 2 methods to read, in order to optimize by avoiding a context switch for singleblock reads
 	// when done, onDone will be called from a dedicated goroutine (so don't block on anything)
-	Read(blk Block, buf SplicerTo, pos uint64, length uint32, onDone func()) error
+	// onDone will be called with nil on success, err on error
+	Read(blk Block, buf SplicerTo, pos uint64, length uint32, onDone func(error)) error
 
 	// executes an async write to the provided block, replicating to each volume in the order specified on the block
 	// when done, onDone will be called from a dedicated goroutine (so don't block on anything)
-	Write(blk Block, p []byte, posInBlock uint64, onDone func()) (err error)
+	// onDone will be called with nil on success, err on error
+	Write(blk Block, p []byte, posInBlock uint64, onDone func(error)) (err error)
 }
 
 // represents one half of a pipe* for splice-based communication with fuse, implemented by fuse.ReadPipe

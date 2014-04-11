@@ -17,7 +17,8 @@ var typeCheck maggiefs.DataService = &DataClient{}
 type DataClient struct {
 	names      maggiefs.NameService
 	volMap     map[uint32]*net.TCPAddr
-	volLock    *sync.RWMutex // guards volMap
+	badVols    map[uint32]bool
+	volLock    *sync.RWMutex // guards volMap and badVols
 	readConns  *readConnPool
 	writeConns *writeConnPool
 	localDS    *DataServer
@@ -28,6 +29,7 @@ func NewDataClient(names maggiefs.NameService) (*DataClient, error) {
 	return &DataClient{
 		names,
 		make(map[uint32]*net.TCPAddr),
+		make(map[uint32]bool),
 		&sync.RWMutex{},
 		&readConnPool{make(map[*net.TCPAddr]*RawClient), new(sync.RWMutex)},
 		&writeConnPool{make(map[*net.TCPAddr]*RawClient), new(sync.RWMutex)},
@@ -35,28 +37,15 @@ func NewDataClient(names maggiefs.NameService) (*DataClient, error) {
 		nil}, nil
 }
 
-func pickVol(vols []uint32) uint32 {
-	return vols[rand.Int()%len(vols)]
-}
-
-func (dc *DataClient) isLocal(vols []uint32) bool {
-	if dc.localVols == nil {
-		return false
-	}
-	// both lists are short, double for loop is fine
-	for _, volId := range vols {
-		for _, localVolId := range dc.localVols {
-			if localVolId == volId {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // get hostname for a volume
+// returns nil,nil if this host is currently marked bad.
+// returns nil,err if we have never heard of this host
 func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr, error) {
 	dc.volLock.RLock()
+	isBad, isBadEntryExists := dc.badVols[volId]
+	if isBadEntryExists && isBad {
+		return nil, nil
+	}
 	raddr, exists := dc.volMap[volId]
 	dc.volLock.RUnlock()
 	if !exists {
@@ -70,60 +59,6 @@ func (dc *DataClient) VolHost(volId uint32) (*net.TCPAddr, error) {
 		}
 	}
 	return raddr, nil
-}
-
-// does the read and calls onDone in receiver thread after splicing to SplicerTo
-func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func()) error {
-	if dc.isLocal(blk.Volumes) {
-		// local direct read
-		return dc.localDS.DirectRead(blk, buf, pos, length, onDone)
-	}
-	host, err := dc.VolHost(pickVol(blk.Volumes))
-	if err != nil {
-		return nil
-	}
-	//log.Printf("Picked host %s for remote read, getting conn", host)
-	conn, err := dc.readConns.getConn(host)
-	if err != nil {
-		return err
-	}
-	header := RequestHeader{OP_READ, 0, blk, pos, length}
-	conn.DoRequest(header, nil, func(d *os.File) {
-		// read resp bytes
-		//fmt.Printf("Entering loop to read %d bytes\n",length)
-		//fmt.Printf("In read callback, reading %d bytes", length)
-		numRead := 0
-		for uint32(numRead) < length {
-			//fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length-uint32(numRead), d, numRead, int(length))
-			//      fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
-			n, err := buf.LoadFrom(d.Fd(), int(length)-numRead)
-			//      fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
-			if err != nil {
-				log.Printf("Error while splicing: %s\n", err)
-				return
-			}
-			numRead += n
-		}
-		onDone()
-	})
-	return nil
-}
-
-func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64, onDone func()) (err error) {
-	// always go in order of volumes on block
-	host, err := dc.VolHost(blk.Volumes[0])
-	if err != nil {
-		return err
-	}
-	conn, err := dc.writeConns.getConn(host)
-	if err != nil {
-		return err
-	}
-	reqHeader := RequestHeader{OP_WRITE, 0, blk, pos, uint32(len(p))}
-	conn.DoRequest(reqHeader, p, func(f *os.File) {
-		onDone()
-	})
-	return nil
 }
 
 func (dc *DataClient) refreshDNs() error {
@@ -143,9 +78,113 @@ func (dc *DataClient) refreshDNs() error {
 		}
 		for _, volStat := range dnStat.Volumes {
 			dc.volMap[volStat.VolId] = dnAddr
+			delete(dc.badVols, volStat.VolId)
 		}
 	}
 	return nil
+}
+
+func (dc *DataClient) markBad(volId uint32) {
+	dc.volLock.Lock()
+	dc.badVols[volId] = true
+	dc.volLock.Unlock()
+}
+
+type readCallback struct {
+	buf    maggiefs.SplicerTo
+	dc     *DataClient
+	volId  uint32
+	length uint32
+	onDone func(error)
+}
+
+func (r readCallback) OnResponse(f *os.File) error {
+	// read resp bytes
+	//fmt.Printf("Entering loop to read %d bytes\n",length)
+	//fmt.Printf("In read callback, reading %d bytes", length)
+	numRead := 0
+	for uint32(numRead) < r.length {
+		//fmt.Printf("Reading %d bytes from socket %s into slice [%d:%d]\n", length-uint32(numRead), d, numRead, int(length))
+		//      fmt.Printf("Slice length %d capacity %d\n",len(p),cap(p))
+		n, err := r.buf.LoadFrom(f.Fd(), int(r.length)-numRead)
+		//      fmt.Printf("Read returned %d bytes, first 5: %x\n",n,p[numRead:numRead+5])
+		if err != nil {
+			log.Printf("Error while splicing: %s\n", err)
+			// don't call our onDone -- rawClient will call us back after we return err
+			return err
+		}
+		numRead += n
+	}
+	r.onDone(nil)
+	return nil
+}
+
+func (r readCallback) OnErr(err error) {
+	r.dc.markBad(r.volId)
+	r.onDone(err)
+}
+
+// does the read and calls onDone in receiver thread after splicing to SplicerTo
+func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint64, length uint32, onDone func(error)) error {
+	// check if this is a local read
+	if dc.localVols != nil {
+		for _, volId := range blk.Volumes {
+			for _, localVolId := range dc.localVols {
+				if localVolId == volId {
+					return dc.localDS.DirectRead(blk, buf, pos, length, onDone)
+				}
+			}
+		}
+	}
+	var host *net.TCPAddr = nil
+	var err error
+	var volId uint32
+	for host == nil {
+		volId = blk.Volumes[rand.Int()%len(blk.Volumes)]
+		host, err = dc.VolHost(volId)
+		if err != nil {
+			return nil
+		}
+	}
+	//log.Printf("Picked host %s for remote read, getting conn", host)
+	conn, err := dc.readConns.getConn(host)
+	if err != nil {
+		return err
+	}
+	header := RequestHeader{OP_READ, 0, blk, pos, length}
+	rcb := readCallback{buf, dc, volId, length, onDone}
+	return conn.DoRequest(header, nil, rcb)
+}
+
+type writeCallback struct {
+	dc     *DataClient
+	volId  uint32
+	onDone func(error)
+}
+
+func (w writeCallback) OnResponse(f *os.File) error {
+	w.onDone(nil)
+	return nil
+}
+
+func (w writeCallback) OnErr(err error) {
+	w.dc.markBad(w.volId)
+	w.onDone(err)
+}
+
+func (dc *DataClient) Write(blk maggiefs.Block, p []byte, pos uint64, onDone func(error)) (err error) {
+	// always go in order of volumes on block
+	host, err := dc.VolHost(blk.Volumes[0])
+	if err != nil {
+		return err
+	}
+	conn, err := dc.writeConns.getConn(host)
+	if err != nil {
+		return err
+	}
+	reqHeader := RequestHeader{OP_WRITE, 0, blk, pos, uint32(len(p))}
+	cb := writeCallback{dc, blk.Volumes[0], onDone}
+	return conn.DoRequest(reqHeader, p, cb)
 }
 
 type connPool struct {
