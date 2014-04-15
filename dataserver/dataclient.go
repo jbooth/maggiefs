@@ -158,6 +158,8 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 
 type blkReader struct {
 	f         *os.File
+	dc        *DataClient
+	volId     uint32
 	remaining uint32
 }
 
@@ -169,6 +171,9 @@ func (b *blkReader) SpliceTo(p maggiefs.SplicerTo, length uint32) (nSpliced int,
 		length = b.remaining
 	}
 	nSpliced, err = p.LoadFrom(b.f.Fd(), int(length))
+	if err != nil {
+		b.dc.markBad(b.volId)
+	}
 	b.remaining -= uint32(nSpliced)
 	return
 }
@@ -214,7 +219,7 @@ func (dc *DataClient) LongRead(blk maggiefs.Block, pos uint64, length uint32) (m
 		return nil, err
 	}
 	// return our reader, data should now be available via SpliceTo
-	return &blkReader{f, length}, nil
+	return &blkReader{f, dc, volId, length}, nil
 }
 
 type writeCallback struct {

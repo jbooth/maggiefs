@@ -36,6 +36,7 @@ type openFile struct {
 	fh  uint64
 	ino *openInode
 	w   *Writer
+	r   *Reader
 }
 
 func NewOpenFileMap(leases maggiefs.LeaseService, names maggiefs.NameService, datas maggiefs.DataService, localDnId *uint32, onNotify func(uint64)) *OpenFileMap {
@@ -122,6 +123,7 @@ func (o *OpenFileMap) Open(inodeid uint64, writable bool) (fh uint64, err error)
 		fh,
 		ino,
 		w,
+		NewReader(),
 	}
 	o.files[f.fh] = f
 	return fh, nil
@@ -144,6 +146,7 @@ func (o *OpenFileMap) Close(fh uint64) (err error) {
 	}
 	ino.l.Unlock()
 	o.l.Unlock()
+	f.r.Close()
 	if f.w != nil {
 		return f.w.Close()
 	}
@@ -151,14 +154,14 @@ func (o *OpenFileMap) Close(fh uint64) (err error) {
 }
 
 func (o *OpenFileMap) Read(fd uint64, buf fuse.ReadPipe, pos uint64, length uint32) (err error) {
-	_, ino, err := o.getInode(fd)
+	f, ino, err := o.getInode(fd)
 	if err != nil {
 		return err
 	}
 	// try 3 times before giving up
 	// DataService marks nodes as bad if we fail and will reroute to another on the next attempt
 	for i := 0; i < 3; i++ {
-		err = Read(o.datas, ino, buf, pos, length)
+		err = f.r.Read(o.datas, ino, buf, pos, length)
 		if err == nil {
 			return nil
 		}

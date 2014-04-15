@@ -136,6 +136,7 @@ func (r *Reader) Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.
 	}
 	// clean up prior reader if we couldn't use it
 	if r.currBlockReader != nil {
+		log.Printf("Cleaning prior blockReader")
 		r.currBlockReader.Close()
 		r.currBlockReader = nil
 		r.currReaderPos = 0
@@ -143,11 +144,13 @@ func (r *Reader) Read(datas maggiefs.DataService, inode *maggiefs.Inode, p fuse.
 	}
 
 	// adjust heuristics
-	if r.lastReadEndPos+1 == position {
+	//log.Printf("Reader lastReadPos: %d new read pos %d", r.lastReadEndPos, position)
+	if r.lastReadEndPos == position {
 		r.numSeqReads++
 	} else {
 		r.numSeqReads = 0
 	}
+	//log.Printf("Reader numSeqReads: %d", r.numSeqReads)
 	// if we should, switch to readahead mode and serve from there
 	if r.numSeqReads > 4 {
 		err = r.serveFromBlockReader(datas, inode, p, position, length)
@@ -193,11 +196,11 @@ func (r *Reader) serveFromBlockReader(datas maggiefs.DataService, inode *maggief
 		log.Printf("Error writing resp header to splice pipe : %s", err)
 		return err
 	}
-	nRead := uint32(0)
-	for nRead < length {
+	for length > 0 {
 		// make sure reader is valid
 		if r.currBlockReader == nil || r.currReaderBytes == 0 {
-			err = r.initBlockReader(datas, inode, r.currReaderPos)
+			log.Printf("Reader re-initializing blockReader from serveFromBlkReader, currBlockReader==nil: %t, currReaderBytes: %d", (r.currBlockReader == nil), r.currReaderBytes)
+			err = r.initBlockReader(datas, inode, position)
 			if err != nil {
 				return err
 			}
@@ -209,6 +212,7 @@ func (r *Reader) serveFromBlockReader(datas maggiefs.DataService, inode *maggief
 		// do splice
 		nSpliced, err := r.currBlockReader.SpliceTo(p, nToSplice)
 		if err != nil {
+			log.Printf("Got error while splicing from blkReader, closing: %s", err)
 			r.currBlockReader.Close()
 			r.currBlockReader = nil
 			return err
@@ -216,7 +220,11 @@ func (r *Reader) serveFromBlockReader(datas maggiefs.DataService, inode *maggief
 		// update internal vals
 		r.currReaderPos += uint64(nSpliced)
 		r.currReaderBytes -= uint32(nSpliced)
+		position += uint64(nSpliced)
+		length -= uint32(nSpliced)
 	}
+	r.lastReadEndPos = r.currReaderPos
+	r.numSeqReads++
 	return p.Commit()
 }
 
@@ -234,7 +242,12 @@ func (r *Reader) initBlockReader(datas maggiefs.DataService, inode *maggiefs.Ino
 	}
 	// read at most the bytes remaining in this block
 	posInBlock := uint64(position) - block.StartPos
-	numBytesFromBlock := uint32(block.Length()) - uint32(posInBlock)
+	blockLength := block.Length()
+	if block.EndPos > inode.Length {
+		blockLength = inode.Length - block.StartPos
+	}
+	numBytesFromBlock := uint32(blockLength) - uint32(posInBlock)
+	log.Printf("Building blockReader on ino %+v, blk %+v with posInBlock %d, length %d", inode, block, posInBlock, numBytesFromBlock)
 	r.currBlockReader, err = datas.LongRead(block, posInBlock, numBytesFromBlock)
 	if err != nil {
 		r.currReaderBytes = 0
@@ -242,5 +255,6 @@ func (r *Reader) initBlockReader(datas maggiefs.DataService, inode *maggiefs.Ino
 	}
 	r.currReaderPos = position
 	r.currReaderBytes = numBytesFromBlock
+	log.Printf("Initialized blockReader at pos %d, numBytesRemaining %d", r.currReaderPos, r.currReaderBytes)
 	return nil
 }
