@@ -156,6 +156,67 @@ func (dc *DataClient) Read(blk maggiefs.Block, buf maggiefs.SplicerTo, pos uint6
 	return conn.DoRequest(header, nil, rcb)
 }
 
+type blkReader struct {
+	f         *os.File
+	remaining uint32
+}
+
+func (b *blkReader) SpliceTo(p maggiefs.SplicerTo, length uint32) (nSpliced int, err error) {
+	if b.remaining == 0 {
+		return 0, fmt.Errorf("blkReader already empty!")
+	}
+	if length > b.remaining {
+		length = b.remaining
+	}
+	nSpliced, err = p.LoadFrom(b.f.Fd(), int(length))
+	b.remaining -= uint32(nSpliced)
+	return
+}
+
+func (b *blkReader) Close() error {
+	return b.f.Close()
+}
+
+func (dc *DataClient) LongRead(blk maggiefs.Block, pos uint64, length uint32) (maggiefs.BlockReader, error) {
+	// get host
+	var host *net.TCPAddr = nil
+	var err error
+	var volId uint32
+	for host == nil {
+		volId = blk.Volumes[rand.Int()%len(blk.Volumes)]
+		host, err = dc.VolHost(volId)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// get conn
+	conn, err := mrpc.DialHandler(host, DIAL_READ)
+	if err != nil {
+		return nil, err
+	}
+	f, err := conn.File()
+	conn.Close()
+	if err != nil {
+		return nil, err
+	}
+	// send request
+	req := RequestHeader{OP_READ, 0, blk, pos, length}
+	_, err = req.WriteTo(f)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	// pull resp header
+	resp := ResponseHeader{}
+	_, err = resp.ReadFrom(f)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	// return our reader, data should now be available via SpliceTo
+	return &blkReader{f, length}, nil
+}
+
 type writeCallback struct {
 	dc     *DataClient
 	volId  uint32
