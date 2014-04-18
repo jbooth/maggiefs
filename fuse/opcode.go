@@ -200,8 +200,9 @@ func doGetXAttr(server *Server, req *request) {
 		log.Panicf("xattr opcode %v", req.inHeader.Opcode)
 		req.status = ENOSYS
 	}
-
+	log.Printf("opcode: listxattr: Got data %s in get/list xattr", string(data))
 	if len(data) > int(input.Size) {
+		log.Printf("opcode: listxattr: truncating range!")
 		req.status = ERANGE
 	}
 

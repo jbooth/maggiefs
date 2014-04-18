@@ -323,7 +323,6 @@ func (m *MaggieFuse) Mknod(input *fuse.MknodIn, name string, out *fuse.EntryOut)
 		"",
 		make([]maggiefs.Block, 0, 0),
 		make(map[string]maggiefs.Dentry),
-		make(map[string][]byte),
 	}
 
 	// save new node
@@ -366,7 +365,6 @@ func (m *MaggieFuse) Mkdir(input *fuse.MkdirIn, name string, out *fuse.EntryOut)
 		"",
 		make([]maggiefs.Block, 0, 0),
 		make(map[string]maggiefs.Dentry),
-		make(map[string][]byte),
 	}
 
 	// save
@@ -460,7 +458,6 @@ func (m *MaggieFuse) Symlink(header *fuse.InHeader, pointedTo string, linkName s
 		pointedTo,
 		make([]maggiefs.Block, 0, 0),
 		make(map[string]maggiefs.Dentry),
-		make(map[string][]byte),
 	}
 	// save
 	id, err := m.names.AddInode(&i)
@@ -522,49 +519,41 @@ func (m *MaggieFuse) Link(input *fuse.LinkIn, name string, out *fuse.EntryOut) (
 }
 
 func (m *MaggieFuse) GetXAttrSize(header *fuse.InHeader, attr string) (size int, code fuse.Status) {
-	node, err := m.names.GetInode(header.NodeId)
-	if err != nil {
-		return 0, fuse.EROFS
-	}
-
-	return len(node.Xattr), fuse.OK
+	return 2, fuse.OK
 }
 
 func (m *MaggieFuse) GetXAttrData(header *fuse.InHeader, attr string) (data []byte, code fuse.Status) {
-	node, err := m.names.GetInode(header.NodeId)
-	if err != nil {
-		return nil, fuse.EROFS
+	if attr == "user.mfs.inoJson" {
+		ino, err := m.names.GetInode(header.NodeId)
+		if err != nil {
+			return nil, fuse.EROFS
+		}
+		return inoJson(ino), fuse.OK
+	} else if attr == "user.mfs.blockLocs" {
+		ino, err := m.names.GetInode(header.NodeId)
+		if err != nil {
+			return nil, fuse.EROFS
+		}
+		return blocLocs(ino, m.datas), fuse.OK
 	}
-	return node.Xattr[attr], fuse.OK
+	//log.Printf("Invalid XAttr %s, returning empty", attr)
+	return make([]byte, 0, 0), fuse.OK
 }
 
 func (m *MaggieFuse) SetXAttr(input *fuse.SetXAttrIn, attr string, data []byte) fuse.Status {
-	err := m.names.SetXAttr(input.InHeader.NodeId, []byte(attr), data)
-	if err != nil {
-		return fuse.ENOSYS
-	}
-	return fuse.OK
+	return fuse.ENOSYS
 }
 
 func (m *MaggieFuse) ListXAttr(header *fuse.InHeader) (data []byte, code fuse.Status) {
-	node, err := m.names.GetInode(header.NodeId)
-	if err != nil {
-		return nil, fuse.EROFS
-	}
 	b := bytes.NewBuffer([]byte{})
-	for k, _ := range node.Xattr {
-		b.Write([]byte(k))
-		b.WriteByte(0)
-	}
+	b.WriteString("user.mfs.inoJson")
+	b.WriteByte(0)
+	b.WriteString("user.mfs.blockLocs")
+	b.WriteByte(0)
 	return b.Bytes(), fuse.OK
 }
 
 func (m *MaggieFuse) RemoveXAttr(header *fuse.InHeader, attr string) fuse.Status {
-	err := m.names.DelXAttr(header.NodeId, []byte(attr))
-	if err != nil {
-		log.Printf("Error deleting XAttr %s from inode %d", attr, header.NodeId)
-		return fuse.ENOSYS
-	}
 	return fuse.OK
 }
 

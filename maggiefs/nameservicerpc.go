@@ -70,33 +70,6 @@ func (s *NameServiceService) SetAttr(request *NameServiceSetAttrRequest, respons
 	return
 }
 
-type NameServiceSetXAttrRequest struct {
-	Nodeid uint64
-	Name   []byte
-	Val    []byte
-}
-
-type NameServiceSetXAttrResponse struct {
-}
-
-func (s *NameServiceService) SetXAttr(request *NameServiceSetXAttrRequest, response *NameServiceSetXAttrResponse) (err error) {
-	err = s.impl.SetXAttr(request.Nodeid, request.Name, request.Val)
-	return
-}
-
-type NameServiceDelXAttrRequest struct {
-	Nodeid uint64
-	Name   []byte
-}
-
-type NameServiceDelXAttrResponse struct {
-}
-
-func (s *NameServiceService) DelXAttr(request *NameServiceDelXAttrRequest, response *NameServiceDelXAttrResponse) (err error) {
-	err = s.impl.DelXAttr(request.Nodeid, request.Name)
-	return
-}
-
 type NameServiceExtendRequest struct {
 	Nodeid uint64
 	NewLen uint64
@@ -254,20 +227,6 @@ func (_c *NameServiceClient) SetAttr(nodeid uint64, arg SetAttr) (newNode *Inode
 	_response := &NameServiceSetAttrResponse{}
 	err = _c.client.Call(_c.service+".SetAttr", _request, _response)
 	return _response.NewNode, err
-}
-
-func (_c *NameServiceClient) SetXAttr(nodeid uint64, name []byte, val []byte) (err error) {
-	_request := &NameServiceSetXAttrRequest{nodeid, name, val}
-	_response := &NameServiceSetXAttrResponse{}
-	err = _c.client.Call(_c.service+".SetXAttr", _request, _response)
-	return err
-}
-
-func (_c *NameServiceClient) DelXAttr(nodeid uint64, name []byte) (err error) {
-	_request := &NameServiceDelXAttrRequest{nodeid, name}
-	_response := &NameServiceDelXAttrResponse{}
-	err = _c.client.Call(_c.service+".DelXAttr", _request, _response)
-	return err
 }
 
 func (_c *NameServiceClient) Extend(nodeid uint64, newLen uint64) (newNode *Inode, err error) {

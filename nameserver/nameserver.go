@@ -389,22 +389,6 @@ func (ns *NameServer) SetAttr(nodeid uint64, input maggiefs.SetAttr) (inode *mag
 	})
 }
 
-func (ns *NameServer) SetXAttr(nodeid uint64, name []byte, val []byte) (err error) {
-	_, err = ns.nd.Mutate(nodeid, func(inode *maggiefs.Inode) error {
-		inode.Xattr[string(name)] = val
-		return nil
-	})
-	return err
-}
-
-func (ns *NameServer) DelXAttr(nodeid uint64, name []byte) (err error) {
-	_, err = ns.nd.Mutate(nodeid, func(inode *maggiefs.Inode) error {
-		delete(inode.Xattr, string(name))
-		return nil
-	})
-	return err
-}
-
 func (ns *NameServer) Join(dnId uint32, nameDataAddr string) (err error) {
 	// TODO confirm not duplicate datanode
 	fmt.Printf("Got connection from dn id %d, addr %s\n", dnId, nameDataAddr)

@@ -46,8 +46,6 @@ type NameService interface {
 	AddInode(node *Inode) (id uint64, err error)
 	// Sets attributes on an ino (inode id is part of SetAttrIn)
 	SetAttr(nodeid uint64, arg SetAttr) (newNode *Inode, err error)
-	SetXAttr(nodeid uint64, name []byte, val []byte) (err error)
-	DelXAttr(nodeid uint64, name []byte) (err error)
 	// special case for SetLength, allows us to coalesce a couple length updates into a single one when appending
 	// will add/remove blocks as necessary, can be used to truncate
 	// attempts to place new blocks on requestedDnId if non-nil

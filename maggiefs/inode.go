@@ -14,7 +14,7 @@ const (
 	FTYPE_LNK   = uint32(2)
 	PAGESIZE    = uint32(4096)
 	BLOCKLENGTH = uint64(1024 * 1024 * 128) // 128MB, hardcoded for now
-	ROOT_INO    = uint64(1)  // root ino for the filesystem
+	ROOT_INO    = uint64(1)                 // root ino for the filesystem
 )
 
 func init() {
@@ -37,7 +37,6 @@ type Inode struct {
 	Symlinkdest string            // only populated for symlinks, nil or "" otherwise
 	Blocks      []Block           // can be 0 blocks in case of directory,symlink or empty file
 	Children    map[string]Dentry // empty unless we are a dir, maps name to inode id
-	Xattr       map[string][]byte
 }
 
 func NewInode(id uint64, ftype, mode, uid, gid uint32) *Inode {
@@ -56,7 +55,6 @@ func NewInode(id uint64, ftype, mode, uid, gid uint32) *Inode {
 		"",
 		make([]Block, 0, 0),
 		make(map[string]Dentry),
-		make(map[string][]byte),
 	}
 }
 
@@ -80,23 +78,8 @@ func (i *Inode) BinSize() int {
 		// 2 byte for name length, 16 for dentry, N for actual name bytes
 		size += 18 + len(name)
 	}
-	// finally xattr data, encoded as uint32 numXattrs, followed by, for each xattr,
-	// int16 length, name bytes
-	// int16 length, data bytes
-	size += 4
-	for name, val := range i.Xattr {
-		size += 4 + len(name) + len(val)
-	}
 	return size
 }
-
-//func (i *Inode) GobEncode() ([]byte,error) {
-//	size := i.BinSize()
-//	fmt.Printf("size should be %d\n",size)
-//	bytes := make([]byte,size,size)
-//  i.ToBytes(bytes)
-//  return bytes,nil
-//}
 
 // does not bounds check make sure you allocate enough space using BinSize()
 // returns num written
@@ -155,32 +138,8 @@ func (i *Inode) ToBytes(bytes []byte) int {
 		binary.LittleEndian.PutUint64(bytes[currOff:], uint64(dentry.CreatedTime))
 		currOff += 8
 	}
-	// finally, xattrs
-	if i.Xattr == nil {
-		i.Xattr = make(map[string][]byte)
-	}
-	numXattr := uint32(len(i.Xattr))
-	binary.LittleEndian.PutUint32(bytes[currOff:], numXattr)
-	currOff += 4
-	for name, attr := range i.Xattr {
-		lenName := len(name)
-		binary.LittleEndian.PutUint16(bytes[currOff:], uint16(lenName))
-		currOff += 2
-		copy(bytes[currOff:], name)
-		currOff += lenName
-		lenAttr := len(attr)
-		binary.LittleEndian.PutUint16(bytes[currOff:], uint16(lenAttr))
-		currOff += 2
-		copy(bytes[currOff:], attr)
-		currOff += lenAttr
-	}
 	return currOff
 }
-
-//func (i *Inode) GobDecode(bytes []byte) {
-//	i.FromBytes(bytes)
-//	return
-//}
 
 // reads from the bytes, returns num read
 // TODO this keeps the underlying buffer around for a while..  might actually be a benefit?
@@ -233,22 +192,6 @@ func (i *Inode) FromBytes(bytes []byte) int {
 		dentryCtime := int64(binary.LittleEndian.Uint64(bytes[currOff:]))
 		currOff += 8
 		i.Children[name] = Dentry{dentryIno, dentryCtime}
-	}
-	// finally, xattrs
-	numXattr := binary.LittleEndian.Uint32(bytes[currOff:])
-	currOff += 4
-	i.Xattr = make(map[string][]byte)
-	for j := uint32(0); j < numXattr; j++ {
-		nameLen := int(binary.LittleEndian.Uint16(bytes[currOff:]))
-		currOff += 2
-		name := string(bytes[currOff : currOff+nameLen])
-		currOff += nameLen
-		attrLen := int(binary.LittleEndian.Uint16(bytes[currOff:]))
-		currOff += 2
-		attr := make([]byte, attrLen, attrLen)
-		copy(attr, bytes[currOff:currOff+nameLen])
-		currOff += attrLen
-		i.Xattr[name] = attr
 	}
 	return currOff
 }
@@ -304,21 +247,6 @@ func (i *Inode) Equals(other *Inode) bool {
 	return true
 }
 
-//  Inodeid     uint64
-//  Generation  uint64
-//  Ftype       uint32
-//  Length      uint64
-//  Mode        uint32
-//  Mtime       int64  // changed on data change - can be changed by user with touch
-//  Ctime       int64  // changed on file attr change or date -- owned by kernel
-//  Nlink       uint32 // number of paths linked to this inode
-//  Uid         uint32
-//  Gid         uint32
-//  Symlinkdest string            // only populated for symlinks, nil or "" otherwise
-//  Blocks      []Block           // can be 0 blocks in case of directory,symlink or empty file
-//  Children    map[string]Dentry // empty unless we are a dir, maps name to inode id
-//  Xattr       map[string][]byte
-//}
 type Dentry struct {
 	Inodeid     uint64
 	CreatedTime int64 // time this link was created.  used to return consistent ordering in ReadDir.
