@@ -8,22 +8,20 @@ import (
 )
 
 var (
-	DEFAULT_NAMEBIND = fmt.Sprintf("0.0.0.0:%d", 1102)
-	DEFAULT_WEBBIND  = fmt.Sprintf("0.0.0.0:%d", 1103)
+	DEFAULT_NAMEBIND = fmt.Sprintf("0.0.0.0:%d", 1103)
 )
 
-// config for a peer -- connects to MasterAddr and binds to BindAddr and WebBindAddr
+// config for a peer -- connects to MasterAddr and binds to BindAddr
+// note, BindAddr should be a remote-accessible address -- don't use 0.0.0.0!
 type PeerConfig struct {
 	MasterAddr  string   `json: masterAddr`  // addr to connect to for master service, should be in host:PORT syntax
 	BindAddr    string   `json: bindAddr`    // addr we expose for our services in "x.x.x.x:PORT" syntax, needs to be externally routable, can NOT be 0.0.0.0,
-	WebBindAddr string   `json: webBindAddr` // addr we expose for our web services in "x.x.x.x:PORT" syntax, will be removed eventually
 	VolumeRoots []string `json: volumeRoots` // list of paths to the roots of the volumes we're exposing
 	MountPoint  string   `json: mountPoint`  // dir to mount to on the client machine, must exist prior to program run
 }
 
 type MasterConfig struct {
 	BindAddr          string `json: bindAddr`          // host:port for nameservice and leaseservice
-	WebBindAddr       string `json: webBindAddr`       // host:port for web interface
 	NameHome          string `json: nameHome`          // path to nn home on disk
 	ReplicationFactor uint32 `json: replicationFactor` // number of replicas for each block
 }
@@ -31,9 +29,8 @@ type MasterConfig struct {
 // defaults
 func DefaultPeerConfig(bindAddr string, nameHost string, mountPoint string, volRoots []string) *PeerConfig {
 	return &PeerConfig{
-		fmt.Sprintf("%s:%d", nameHost, 1102),
+		fmt.Sprintf("%s:%d", nameHost, 1103),
 		bindAddr,
-		DEFAULT_WEBBIND,
 		volRoots,
 		mountPoint,
 	}
@@ -42,7 +39,6 @@ func DefaultPeerConfig(bindAddr string, nameHost string, mountPoint string, volR
 func DefaultMasterConfig(nameHome string) *MasterConfig {
 	return &MasterConfig{
 		DEFAULT_NAMEBIND,
-		DEFAULT_WEBBIND,
 		nameHome,
 		3,
 	}

@@ -48,7 +48,7 @@ func (snc *SingleNodeCluster) HttpAddr() string {
 	return "localhost:1103"
 }
 
-func NewSingleNodeCluster(startPort int, webPort int, numDNs int, volsPerDn int, replicationFactor uint32, baseDir string, mountPoint string, debugMode bool) (*SingleNodeCluster, error) {
+func NewSingleNodeCluster(startPort int, numDNs int, volsPerDn int, replicationFactor uint32, baseDir string, mountPoint string, debugMode bool) (*SingleNodeCluster, error) {
 	cl := &SingleNodeCluster{}
 	nncfg, ds, err := NewConfSet2(startPort, numDNs, volsPerDn, replicationFactor, baseDir)
 	if err != nil {
@@ -75,18 +75,6 @@ func NewSingleNodeCluster(startPort int, webPort int, numDNs int, volsPerDn int,
 	cl.Names = cli.Names
 	cl.Leases = cli.Leases
 	cl.Datas = cli.Datas
-
-	// peer web server hardcoded to 1103
-	webServer, err := NewPeerWebServer(cl.Names, cl.Datas, mountPoint, fmt.Sprintf("localhost:%d", webPort))
-	if err != nil {
-		return cl, err
-	}
-	err = multiServ.AddService(webServer)
-	if err != nil {
-		return cl, err
-	}
-
-	multiServ.AddService(webServer)
 	// start dataservers
 	cl.DataNodes = make([]*dataserver.DataServer, len(ds))
 	cl.DataNodeServs = make([]*mrpc.CloseableServer, len(ds))
@@ -141,24 +129,17 @@ func NewSingleNodeCluster(startPort int, webPort int, numDNs int, volsPerDn int,
 func NewConfSet(volRoots [][]string, nameHome string, bindHost string, startPort int, replicationFactor uint32, format bool) (*MasterConfig, []*PeerConfig) {
 	nncfg := &MasterConfig{}
 	nncfg.BindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
-	masterAddr := fmt.Sprintf("127.0.0.1:%d", startPort)
-	startPort++
-	nncfg.WebBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
 	startPort++
 	nncfg.NameHome = nameHome
 	nncfg.ReplicationFactor = replicationFactor
 	dscfg := make([]*PeerConfig, len(volRoots))
 	for idx, dnVolRoots := range volRoots {
 		thisDscfg := &PeerConfig{}
-		thisDscfg.MasterAddr = masterAddr
-		thisDscfg.BindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
-		startPort++
-		thisDscfg.WebBindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
-		startPort++
 		thisDscfg.VolumeRoots = dnVolRoots
 		thisDscfg.MasterAddr = nncfg.BindAddr
+		thisDscfg.BindAddr = fmt.Sprintf("%s:%d", bindHost, startPort)
+		startPort++
 		dscfg[idx] = thisDscfg
-
 	}
 	return nncfg, dscfg
 }

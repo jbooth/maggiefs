@@ -5,7 +5,6 @@ import (
 	"github.com/jbooth/maggiefs/maggiefs"
 	"github.com/jbooth/maggiefs/mrpc"
 	"net"
-	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -16,7 +15,7 @@ var typeCheck maggiefs.NameService = &NameServer{}
 
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
 // addresses should be a 0.0.0.0:9999 type address
-func NewNameServer(webAddr string, dataDir string, replicationFactor uint32, format bool) (*NameServer, error) {
+func NewNameServer(dataDir string, replicationFactor uint32, format bool) (*NameServer, error) {
 	ns := &NameServer{}
 	var err error = nil
 	if format {
@@ -31,11 +30,6 @@ func NewNameServer(webAddr string, dataDir string, replicationFactor uint32, for
 	}
 	ns.rm = newReplicationManager(replicationFactor)
 	ns.dirTreeLock = &sync.Mutex{}
-	ns.webListen, err = net.Listen("tcp", webAddr)
-	if err != nil {
-		return nil, err
-	}
-	ns.webServer = newNameWebServer(ns, webAddr) // todo get rid of webserver and do this stuff via getattr
 	return ns, nil
 }
 
@@ -45,24 +39,6 @@ type NameServer struct {
 	rm          *replicationManager
 	listenAddr  string
 	dirTreeLock *sync.Mutex // used so all dir tree operations (link/unlink) are atomic
-	webListen   net.Listener
-	webServer   *http.Server
-}
-
-// func to serve web stuff
-func (ns *NameServer) ServeWeb() error {
-	errChan := make(chan error)
-	go func() {
-		defer func() {
-			if x := recover(); x != nil {
-				fmt.Printf("run time panic from nameserver web: %v\n", x)
-				errChan <- fmt.Errorf("Run time panic: %v", x)
-			}
-		}()
-		errChan <- ns.webServer.Serve(ns.webListen)
-	}()
-	err := <-errChan
-	return err
 }
 
 func (ns *NameServer) Close() error {
@@ -71,15 +47,7 @@ func (ns *NameServer) Close() error {
 	if err != nil {
 		retError = err
 	}
-	err = ns.webListen.Close()
-	if err != nil {
-		retError = err
-	}
 	return retError
-}
-
-func (ns *NameServer) HttpAddr() string {
-	return ns.webServer.Addr
 }
 
 func (ns *NameServer) GetInode(nodeid uint64) (node *maggiefs.Inode, err error) {

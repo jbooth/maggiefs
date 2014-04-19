@@ -41,7 +41,7 @@ func NewMaster(cfg *MasterConfig, format bool) (*Master, error) {
 	nls := &Master{}
 	var err error = nil
 	nls.leaseServer = leaseserver.NewLeaseServer()
-	nls.nameserver, err = nameserver.NewNameServer(cfg.WebBindAddr, cfg.NameHome, cfg.ReplicationFactor, format)
+	nls.nameserver, err = nameserver.NewNameServer(cfg.NameHome, cfg.ReplicationFactor, format)
 	if err != nil {
 		log.Printf("Error creating nameserver: %s\n\n Nameserver config: %+v\n", err.Error(), cfg)
 		return nls, err

@@ -1,10 +1,8 @@
 package test
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/jbooth/maggiefs/maggiefs"
-	"net/http"
 	"os"
 	"testing"
 )
@@ -73,21 +71,6 @@ func TestAddBlock(t *testing.T) {
 				}
 			}
 
-		}
-		// check that we can pull json from ino web server
-		inoJsonAddr := fmt.Sprintf("http://%s/inode?inodeid=%d", testCluster.HttpAddr(), ino.Inodeid)
-		fmt.Printf("Getting ino json from %s\n", inoJsonAddr)
-		response, err := http.Get(inoJsonAddr)
-		if err != nil {
-			panic(err)
-		}
-		ino3 := &maggiefs.Inode{}
-		respBytes := make([]byte, response.ContentLength)
-		response.Body.Read(respBytes)
-		fmt.Printf("Got json %s\n", string(respBytes))
-		json.Unmarshal(respBytes, ino3)
-		if !ino.Equals(ino3) {
-			t.Fatal(fmt.Errorf("Error, inode from JSON not equal : %+v : %+v\n", *ino, *ino3))
 		}
 	}
 }

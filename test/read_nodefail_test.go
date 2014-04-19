@@ -19,7 +19,7 @@ func initBadNodeCluster() {
 	os.RemoveAll("/tmp/testclusterWithBadNode")
 	var err error
 	//testCluster, err = integration.NewSingleNodeCluster(4, 2, 3, "/tmp/testcluster", "", true)
-	testClusterWithBadNode, err = integration.NewSingleNodeCluster(12004, 1104, 4, 2, 3, "/tmp/testclusterWithBadNode", "", true)
+	testClusterWithBadNode, err = integration.NewSingleNodeCluster(12004, 4, 2, 3, "/tmp/testclusterWithBadNode", "", true)
 	if err != nil {
 		panic(err)
 	}

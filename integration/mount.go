@@ -16,8 +16,9 @@ type Mount struct {
 
 func NewMount(mfs fuse.RawFileSystem, mountPoint string, debug bool) (*Mount, error) {
 	opts := &fuse.MountOptions{
-		MaxBackground: 12,
-		MaxWrite:      64 * 1024,
+		MaxBackground:        12,
+		MaxWrite:             64 * 1024,
+		IgnoreSecurityLabels: true,
 	}
 	mnt, err := fuse.NewServer(mfs, mountPoint, opts)
 	if err != nil {

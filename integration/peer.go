@@ -16,7 +16,6 @@ type Peer struct {
 	Mfs        *client.MaggieFuse
 	Datanode   *dataserver.DataServer
 	Mountpoint *Mount
-	Web        *PeerWebServer
 	svc        Service
 }
 
@@ -32,10 +31,6 @@ func (p *Peer) Close() error {
 // waits till actually stopped
 func (p *Peer) WaitClosed() error {
 	return p.svc.WaitClosed()
-}
-
-func (p *Peer) HttpAddr() string {
-	return p.Cfg.WebBindAddr
 }
 
 func NewPeer(cfg *PeerConfig, debug bool) (*Peer, error) {
@@ -72,14 +67,6 @@ func NewPeer(cfg *PeerConfig, debug bool) (*Peer, error) {
 	multiServ := NewMultiService()
 
 	err = multiServ.AddService(dataServ)
-	if err != nil {
-		return ret, err
-	}
-	ret.Web, err = NewPeerWebServer(cl.Names, cl.Datas, cfg.MountPoint, cfg.WebBindAddr)
-	if err != nil {
-		return ret, err
-	}
-	err = multiServ.AddService(ret.Web)
 	if err != nil {
 		return ret, err
 	}

@@ -257,7 +257,7 @@ func singlenode(args []string) (s *integration.SingleNodeCluster, err error) {
 	}
 	baseDir := args[3]
 	mountPoint := args[4]
-	s, err = integration.NewSingleNodeCluster(11004, 1103, numDNs, volsPerDn, uint32(replicationFactor), baseDir, mountPoint, debug)
+	s, err = integration.NewSingleNodeCluster(11004, numDNs, volsPerDn, uint32(replicationFactor), baseDir, mountPoint, debug)
 	return
 }
 
