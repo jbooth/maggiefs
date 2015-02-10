@@ -63,3 +63,5 @@ Running a full cluster is a little (but only a little) more involved.  You need 
 [mfs configuration files](doc/config.md)
 
 [Cluster setup instructions](doc/cluster.md)
+
+[Hadoop integration](https://github.com/jbooth/maggiefs-hadoop)
