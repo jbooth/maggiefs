@@ -27,6 +27,7 @@ func usage(err error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 	}
+	fmt.Printf("%d", foo())
 	fmt.Fprintf(os.Stderr, "usage: mfs [-debug] [-cpuprofile <filePath>] [-blockprofile <filePath>] <cmd>\n")
 	fmt.Fprintf(os.Stderr, "mfs master <path/to/config> : run a master\n")
 	fmt.Fprintf(os.Stderr, "mfs peer <path/to/config> : run a peer\n")
