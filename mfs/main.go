@@ -51,9 +51,6 @@ func init() {
 	flag.StringVar(&blockprofile, "blockprofile", "", "file to write block profiling information to")
 }
 
-// running state
-var ()
-
 // run
 func main() {
 	flag.Parse()

@@ -20,15 +20,6 @@ func NewMultiService() *MultiService {
 
 // adds and starts a service.  our Serve() method returns on any error
 func (ms *MultiService) AddService(s Service) error {
-	if ms == nil {
-		fmt.Printf("MS NIL")
-	}
-	if ms.clos == nil {
-		fmt.Printf("ms.clos nil")
-	}
-	if ms.clos.L == nil {
-		fmt.Printf("ms.clos.L nil")
-	}
 	ms.clos.L.Lock()
 	defer ms.clos.L.Unlock()
 	if ms.closed {
