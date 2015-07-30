@@ -37,11 +37,11 @@ func (n *Master) WaitClosed() error {
 }
 
 // returns a started nameserver -- we must start lease server in order to boot up nameserver, so
-func NewMaster(cfg *MasterConfig, format bool) (*Master, error) {
+func NewMaster(cfg *MasterConfig) (*Master, error) {
 	nls := &Master{}
 	var err error = nil
 	nls.leaseServer = leaseserver.NewLeaseServer()
-	nls.nameserver, err = nameserver.NewNameServer(cfg.NameHome, cfg.ReplicationFactor, format)
+	nls.nameserver, err = nameserver.NewNameServer(cfg.NameHome, cfg.ReplicationFactor, false)
 	if err != nil {
 		log.Printf("Error creating nameserver: %s\n\n Nameserver config: %+v\n", err.Error(), cfg)
 		return nls, err
@@ -55,5 +55,6 @@ func NewMaster(cfg *MasterConfig, format bool) (*Master, error) {
 	}
 	_, port, _ := net.SplitHostPort(cfg.BindAddr)
 	nls.port, _ = strconv.Atoi(port)
+
 	return nls, err
 }

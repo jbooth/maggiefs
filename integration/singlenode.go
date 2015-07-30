@@ -55,7 +55,7 @@ func NewSingleNodeCluster(startPort int, numDNs int, volsPerDn int, replicationF
 		return nil, err
 	}
 	log.Printf("Creating singleNodeCluster with master conf: %s, ds confs: %s", nncfg, ds)
-	nls, err := NewMaster(nncfg, true)
+	nls, err := NewMaster(nncfg)
 	if err != nil {
 		return nil, err
 	}

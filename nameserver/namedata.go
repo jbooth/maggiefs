@@ -33,6 +33,17 @@ const STRIPE_SIZE = 1024
 const dir_inodb = "inodes"
 const dir_counters = "counters"
 
+func OpenOrFormat(dataDir string, rootUid, rootGid uint32) (*NameData,error) {
+	ret,err := NewNameData(dataDir)
+	if err != nil {
+		return ret,err
+	} else {
+		Format(dataDir,rootUid,rootGid)
+		return NewNameData(dataDir)
+	}
+
+}
+
 // formats a new filesystem in the given data dir
 func Format(dataDir string, rootUid, rootGid uint32) error {
 	// wipe out previous

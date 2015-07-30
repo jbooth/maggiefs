@@ -15,16 +15,10 @@ var typeCheck maggiefs.NameService = &NameServer{}
 
 // new nameserver and lease server listening on the given addresses, serving data from dataDir
 // addresses should be a 0.0.0.0:9999 type address
-func NewNameServer(dataDir string, replicationFactor uint32, format bool) (*NameServer, error) {
+func NewNameServer(dataDir string, replicationFactor uint32) (*NameServer, error) {
 	ns := &NameServer{}
 	var err error = nil
-	if format {
-		err = Format(dataDir, uint32(os.Getuid()), uint32(os.Getgid()))
-		if err != nil {
-			return nil, err
-		}
-	}
-	ns.nd, err = NewNameData(dataDir)
+	ns.nd, err = OpenOrFormat(dataDir,uint32(os.Getuid(), uint32(os.Getgid())))
 	if err != nil {
 		return nil, err
 	}

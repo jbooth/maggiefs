@@ -43,12 +43,17 @@ var (
 	debug        bool   = false
 	cpuprofile   string = ""
 	blockprofile string = ""
+	etcdHost     string = "127.0.0.1:4001"
+	dataDir 	 string = "/mfsData"
 )
 
 func init() {
 	flag.BoolVar(&debug, "debug", false, "print debug info about which fuse operations we're doing and their errors")
 	flag.StringVar(&cpuprofile, "cpuprofile", "", "file to write CPU profiling information to")
 	flag.StringVar(&blockprofile, "blockprofile", "", "file to write block profiling information to")
+	flag.StringVar(&etcHost, "etcHost", "127.0.0.1:4001", "etcd url for service discovery")
+	flag.StringVar(&dataDir, "dataDir", "/mfsData", "location to store local name or block data")
+	flag.StringVar(&mountPoint, "mountPoint", "/mfs", "location to mount the filesystem")
 }
 
 // run
