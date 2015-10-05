@@ -1,7 +1,7 @@
 MaggieFS
 ========
 
-A fully posix-compliant distributed filesystem 
+A fuse-mountable, almost-POSIX distributed filesystem.   
 
 Why MaggieFS?
 ==
